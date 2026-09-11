@@ -24,6 +24,7 @@ from .common import list_images, resolve_folder
 
 HERE = Path(__file__).parent
 RULEBOOK = HERE.parent / "docs/rulebook/mods-input-guide.md"
+RULEBOOK2 = HERE.parent / "docs/rulebook/ebook-guideline-ch3.md"   # "전자책 정리 지침에 따른다"의 그 지침(3장)
 MODEL = "claude-opus-5"
 GREEN = PatternFill("solid", fgColor="CCFFCC")
 
@@ -191,9 +192,14 @@ def ask_exec(q: Query, runner: str = "claude", timeout: int = 600) -> dict:
     system = SYSTEM + RULEBOOK.read_text(encoding="utf-8")
     tiles = tile_images(q.images, Path("work/tiles")) if q.images else []
     img_lines = "\n".join(f"- 원문 이미지 조각 {i}: {p}  (Read 도구로 열어 보세요. 파일명의 y 범위는 원본에서 잘라 낸 위치)" for i, p in enumerate(tiles, 1))
-    prompt = system + "\n\n---\n" + (img_lines + "\n\n" if img_lines else "") + build_prompt_text(q) + EXEC_SUFFIX
+    ref = f"\n\n규칙집이 '전자책 정리 지침에 따른다'고 한 항목은 {RULEBOOK2} 를 Read 해서 해당 절을 확인하세요.\n" if RULEBOOK2.exists() else ""
+    prompt = system + ref + "\n\n---\n" + (img_lines + "\n\n" if img_lines else "") + build_prompt_text(q) + EXEC_SUFFIX
+    import shutil
     if runner == "claude":
-        cmd = ["claude", "-p", "--output-format", "json", "--allowedTools", "Read", "WebSearch", "WebFetch"]
+        exe = shutil.which("claude") or shutil.which("claude.cmd")
+        if not exe:
+            return {"proposals": [], "notes": "claude 실행파일을 찾지 못함(PATH 확인)"}
+        cmd = [exe, "-p", "--output-format", "json", "--allowedTools", "Read", "WebSearch", "WebFetch"]
         res = subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=timeout)
         if res.returncode != 0:
             return {"proposals": [], "notes": f"claude -p 실패: {res.stderr[-500:]}"}
@@ -202,7 +208,10 @@ def ask_exec(q: Query, runner: str = "claude", timeout: int = 600) -> dict:
         except json.JSONDecodeError:
             text = res.stdout
     elif runner == "codex":
-        cmd = ["codex", "exec", "--skip-git-repo-check", "-"]
+        exe = shutil.which("codex") or shutil.which("codex.cmd")
+        if not exe:
+            return {"proposals": [], "notes": "codex 실행파일을 찾지 못함(PATH 확인)"}
+        cmd = [exe, "exec", "--skip-git-repo-check", "-"]
         res = subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=timeout)
         if res.returncode != 0:
             return {"proposals": [], "notes": f"codex exec 실패: {res.stderr[-500:]}"}

@@ -8,3 +8,4 @@ samples/
 *.har
 *.xlsx
 !docs/**/*.xlsx
+kolis.json

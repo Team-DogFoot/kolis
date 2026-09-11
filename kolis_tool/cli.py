@@ -4,12 +4,19 @@
   rename    8자리 일련번호 파일명 변경(--dry-run, --undo)
   convert   출판사용 엑셀 → 반입용 엑셀(규칙 부분, 확인 필요 셀 노란색)
   agent     반입용 엑셀의 확인 필요 셀을 LLM 이 보완 → '제안' 시트(사람 승인 후 --apply)
+  ids       전체출력 파일에서 콘텐츠ID 목록 추출 → work/ids.txt
   mods-fetch  콘텐츠ID 목록 → MODS XML 저장(미검증, HAR 확인 후 사용)
   mods-check  MODS XML 폴더 → 점검용 xlsx (매크로 대체)
 """
 from __future__ import annotations
 import argparse, sys
 from pathlib import Path
+
+for _stream in (sys.stdout, sys.stderr):     # 윈도 콘솔(cp949)에서 한글 출력 깨짐 방지
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def main(argv=None):
@@ -26,6 +33,7 @@ def main(argv=None):
     a.add_argument("--root", help="원문 상위 폴더"); a.add_argument("--dry-run", action="store_true", help="API 호출 없이 질의 묶음 json 만 생성")
     a.add_argument("--limit", type=int); a.add_argument("--apply", action="store_true", help="'제안' 시트의 승인(Y) 행을 본문에 반영")
     a.add_argument("--runner", choices=["claude", "codex", "api"], default="claude", help="claude=claude -p 헤드리스(기본), codex=codex exec, api=Claude API 직접")
+    a = sub.add_parser("ids", help="전체출력 파일(.xls/HTML)에서 콘텐츠ID 목록 추출"); a.add_argument("export_file"); a.add_argument("-o", "--out", default="work/ids.txt")
     a = sub.add_parser("mods-fetch"); a.add_argument("ids_file"); a.add_argument("-o", "--out", default="work/xml"); a.add_argument("--config")
     a.add_argument("--preview", action="store_true", help="전송 없이 보낼 요청만 출력(HAR 대조용)")
     a = sub.add_parser("mods-check"); a.add_argument("xml_dir"); a.add_argument("--wonbu", required=True, help="원부번호")
@@ -61,6 +69,12 @@ def main(argv=None):
             print(f"승인 {apply_approved(Path(ns.xlsx))}건 반영")
         else:
             run(Path(ns.xlsx), Path(ns.root) if ns.root else None, ns.dry_run, ns.limit, ns.runner)
+    elif ns.cmd == "ids":
+        from .ids_from_export import extract_ids
+        ids = extract_ids(Path(ns.export_file))
+        out = Path(ns.out); out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text("\n".join(ids) + "\n", encoding="utf-8")
+        print(f"콘텐츠ID {len(ids)}건 → {out}")
     elif ns.cmd == "mods-fetch":
         from .mods_fetch import fetch_all, preview
         ids = [l.strip() for l in Path(ns.ids_file).read_text(encoding="utf-8").splitlines() if l.strip().startswith("CNTS")]

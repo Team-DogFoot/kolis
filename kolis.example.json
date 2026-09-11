@@ -1,0 +1,5 @@
+{
+  "login_fields": {"userId": "{id}", "userPw": "{pw}"},
+  "login_ok_marker": "",
+  "harTypeCd": "62"
+}

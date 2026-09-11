@@ -72,5 +72,6 @@
  "/mods/extension/KoreaGovernment[@type]": "정부기관부호_속성값",
  "/mods/extension/KoreaPublicInstitution": "공공기관부호",
  "/mods/extension/KoreaPublicInstitution[@type]": "공공기관부호_속성값",
- "/mods/extension/keyword": "키워드"
+ "/mods/extension/keyword": "키워드",
+ "/mods/subject/genre": "장르주제명"
 }

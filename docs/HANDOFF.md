@@ -41,16 +41,33 @@ MODS 서지정보를 구축·점검해 납품한다. 목표 수량 50,000건(화
 | 규칙집 | 완료 | `docs/rulebook/mods-input-guide.md` (39KB) |
 
 ## 4. 도서관 PC 에서 첫 세션이 할 일 (순서대로)
-1. `docs/FIELD-CHECKLIST.md` A 항목(환경) 확인. 파이썬 설치 → `pip install -r requirements.txt`.
+1. `docs/FIELD-CHECKLIST.md` A 항목(환경) 확인. 파이썬 설치 → `bin\setup.bat`(가상환경+설치). `.env.example` 을 `.env` 로 복사해 계정 입력.
+   단계별 실행은 `bin\1_inspect.bat` … `bin\5_check.bat`(각 단계가 끝나면 멈추고 사람이 확인). 클로드코드 세션도 같은 단계 순서로 진행한다.
    Playwright 는 아직 설치하지 않는다(화면 확인 후).
 2. 유저가 KOLIS 를 손으로 한 바퀴 돌리는 동안 HAR 을 남긴다(체크리스트 B). **HAR 은 이 PC 안에서만 읽는다.**
 3. 콘텐츠 XML 1건을 `work/xml/` 에 저장하고 `python -m kolis_tool mods-check work/xml --wonbu <원부번호>` 로 점검기를 실제 XML 에 맞춘다(열 이름이 추출 예시와 같은지 확인).
-4. HAR 에서 로그인 폼 필드명을 읽어 `kolis.json` 을 만든다. **KOLIS 에 보내지 않는다.** `mods-fetch --preview` 로 보낼 요청을 출력해 HAR 의 요청과 글자 단위로 대조하는 것까지만.
+4. HAR 에서 로그인 폼 필드명을 읽어 `kolis.example.json` 을 복사한 `kolis.json` 에 적는다(git 제외). **KOLIS 에 보내지 않는다.** `mods-fetch --preview` 로 보낼 요청을 출력해 HAR 의 요청과 글자 단위로 대조하는 것까지만.
 5. 실제 접수분 1건: `inspect` → `rename --dry-run` → `convert` → 노란 셀 검토(`agent` 가능하면 실행) → 유저·직원이 반입.
    `mods-fetch` 의 첫 실행은 그 접수분의 점검 단계에서 직원과 함께 한다(결과 XML 이 화면의 XML 팝업과 같은지 직원이 확인).
 6. 그날 확인된 사실을 `docs/FIELD-CHECKLIST.md` 에 채우고, 절차 변경은 `docs/EXECUTION-LOG.md`(새로 만들 것)에 한 줄씩.
 
-## 5. 알아둘 함정
+## 5. 화면 캡처(가이드 그림 1~39)에서 확인한 사실 — 2026-09-12 맥북에서 이미지 전부 확인
+- **IE 모드(웹 페이지 대화 상자)인 화면**: 납본자료접수의 일괄반입 팝업(`/online/reg/bo/accrectarget/callPopFileUpload.do?acquisit_code=1&work_code=…`), 원문일괄등록(폴더) 대화상자, 콘텐츠 수정 화면의 원문등록(썸네일) 대화상자. 이 셋만 IE 모드.
+- **크롬 엔진(일반 모드)인 화면**: 통합검색(`/cmmn/unisearch/uniSearchMain.do`), 등록원부작성 팝업(`/online/reg/bo/accrecmake/popup/onlineAccRec…`), 복본조사KEY설정(`/cmmn/dupexminkeyset/main.do`), 일괄복본조사, 디지털콘텐츠관리 및 일괄변경 팝업(`/online/cata/bocata/digitalcont/…`), MODS 입력 화면(표제·저자·출처·주제명, 전거 "찾기" 팝업). → Playwright 로 다룰 수 있는 범위.
+- 디지털콘텐츠관리 상단에 **"MODS정리", "엑셀 반출", "콘텐츠목록보기" 버튼**이 있음. "엑셀 반출"이 MODS 를 바로 주는지 현장 확인(주면 mods-fetch 불필요).
+- **전체출력 파일**은 `ExcelDown<숫자>.xls` 이름의 HTML 표(엑셀이 "형식 불일치" 경고). 열: No, 선정, 콘텐츠ID. `python -m kolis_tool ids <파일>` 로 ID 목록 추출.
+- MODStoXL 화면 로그에 보이는 주소: `main/loginprocess.do`, `online/contents/popXmlView.do`. XML 은 `mods:` 접두사, MODS 3.7, `alternativeName altType`, 두 개의 accessCondition(텍스트 '국립중앙도서관 공개' + licenseType 2). `tests/fixtures/CNTS-00134746760.xml` 에 옮겨 적음.
+- 점검 시트 배치(그림 36): 1행 오류표시·2행 COUNTA·3행 한글·4행 경로(필터)·5행부터 데이터, A~C 틀고정, 장르주제명 열은 분류기호 앞. `mods-check` 가 이 배치로 만든다.
+- 등록원부작성 팝업 항목: 작성년도·등록구분(FTX)·콘텐츠수·파일수·가원부번호·원문서비스구분(07 납본뷰어) → "가원부번호부여".
+- 일괄복본조사 KEY: 대상 온라인(단행), 1기준 낱권ISBN+매체구분+콘텐츠유형, 2기준 본표제/콘텐츠명 우절단 AND 저작자.
+- 일괄변경 값: 자료유형1 CH1 e-콘텐츠, 자료유형2 CH11 기관수집(전자책·전자저널), 발행자구분 PE 일반, 공공누리유형 적용하지않음.
+- 저자전거 "찾기" 팝업: 전거조회표목 입력 → 일치검색 → 전거유형·전거지역·채택표목·한자명·생몰년 표시 → 선택하면 @ID(KAC…)·@전거 자동 입력. 정확히 일치할 때만 연결(가이드 5.3).
+- 매뉴얼 7.4: extent 는 "이미지 파일 16개 (12.5MB) : 천연색" 형식, 용량은 반올림 소수점 둘째 자리. 완료 사례는 내림·정수 표기라 서로 어긋남 → 현장에서 어느 쪽인지 확인(도구는 완료 사례 방식).
+- 매뉴얼 9: 주기 입수처 예 "한국만화영상진흥원을 통해 수집한 자료임" — 수집 경로마다 다르다. 이번 접수분의 문구를 확인해 `convert_import.py` CONSTANTS 의 note#1 을 바꿀 것.
+- 매뉴얼 14.1: 원문주소는 연재처 메인 URL + 작품 상세 URL 두 개 모두 기재. 연재처 소멸 시 기재하지 않음.
+- 매뉴얼 2: 저자는 글·작가·그림·작화·각색·원작만. 어시스트·콘티·채색·배경·편집은 입력하지 않음(글·각색 없이 콘티만 있으면 콘티를 주저자로).
+
+## 6. 알아둘 함정
 - 샘플 zip 안의 파일명은 cp949 로 깨져 있다. 파이썬 zipfile 로 `cp437→cp949` 재해석해 풀어야 한다(맥에서 확인).
 - 출판사용 엑셀은 열이 23개 또는 24개("최초 연재 플랫폼" 추가)로 다르다. `convert` 는 헤더 이름으로 읽으므로 둘 다 된다.
 - 반입용 양식은 예시(77열)와 완료 사례(88열: edition, 두 번째 publisher, 두 번째 url, 세 번째 note 추가)가 다르다. `convert --template` 에 실제 쓰는 양식을 주면 그 열 배치대로 쓴다.
@@ -58,5 +75,5 @@ MODS 서지정보를 구축·점검해 납품한다. 목표 수량 50,000건(화
 - 원문일괄등록: 5GB 에 1시간 반, 6GB 이상 오류 잦음, 오류 건은 시스템팀(주관기관)이 등록.
 - 가이드가 "IE 모드에서만 동작"이라고 명시한 것은 원문일괄등록뿐. 다른 화면은 현장에서 확인.
 
-## 6. 유저
+## 7. 유저
 웹백엔드·데브옵스 개발자. FastAPI+도커 운영 선호. 보고는 `~/works/dog-foot/CLAUDE.md` 브리핑 규칙(요약·누락 금지, 용어 풀이, 비유 금지)을 따른다. 티켓 시스템 안 씀.

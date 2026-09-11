@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 프로세스 가이드 v1.0 그림 34(MODStoXL 화면)에 보이는 KOLIS 콘텐츠 XML을 옮겨 적은 것. 실제 응답과 공백·순서가 다를 수 있음 -->
+<mods:mods xmlns:mods="http://www.loc.gov/mods/v3" xmlns:ndlklds="http://nl.go.kr/schema/license/terms/" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="3.7" xsi:schemaLocation="http://www.loc.gov/mods/v3 http://www.loc.gov/standards/mods/v3/mods-3-7.xsd">
+  <mods:titleInfo><mods:title>계모는 하렘을 좋아해</mods:title><mods:partNumber>50화</mods:partNumber></mods:titleInfo>
+  <mods:name usage="primary" type="personal"><mods:namePart>우사</mods:namePart><mods:role><mods:roleTerm>원작</mods:roleTerm></mods:role><mods:alternativeName altType="no specific type"><mods:namePart>Wooosa</mods:namePart></mods:alternativeName></mods:name>
+  <mods:name type="personal"><mods:namePart>윤양</mods:namePart><mods:role><mods:roleTerm>각색</mods:roleTerm></mods:role></mods:name>
+  <mods:name type="personal"><mods:namePart>문지현</mods:namePart><mods:role><mods:roleTerm>각색</mods:roleTerm></mods:role></mods:name>
+  <mods:name type="personal"><mods:namePart>도미</mods:namePart><mods:role><mods:roleTerm>작화</mods:roleTerm></mods:role></mods:name>
+  <mods:typeOfResource>텍스트</mods:typeOfResource>
+  <mods:genre>만화</mods:genre>
+  <mods:originInfo eventType="publication">
+    <mods:place><mods:placeTerm type="text">[서울]</mods:placeTerm></mods:place>
+    <mods:place><mods:placeTerm authority="kormarccountry" type="code">ulk</mods:placeTerm></mods:place>
+    <mods:publisher>웹툰창고</mods:publisher><mods:publisher>JSTUDIO</mods:publisher>
+    <mods:dateIssued encoding="iso8601">20250224</mods:dateIssued><mods:issuance>단행자료</mods:issuance>
+  </mods:originInfo>
+  <mods:language><mods:languageTerm authority="iso639-2b" type="code">kor</mods:languageTerm></mods:language>
+  <mods:physicalDescription><mods:form>전자자료(Image)</mods:form><mods:reformattingQuality>access</mods:reformattingQuality><mods:internetMediaType>image/jpg</mods:internetMediaType><mods:extent>이미지 파일 21개 (56 MB) : 천연색</mods:extent><mods:digitalOrigin>born digital</mods:digitalOrigin></mods:physicalDescription>
+  <mods:targetAudience>일반이용자</mods:targetAudience>
+  <mods:note type="target audience">15세이용가</mods:note>
+  <mods:note type="acquisition">한국웹툰산업협회를 통해 수집한 자료임</mods:note>
+  <mods:subject ID="KSH1998022212" authority="국립중앙도서관주제명표목표"><mods:topic>만화[漫畵]</mods:topic></mods:subject>
+  <mods:subject ID="KSH2016000049" authority="국립중앙도서관주제명표목표"><mods:genre>웹툰[webtoon]</mods:genre></mods:subject>
+  <mods:classification authority="KDC" edition="6">810</mods:classification>
+  <mods:identifier type="isbn">9791198790316</mods:identifier>
+  <mods:location><mods:physicalLocation>국립중앙도서관</mods:physicalLocation></mods:location>
+  <mods:accessCondition>국립중앙도서관 공개</mods:accessCondition>
+  <mods:extension><mods:regionOfPublishing>한국</mods:regionOfPublishing></mods:extension>
+  <mods:recordInfo><mods:recordContentSource>국립중앙도서관</mods:recordContentSource><mods:recordCreationDate encoding="iso8601">20260526093609</mods:recordCreationDate><mods:recordChangeDate encoding="iso8601">20260527162652</mods:recordChangeDate><mods:recordIdentifier source="국립중앙도서관">CNTS-00134746760</mods:recordIdentifier></mods:recordInfo>
+  <mods:accessCondition><mods:licenseType>2</mods:licenseType></mods:accessCondition>
+</mods:mods>

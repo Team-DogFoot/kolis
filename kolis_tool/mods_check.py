@@ -144,15 +144,22 @@ def write_check_xlsx(cols: list[str], rows: list[dict[str, str]], findings: list
         k = next((i for i, c in enumerate(cols) if base_path(c) == "/mods/classification"), len(cols))
         cols[k:k] = g
     wb = openpyxl.Workbook(); ws = wb.active; ws.title = "점검"
-    ws.append(["컨텐츠 아이디"] + [label_for(c) for c in cols])
-    ws.append(["컨텐츠 아이디"] + cols)
+    ncol = len(cols) + 1
+    ws.append([None] * ncol)                                             # 1행: 오류 종류 표시(열 머리)
+    ws.append([None] * ncol)                                             # 2행: 데이터 개수(COUNTA)
+    ws.append(["컨텐츠 아이디"] + [label_for(c) for c in cols])          # 3행: 한글 항목명
+    ws.append(["컨텐츠 아이디"] + cols)                                   # 4행: MODS 경로
     id_col = next((c for c in cols if base_path(c) == "/mods/recordInfo/recordIdentifier"), None)
     for r in rows:
         ws.append([r.get(id_col, "") if id_col else ""] + [r.get(c, "") for c in cols])
+    last = ws.max_row
+    for ci in range(1, ncol + 1):
+        L = ws.cell(row=5, column=ci).column_letter
+        ws.cell(row=2, column=ci).value = f"=COUNTA({L}5:{L}{last})"
     col_idx = {c: i + 2 for i, c in enumerate(cols)}
     hdr_msgs: dict[int, set[str]] = {}
     for f in findings:
-        ci = col_idx.get(f.col, 1); rn = f.row + 3
+        ci = col_idx.get(f.col, 1); rn = f.row + 5
         cell = ws.cell(row=rn, column=ci)
         if f.level == "error":
             cell.fill = YELLOW; cell.font = RED
@@ -160,12 +167,13 @@ def write_check_xlsx(cols: list[str], rows: list[dict[str, str]], findings: list
             cell.fill = BLUE
         prev = cell.comment.text + "\n" if cell.comment else ""
         cell.comment = Comment(prev + f.msg, "kolis_tool")
-        hdr_msgs.setdefault(ci, set()).add(f.msg)
+        if f.level == "error":
+            hdr_msgs.setdefault(ci, set()).add(f.msg)
     for ci, msgs in hdr_msgs.items():
-        h = ws.cell(row=1, column=ci); h.fill = YELLOW
-        h.comment = Comment("\n".join(sorted(msgs)), "kolis_tool")
-    ws.freeze_panes = "D3"
-    ws.auto_filter.ref = f"A2:{ws.cell(row=2, column=len(cols)+1).column_letter}{ws.max_row}"
+        h = ws.cell(row=1, column=ci); h.fill = YELLOW; h.font = RED
+        h.value = " / ".join(sorted(msgs))
+    ws.freeze_panes = "D5"
+    ws.auto_filter.ref = f"A4:{ws.cell(row=4, column=ncol).column_letter}{last}"
     wb.save(out_path)
     return out_path
 
