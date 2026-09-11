@@ -1,5 +1,6 @@
 """명령줄 진입점.  python -m kolis_tool <명령> ...
 
+  unzip     출판사 zip 풀기(한글 파일명 cp949 깨짐 방지)
   inspect   원문 폴더 검수(깨짐·형식·중복·용량) → out/inspect.xlsx
   rename    8자리 일련번호 파일명 변경(--dry-run, --undo)
   convert   출판사용 엑셀 → 반입용 엑셀(규칙 부분, 확인 필요 셀 노란색)
@@ -23,6 +24,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(prog="kolis_tool", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
 
+    a = sub.add_parser("unzip", help="한글 파일명 깨짐 없이 zip 풀기(cp949)"); a.add_argument("zip"); a.add_argument("-o", "--out", required=True)
     a = sub.add_parser("inspect"); a.add_argument("root"); a.add_argument("-o", "--out", default="out")
     a = sub.add_parser("rename"); a.add_argument("root"); a.add_argument("--start", type=int, default=1)
     a.add_argument("--digits", type=int, default=8); a.add_argument("--dry-run", action="store_true"); a.add_argument("--undo", action="store_true")
@@ -40,7 +42,10 @@ def main(argv=None):
     a.add_argument("--nth", type=int, default=1); a.add_argument("--year", default="2026"); a.add_argument("-o", "--out", default="out")
     ns = ap.parse_args(argv)
 
-    if ns.cmd == "inspect":
+    if ns.cmd == "unzip":
+        from .unzip_kr import extract
+        print(f"{extract(Path(ns.zip), Path(ns.out))}개 파일 → {ns.out}")
+    elif ns.cmd == "inspect":
         from .inspect_files import inspect_root, write_reports
         res = inspect_root(Path(ns.root))
         j, x = write_reports(res, Path(ns.out))

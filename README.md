@@ -22,6 +22,7 @@ pip install -r requirements.txt
 
 ## 명령
 ```
+python -m kolis_tool unzip    <출판사.zip> -o <폴더>                 # 한글 파일명 보존
 python -m kolis_tool inspect  <원문 상위폴더>            # 검수 → out/inspect.xlsx
 python -m kolis_tool rename   <원문 상위폴더> [--dry-run|--undo]
 python -m kolis_tool convert  <출판사용.xlsx> --template <반입용 양식.xlsx> -o <반입용 출력.xlsx> --root <원문 상위폴더>
