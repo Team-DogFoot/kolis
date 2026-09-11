@@ -4,11 +4,13 @@
 사람이 판정해야 하는 지점(복본 판정, 반입 엑셀 최종 확인, 전거 연결 승인, 점검 결과 확정)은 남기고
 그 사이의 손작업(파일 검수, 파일명 변경, 엑셀 변환, MODS 추출·점검)을 프로그램이 한다.
 
-## 현재 상태 (2026-09-12)
-- 도서관 PC 접속 전 단계. KOLIS 화면·폼은 아직 미확인.
+## 현재 상태 (2026-09-12 저녁, 맥북 세션 종료)
+- 도서관 PC 접속 전 단계. KOLIS 화면은 가이드 캡처로만 확인, 폼 항목은 미확인(내일 HAR 로 확인).
+- 클로드코드 세션은 저장소 루트 `CLAUDE.md` → `docs/HANDOFF.md` 순으로 읽고 시작. 메모리 사본은 `docs/memory/`.
 - 샘플 파일(미스터블루 로맨스낫로맨틱 45화, 완료된 반입용 엑셀 포함)로 `inspect` `rename` `convert` `mods-check` 검증 완료.
   `convert` 는 완료 사례와 88열 중 55열이 45행 전부 일치. 나머지 33열은 설계상 LLM/사람 몫(권차 표기, 역할어, 발행지, 임프린트, URL, 썸네일 파일명)이며 노란색으로 표시됨.
-- `agent`(LLM 보완)와 `mods-fetch`(KOLIS HTTP)는 API 키·현장 HAR 확인 전이라 미검증.
+- `agent`(LLM 보완)는 claude -p 헤드리스로 샘플 실행 확인. `mods-fetch`(KOLIS HTTP)는 로그인 폼 미확인이라 전송 미검증(`--preview` 만).
+- `mods-check` 는 가이드 캡처에서 옮겨 적은 실제 형식 XML(`tests/fixtures/`)로 검증.
 - 다음 단계: `docs/HANDOFF.md` 참조.
 
 ## 설치
@@ -40,5 +42,7 @@ python -m kolis_tool mods-check work/xml --wonbu <원부번호> --nth 1         
 - `docs/HANDOFF.md` 도서관 PC 세션 시작용 인수인계
 - `docs/FIELD-CHECKLIST.md` 현장 확인 목록
 - `scripts/build_rulebook.py` 가이드 docx → 규칙집 재생성
+- `docs/memory/` 클로드코드 영속 메모리 사본(새 PC 에서 `~/.claude/projects/…/memory/` 로 복사)
+- `CLAUDE.md` 클로드코드가 자동으로 읽는 프로젝트 지침
 
 클라이언트 원문(문서·샘플·정답지)은 저장소에 넣지 않는다. 계정·비밀번호는 환경변수(KOLIS_ID, KOLIS_PW, ANTHROPIC_API_KEY)로만.
