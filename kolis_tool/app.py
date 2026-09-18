@@ -213,12 +213,26 @@ class Api:
         return {"folders": len(folders), "files": sum(len(list_images(p)) for p in folders), "already": done, "sample": sample}
 
     def manuscript_apply(self, root: str) -> dict:
-        from .rename_files import apply_tree
-        try:
-            res = apply_tree(Path(root))
-            return {"folders": len(res), "files": sum(len(v) for v in res.values())}
-        except SystemExit as e:
-            return {"error": str(e)}
+        """폴더별로 진행 로그를 보내며 스레드에서 실행(파일 수백 장이라 몇 초~수십 초)."""
+        from .rename_files import apply, MANIFEST
+        from .common import list_images
+        r = Path(root)
+        def job():
+            try:
+                folders = [p for p in sorted(r.iterdir()) if p.is_dir() and list_images(p)] or ([r] if list_images(r) else [])
+                total = len(folders); nfiles = 0; skipped = 0
+                for i, p in enumerate(folders, 1):
+                    if (p / MANIFEST).exists():
+                        skipped += 1; self._log(f"  [{i}/{total}] {p.name}: 이미 변경됨, 건너뜀"); continue
+                    done = apply(p)
+                    nfiles += len(done)
+                    if i % 5 == 0 or i == total:
+                        self._log(f"  [{i}/{total}] {p.name}: {len(done)}장 변경 (누계 {nfiles}장)")
+                self._done("manuscript", {"folders": total - skipped, "files": nfiles, "skipped": skipped})
+            except Exception as e:  # noqa: BLE001
+                self._done("manuscript", {"error": str(e)})
+        threading.Thread(target=job, daemon=True).start()
+        return {"started": True}
 
     def manuscript_undo(self, root: str) -> dict:
         from .rename_files import undo, MANIFEST
