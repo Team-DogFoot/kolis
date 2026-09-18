@@ -130,11 +130,11 @@ class Api:
         thumbs = next((p for p in f.iterdir() if p.is_dir() and "썸네일" in p.name), None)
         info = {"folder": str(f), "xlsx": str(xlsx[0]) if xlsx else "", "manuscripts": str(manuscripts) if manuscripts else "",
                 "thumbs": str(thumbs) if thumbs else "", "episodes": 0, "images": 0, "thumb_files": 0, "rows": 0, "title": "",
-                "empty_cols": [], "has_saved": False, "thumbs_done": bool(thumbs and (thumbs / "thumbs_manifest.json").exists())}
+                "empty_cols": [], "has_saved": False, "thumbs_done": bool(thumbs and __import__("kolis_tool.enrich", fromlist=["thumbs_done"]).thumbs_done(thumbs))}
         if manuscripts:
             eps = [p for p in manuscripts.iterdir() if p.is_dir()]
             info["episodes"] = len(eps); info["images"] = sum(len(list_images(p)) for p in eps)
-            info["manuscripts_done"] = any((p / "rename_manifest.json").exists() for p in eps)
+            from .rename_files import is_done as _rd; info["manuscripts_done"] = any(_rd(p) for p in eps)
         if thumbs:
             info["thumb_files"] = len(list_images(thumbs))
         if xlsx:
@@ -282,11 +282,11 @@ class Api:
 
     # ---------- 3-가. 원고 파일명(8자리 일련번호, 다크네이머 대체) ----------
     def manuscript_preview(self, root: str) -> dict:
-        from .rename_files import plan, MANIFEST
+        from .rename_files import plan, is_done
         from .common import list_images
         r = Path(root)
         folders = [p for p in sorted(r.iterdir()) if p.is_dir() and list_images(p)] or ([r] if list_images(r) else [])
-        done = [p.name for p in folders if (p / MANIFEST).exists()]
+        done = [p.name for p in folders if is_done(p)]
         sample = []
         for p in folders[:2]:
             pairs = plan(p)
@@ -295,7 +295,7 @@ class Api:
 
     def manuscript_apply(self, root: str) -> dict:
         """폴더별로 진행 로그를 보내며 스레드에서 실행(파일 수백 장이라 몇 초~수십 초)."""
-        from .rename_files import apply, MANIFEST
+        from .rename_files import apply, is_done
         from .common import list_images
         r = Path(root)
         def job():
@@ -303,7 +303,7 @@ class Api:
                 folders = [p for p in sorted(r.iterdir()) if p.is_dir() and list_images(p)] or ([r] if list_images(r) else [])
                 total = len(folders); nfiles = 0; skipped = 0
                 for i, p in enumerate(folders, 1):
-                    if (p / MANIFEST).exists():
+                    if is_done(p):
                         skipped += 1; self._log(f"  [{i}/{total}] {p.name}: 이미 변경됨, 건너뜀"); continue
                     done = apply(p)
                     nfiles += len(done)
@@ -316,9 +316,9 @@ class Api:
         return {"started": True}
 
     def manuscript_undo(self, root: str) -> dict:
-        from .rename_files import undo, MANIFEST
+        from .rename_files import undo, is_done
         r = Path(root)
-        targets = [r] if (r / MANIFEST).exists() else [p for p in r.iterdir() if p.is_dir() and (p / MANIFEST).exists()]
+        targets = [r] if is_done(r) else [p for p in r.iterdir() if p.is_dir() and is_done(p)]
         n = 0
         for t in targets:
             n += undo(t)

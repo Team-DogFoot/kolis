@@ -35,6 +35,32 @@ CORPORATE_HINTS = ["주식회사", "(주)", "㈜", "스튜디오", "studio", "�
                    "출판", "북스", "books", "코믹스", "comics", "제작", "팀", "team", "협회", "센터", "랩", "lab"]
 
 
+MANIFEST_DIR = "_kolis_manifests"
+
+
+def manifest_path(target: Path, kind: str) -> Path:
+    """되돌리기 기록 파일의 위치. 대상 폴더 **안이 아니라** 그 부모의 `_kolis_manifests/<폴더명>.<kind>.json`.
+    2026-09-18 교훈: 원고 폴더 안에 기록 파일을 두면 KOLIS 원문일괄등록(폴더 드래그) 때 같이 올라가 오류를 낸다."""
+    target = Path(target)
+    d = target.parent / MANIFEST_DIR
+    d.mkdir(parents=True, exist_ok=True)
+    return d / f"{target.name}.{kind}.json"
+
+
+def find_manifest(target: Path, kind: str, legacy_name: str) -> Path | None:
+    """새 위치 → 없으면 예전 위치(폴더 안)를 찾는다. 예전 위치면 새 위치로 옮긴 뒤 돌려준다."""
+    target = Path(target)
+    new = target.parent / MANIFEST_DIR / f"{target.name}.{kind}.json"
+    if new.exists():
+        return new
+    old = target / legacy_name
+    if old.exists():
+        new.parent.mkdir(parents=True, exist_ok=True)
+        old.rename(new)
+        return new
+    return None
+
+
 def natural_key(s: str):
     return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", s)]
 

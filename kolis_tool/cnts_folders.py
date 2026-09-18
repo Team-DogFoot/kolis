@@ -7,10 +7,11 @@
 from __future__ import annotations
 import json
 from pathlib import Path
-from .common import natural_key, list_images
+from .common import natural_key, list_images, manifest_path, find_manifest
 from .ids_from_export import receipt_map
 
-MANIFEST = "cnts_manifest.json"
+MANIFEST = "cnts_manifest.json"   # 예전 위치(원고 폴더 안) — 호환용. 새 위치: 부모/_kolis_manifests/<원고>.cnts.json
+KIND = "cnts"
 
 
 def episode_folders(root: Path) -> list[Path]:
@@ -19,8 +20,11 @@ def episode_folders(root: Path) -> list[Path]:
 
 def plan(export_file: Path, root: Path) -> dict:
     root = Path(root)
-    if (root / MANIFEST).exists():
-        raise SystemExit(f"이미 바꾼 폴더입니다({MANIFEST} 존재). 되돌린 뒤 다시 하세요.")
+    if find_manifest(root, KIND, MANIFEST):
+        raise SystemExit("이미 CNTS 로 바꾼 폴더입니다. 되돌린 뒤 다시 하세요.")
+    stray = [p.name for p in root.iterdir() if p.is_file()]
+    if stray:
+        raise SystemExit(f"원고 폴더 바로 아래에 파일이 있습니다(원문일괄등록 때 같이 올라감): {', '.join(stray[:5])} — 밖으로 옮기세요")
     m = receipt_map(export_file)
     folders = episode_folders(root)
     if not m:
@@ -44,12 +48,14 @@ def apply(export_file: Path, root: Path) -> dict:
     done = []
     for a, b, no in p["pairs"]:
         (root / a).rename(root / b); done.append([a, b, no])
-    (root / MANIFEST).write_text(json.dumps({"receipt": p["receipt"], "done": done}, ensure_ascii=False, indent=1), encoding="utf-8")
+    manifest_path(root, KIND).write_text(json.dumps({"receipt": p["receipt"], "done": done}, ensure_ascii=False, indent=1), encoding="utf-8")
     return p
 
 
 def undo(root: Path) -> int:
-    root = Path(root); mf = root / MANIFEST
+    root = Path(root); mf = find_manifest(root, KIND, MANIFEST)
+    if not mf:
+        raise SystemExit("되돌리기 기록 없음")
     data = json.loads(mf.read_text(encoding="utf-8"))
     n = 0
     for a, b, _ in reversed(data["done"]):

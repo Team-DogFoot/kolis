@@ -353,23 +353,30 @@ def apply(pub_xlsx: Path, info: dict, out_xlsx: Path, thumbs_dir: Path | None = 
 
 def rename_thumbs(folder: Path, title: str, dry_run: bool = False) -> list[tuple[str, str]]:
     """회차 썸네일을 '<제목 공백제거><NN>.jpg' 로. 원래 순서는 자연 정렬. manifest 로 undo 가능."""
-    from .common import natural_key, list_images
+    from .common import list_images, manifest_path, find_manifest
     files = list_images(folder)
     pairs = [(p.name, thumb_name(title, i, p.suffix.lower())) for i, p in enumerate(files, 1)]
     if dry_run:
         return pairs
-    mf = folder / "thumbs_manifest.json"
-    if mf.exists():
-        raise SystemExit(f"이미 바꾼 폴더(manifest 있음): {mf}")
+    if find_manifest(folder, "thumbs", "thumbs_manifest.json"):
+        raise SystemExit("이미 이름을 바꾼 썸네일 폴더입니다(되돌리기 기록 있음)")
     for a, b in pairs:
         if a != b:
             (folder / a).rename(folder / b)
-    mf.write_text(json.dumps(pairs, ensure_ascii=False, indent=1), encoding="utf-8")
+    manifest_path(folder, "thumbs").write_text(json.dumps(pairs, ensure_ascii=False, indent=1), encoding="utf-8")   # 폴더 밖(부모/_kolis_manifests)
     return pairs
 
 
+def thumbs_done(folder: Path) -> bool:
+    from .common import find_manifest
+    return find_manifest(Path(folder), "thumbs", "thumbs_manifest.json") is not None
+
+
 def undo_thumbs(folder: Path) -> int:
-    mf = folder / "thumbs_manifest.json"
+    from .common import find_manifest
+    mf = find_manifest(Path(folder), "thumbs", "thumbs_manifest.json")
+    if not mf:
+        raise SystemExit("되돌리기 기록 없음")
     pairs = json.loads(mf.read_text(encoding="utf-8"))
     n = 0
     for a, b in reversed(pairs):
