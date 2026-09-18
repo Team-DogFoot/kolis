@@ -26,7 +26,7 @@
   a { color:var(--accent); } ul.ev { margin:4px 0 0 16px; padding:0; font-size:12px; color:var(--muted); }
 </style></head>
 <body>
-<header><h1>KOLIS 웹툰 납본 도우미</h1><small>납품 수령 → 기초메타데이터 보완 → 썸네일 이름 → 반입용 엑셀 → KOLIS 일괄반입 준비</small><span id="env" class="muted">환경 확인 중…</span><button class="secondary" style="margin-left:12px" onclick="resetAll()">새로 시작</button></header>
+<header><h1>KOLIS 웹툰 납본 도우미</h1><small>납품 폴더 → 파일명 정리 → 기초메타데이터 보완 → 반입용 엑셀 → KOLIS 일괄반입 준비</small><span id="env" class="muted">환경 확인 중…</span><button class="secondary" style="margin-left:12px" onclick="resetAll()">새로 시작</button></header>
 <main>
 <div>
   <section class="card"><h2><span class="step">1</span> 납품 폴더</h2>
@@ -40,7 +40,16 @@
     </table>
   </section>
 
-  <section class="card"><h2><span class="step">2</span> 기초메타데이터 보완</h2>
+  <section class="card"><h2><span class="step">2</span> 파일명 정리</h2>
+    <p style="margin:0 0 4px"><b>가. 원고 파일명</b> <span class="muted">— 회차 폴더마다 8자리 일련번호(00000001.jpg …). 가이드 3.3, 다크네이머 대체</span></p>
+    <div class="row"><button class="secondary" id="btn-msp" onclick="msPreview()" disabled>미리보기</button><button id="btn-msa" onclick="msApply()" disabled>이름 변경</button><button class="secondary" id="btn-msu" onclick="msUndo()" disabled>되돌리기</button><span id="ms-out" class="muted"></span></div>
+    <div id="ms-list" class="muted" style="font-size:12px"></div>
+    <p style="margin:12px 0 4px"><b>나. 회차 썸네일 파일명</b> <span class="muted">— &lt;제목 공백제거&gt;&lt;회차 2자리&gt;.jpg (완료 사례 5-190/201/206)</span></p>
+    <div class="row"><button class="secondary" id="btn-thp" onclick="thumbsPreview()" disabled>미리보기</button><button id="btn-tha" onclick="thumbsApply()" disabled>이름 변경</button><button class="secondary" id="btn-thu" onclick="thumbsUndo()" disabled>되돌리기</button><span id="th-out" class="muted"></span></div>
+    <div id="th-list" class="muted" style="font-size:12px"></div>
+  </section>
+
+  <section class="card"><h2><span class="step">3</span> 기초메타데이터 보완</h2>
     <p class="muted" style="margin:0 0 6px">클로드가 웹에서 작품 정보를 조사(판단)하고, 동시에 Edge 가 플랫폼 페이지에서 회차별 공개일·가격을 읽습니다. 보통 3~5분. 진행은 오른쪽 로그에 실시간으로 나옵니다.</p>
     <div class="row"><input type="text" id="e-xlsx" placeholder="출판사 기초메타데이터 엑셀 (1단계에서 자동으로 들어감)"><button class="secondary" onclick="pickInto('e-xlsx')">찾아보기</button></div>
     <div id="saved-box" class="warnbox" hidden style="background:#eef6ff;border-color:#bcd7f5">지난 조사 결과가 있습니다: <b id="saved-when"></b> <span id="saved-sum" class="muted"></span></div>
@@ -56,17 +65,8 @@
     </div>
   </section>
 
-  <section class="card"><h2><span class="step">3</span> 파일명 정리</h2>
-    <p style="margin:0 0 4px"><b>가. 원고 파일명</b> <span class="muted">— 회차 폴더마다 8자리 일련번호(00000001.jpg …). 가이드 3.3, 다크네이머 대체</span></p>
-    <div class="row"><button class="secondary" id="btn-msp" onclick="msPreview()" disabled>미리보기</button><button id="btn-msa" onclick="msApply()" disabled>이름 변경</button><button class="secondary" id="btn-msu" onclick="msUndo()" disabled>되돌리기</button><span id="ms-out" class="muted"></span></div>
-    <div id="ms-list" class="muted" style="font-size:12px"></div>
-    <p style="margin:12px 0 4px"><b>나. 회차 썸네일 파일명</b> <span class="muted">— &lt;제목 공백제거&gt;&lt;회차 2자리&gt;.jpg (완료 사례 5-190/201/206)</span></p>
-    <div class="row"><button class="secondary" id="btn-thp" onclick="thumbsPreview()" disabled>미리보기</button><button id="btn-tha" onclick="thumbsApply()" disabled>이름 변경</button><button class="secondary" id="btn-thu" onclick="thumbsUndo()" disabled>되돌리기</button><span id="th-out" class="muted"></span></div>
-    <div id="th-list" class="muted" style="font-size:12px"></div>
-  </section>
-
   <section class="card"><h2><span class="step">4</span> 반입용 엑셀 생성</h2>
-    <div class="row"><input type="text" id="c-xlsx" placeholder="변환할 기초메타데이터 엑셀 (2단계 보완본이 자동으로 들어감)"><button class="secondary" onclick="pickInto('c-xlsx')">찾아보기</button></div>
+    <div class="row"><input type="text" id="c-xlsx" placeholder="변환할 기초메타데이터 엑셀 (3단계 보완본이 자동으로 들어감)"><button class="secondary" onclick="pickInto('c-xlsx')">찾아보기</button></div>
     <div class="row"><input type="text" id="out-name" placeholder="출력 파일명 또는 전체 경로 (기본 저장 위치: work 폴더)"><button class="secondary" onclick="pickSave()">저장 위치</button></div>
     <div class="row"><button id="btn-conv" onclick="convert()" disabled>반입용 생성</button><span id="conv-out" class="muted"></span></div>
     <p class="muted">노란 셀 = 사람이 확인할 값(셀 메모에 이유). 반입 전 유저·직원이 확인합니다.</p>
