@@ -29,28 +29,17 @@ FILE_DIALOG_TITLE = "업로드할 파일 선택"
 
 
 # ---------- 로그 ----------
-class Log:
-    """화면 로그(콜백) + 파일 로그. log(msg) 처럼 호출."""
+from .logutil import UiLog
+
+
+class Log(UiLog):
+    """화면 로그(콜백) + 공통 파일 로그(work/logs/app-날짜.log, 모듈명 'kolis.ui')."""
     def __init__(self, ui=None):
-        self.ui = ui or (lambda m: None)
-        LOG_DIR.mkdir(parents=True, exist_ok=True)
-        self.path = LOG_DIR / f"kolis-{datetime.date.today():%Y%m%d}.log"
-
-    def __call__(self, msg: str, level: str = "INFO"):
-        line = f"{datetime.datetime.now():%H:%M:%S} {level:5} {msg}"
-        try:
-            with open(self.path, "a", encoding="utf-8") as f:
-                f.write(line + "\n")
-        except Exception:  # noqa: BLE001
-            pass
-        self.ui(msg if level == "INFO" else f"[{level}] {msg}")
-
-    def warn(self, msg): self(msg, "WARN")
-    def error(self, msg): self(msg, "ERROR")
+        super().__init__(ui, "kolis.ui")
 
 
 def _aslog(log) -> Log:
-    return log if isinstance(log, Log) else Log(log if callable(log) else None)
+    return log if isinstance(log, UiLog) else Log(log if callable(log) else None)
 
 
 # ---------- 기본 도구 ----------
@@ -200,9 +189,21 @@ def confirm_dialog_now():
 
 
 def popup_window():
+    # 원문일괄등록 팝업도 같은 제목이라, '첨부파일' 입력칸이 있는 창(일괄반입 팝업)만 고른다
     for w in _desktop().windows():
         try:
-            if w.class_name() == "Alternate Modal Top Most" and "납본자료접수" in w.window_text():
+            if w.class_name() == "Alternate Modal Top Most" and "납본자료접수" in w.window_text() and _edit(ie_content(w), "첨부파일"):
+                return w
+        except Exception:  # noqa: BLE001
+            continue
+    return None
+
+
+def upload_popup_window():
+    """원문일괄등록(폴더) 팝업: '전송하기' 버튼이 있는 IE 팝업."""
+    for w in _desktop().windows():
+        try:
+            if w.class_name() == "Alternate Modal Top Most" and _button(ie_content(w), "전송하기"):
                 return w
         except Exception:  # noqa: BLE001
             continue

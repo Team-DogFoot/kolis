@@ -325,6 +325,43 @@ def match_folder(pub: dict, root: Path | None, index: int = 0, total: int = 0) -
     return resolve_folder(root, str(pub.get("제목(도서명)") or ""), str(pub.get("권차") or ""), fname, index, total)
 
 
+REQUIRED = ["/mods/titleInfo/title", "/mods/name/namePart", "/mods/originInfo/publisher", "/mods/originInfo/dateIssued",
+            "/mods/physicalDescription/extent", "/mods/identifier", "contents_price", "thum_files"]
+
+
+def verify(out_xlsx: Path, expected_rows: int | None = None) -> dict:
+    """생성된 반입용 파일 검증: 행 수, 필수 열 빈칸 수, 노란 셀 수, 회차(partNumber) 중복. 반입 전 사람이 볼 요약."""
+    wb = openpyxl.load_workbook(out_xlsx)
+    ws = wb["Contents"]
+    header = [(c.value or "").strip() if isinstance(c.value, str) else "" for c in ws[1]]
+    first = {}
+    for i, h in enumerate(header):
+        first.setdefault(h, i + 1)
+    start = 3 if str(ws.cell(row=2, column=first.get("/mods/titleInfo/title", 2)).value or "").strip() == "제목" else 2
+    rows = list(range(start, ws.max_row + 1))
+    rows = [r for r in rows if any(ws.cell(row=r, column=c).value not in (None, "") for c in range(1, len(header) + 1))]
+    empties = {}
+    for h in REQUIRED:
+        c = first.get(h)
+        if c:
+            n = sum(1 for r in rows if ws.cell(row=r, column=c).value in (None, ""))
+            if n:
+                empties[h] = n
+    yellow = sum(1 for r in rows for c in range(1, len(header) + 1)
+                 if (ws.cell(row=r, column=c).fill and ws.cell(row=r, column=c).fill.fgColor and ws.cell(row=r, column=c).fill.fgColor.rgb in ("00FFFF00", "FFFFFF00")))
+    pn = first.get("/mods/titleInfo/partNumber")
+    parts = [str(ws.cell(row=r, column=pn).value or "") for r in rows] if pn else []
+    dup = sorted({p for p in parts if p and parts.count(p) > 1})
+    warns = []
+    if expected_rows is not None and len(rows) != expected_rows:
+        warns.append(f"행 수 불일치: 반입용 {len(rows)} vs 출판사용 {expected_rows}")
+    for h, n in empties.items():
+        warns.append(f"필수 열 비어 있음: {h.split('/')[-1]} {n}행")
+    if dup:
+        warns.append(f"권차 중복: {', '.join(dup[:5])}")
+    return {"rows": len(rows), "yellow": yellow, "empties": empties, "dup_parts": dup, "warnings": warns}
+
+
 def convert(pub_xlsx: Path, template_xlsx: Path, out_xlsx: Path, root: Path | None = None,
             publisher_place_json: Path | None = None, work_json: Path | None = None) -> tuple[int, int]:
     publisher_place = json.load(open(publisher_place_json, encoding="utf-8")) if publisher_place_json else {}

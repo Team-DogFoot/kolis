@@ -26,7 +26,12 @@
   a { color:var(--accent); } ul.ev { margin:4px 0 0 16px; padding:0; font-size:12px; color:var(--muted); }
 </style></head>
 <body>
-<header><h1>KOLIS 웹툰 납본 도우미</h1><small>납품 폴더 → 파일명 정리 → 기초메타데이터 보완 → 반입용 엑셀 → KOLIS 일괄반입 준비</small><span id="env" class="muted">환경 확인 중…</span><select id="recent" style="margin-left:12px;padding:6px;font:inherit" onchange="openRecent()"><option value="">최근 작업…</option></select><button class="secondary" style="margin-left:6px" onclick="resetAll()">새로 시작</button></header>
+<header><h1>KOLIS 웹툰 납본 도우미</h1><small>납품 폴더 → 파일명 정리 → 기초메타데이터 보완 → 반입용 엑셀 → KOLIS 일괄반입 준비</small><span id="env" class="muted">환경 확인 중…</span><select id="recent" style="margin-left:12px;padding:6px;font:inherit" onchange="openRecent()"><option value="">최근 작업…</option></select><button class="secondary" style="margin-left:6px" onclick="diagnose()">진단</button><button class="secondary" style="margin-left:6px" onclick="resetAll()">새로 시작</button></header>
+<div id="diag" class="card" hidden style="margin:12px 22px 0;background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px 16px;font-size:13px">
+  <div class="row"><b>진단</b><button class="secondary" onclick="$('diag').hidden=true">닫기</button></div>
+  <div id="diag-body"></div>
+  <pre id="diag-log" class="muted" style="font-size:11px;max-height:220px;overflow:auto;background:#f6f7f9;padding:8px;border-radius:6px"></pre>
+</div>
 <main>
 <div>
   <section class="card"><h2><span class="step">1</span> 납품 폴더</h2>
@@ -109,10 +114,23 @@ function appendLog(m){ const l=$('log'); l.textContent += new Date().toLocaleTim
 const STEP_LABEL = {manuscript:'원고 파일명', thumbs:'썸네일 파일명', enrich:'보완', convert:'반입용 엑셀', kolis_prepare:'KOLIS 준비', kolis_submit:'KOLIS 반입', export:'전체출력', cnts:'폴더명 CNTS'};
 async function saveState(patch){ if(!S.folder) return; S.state = await pywebview.api.save_state(S.folder, patch); renderState(); }
 async function saveMemo(){ await saveState({memo: $('memo').value}); }
-function renderState(){
-  const st = S.state || {};
-  const parts = Object.keys(STEP_LABEL).filter(k=>st[k] && st[k].done_at).map(k=>`<span class="ok">✓ ${STEP_LABEL[k]}</span> <span class="muted">${st[k].done_at}</span>`);
-  $('s-state').innerHTML = parts.length ? parts.join(' &nbsp;·&nbsp; ') : '아직 진행한 단계 없음';
+async function renderState(){
+  if(!S.folder) return;
+  const r = await pywebview.api.status(S.folder);
+  const parts = r.steps.map(s => s.done ? `<span class="ok">✓ ${s.label}</span><span class="muted"> ${s.when||''}${s.evidence?' · '+s.evidence:''}</span>` : `<span class="muted">○ ${s.label}${s.evidence?' ('+s.evidence+')':''}</span>`);
+  $('s-state').innerHTML = parts.join('<br>') + (r.warnings.length ? '<div class="warnbox">' + r.warnings.map(w=>`⚠ ${w}`).join('<br>') + '</div>' : '');
+}
+async function diagnose(){
+  $('diag').hidden=false; $('diag-body').innerHTML='<span class="spin"></span> 확인 중…';
+  const d = await pywebview.api.diagnose();
+  const e=d.env, k=d.kolis||{};
+  const yn = v => v ? '<span class="ok">예</span>' : '<span class="bad">아니오</span>';
+  $('diag-body').innerHTML = `
+    <div>환경: 클로드코드 ${yn(e.claude)} (로그인 흔적 ${yn(e.claude_login)}) · Edge ${yn(e.edge)} · Playwright ${yn(e.playwright)}</div>
+    <div>진행 중 작업: ${Object.keys(d.running).length ? Object.entries(d.running).map(([k,v])=>`${k}(${v} 시작)`).join(', ') : '없음'}</div>
+    <div>KOLIS 창: Edge ${k.edge ? k.edge.length+'개 ('+k.edge[0]+')' : '<span class="bad">없음</span>'} · 일괄반입 팝업 ${yn(k.popup)} · 원문등록 등 IE 팝업 ${yn(k.upload_popup)} · 파일 대화상자 ${yn(k.file_dialog)} · 확인창 ${yn(k.confirm)}</div>
+    <div class="muted">로그 파일: ${d.log_path}</div>`;
+  $('diag-log').textContent = (d.log_tail||[]).join('\n');
 }
 function restoreFromState(){
   const st = S.state || {};
@@ -281,7 +299,8 @@ async function convert(){
   $('conv-out').innerHTML='<span class="spin"></span> 생성 중…';
   const r = await pywebview.api.convert($('c-xlsx').value || S.enrichedXlsx || S.xlsx, S.ms, S.workJson, $('out-name').value);
   if(r.error){ $('conv-out').innerHTML=`<span class="bad">${r.error}</span>`; appendLog(r.error); return; }
-  $('conv-out').innerHTML = `${r.rows}행, 확인 필요 셀 ${r.flags}개 → <a href="#" onclick="pywebview.api.open_path('${r.out.replace(/\\/g,'\\\\')}');return false">${r.out}</a>`;
+  const v = r.verify || {warnings:[]};
+  $('conv-out').innerHTML = `${r.rows}행, 확인 필요 셀 ${r.flags}개 → <a href="#" onclick="pywebview.api.open_path('${r.out.replace(/\\/g,'\\\\')}');return false">${r.out}</a>` + (v.warnings.length ? '<div class="warnbox">' + v.warnings.map(w=>`⚠ ${w}`).join('<br>') + '</div>' : ' <span class="ok">검증 통과(필수 열 채움·행 수 일치·권차 중복 없음)</span>');
   appendLog(`반입용 생성: ${r.out} (${r.rows}행, 노란 셀 ${r.flags})`);
   $('k-xlsx').value = r.out;
   saveState({convert:{out:r.out, rows:r.rows, flags:r.flags}});

@@ -175,7 +175,14 @@ def research(pub_xlsx: Path, out_json: Path, runner: str = "claude", timeout: in
     if handle is not None and handle.get("cancel"):
         raise Cancelled("사용자가 중단함")
     if rc != 0:
-        raise SystemExit(friendly_error("".join(err_buf), rc))
+        err = "".join(err_buf)
+        transient = any(k in err.lower() for k in ("overloaded", "rate limit", "429", "econnreset", "etimedout", "fetch failed", "503", "529"))
+        if transient and not (handle or {}).get("_retried"):
+            log(f"  일시적 오류로 보여 30초 뒤 1회 재시도: {err[-120:]}")
+            time.sleep(30)
+            h = dict(handle or {}); h["_retried"] = True
+            return research(pub_xlsx, out_json, runner, timeout, log, h, extra)
+        raise SystemExit(friendly_error(err, rc))
     if runner != "claude":
         text = "".join(lines)
     m = re.findall(r"```json\s*(\{.*?\})\s*```", text, re.S)

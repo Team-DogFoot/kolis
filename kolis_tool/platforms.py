@@ -199,14 +199,17 @@ def gather(title: str, known_urls: dict[str, str] | None = None, log=print, head
     known_urls = known_urls or {}
     results = []
     with browser(headless) as ctx:
+        from .logutil import retry, UiLog
+        lg = log if isinstance(log, UiLog) else UiLog(log, "kolis.platforms")
         for name, fn in ADAPTERS.items():
             if handle and handle.get("cancel"):
-                log("플랫폼 수집 중단"); break
+                lg("플랫폼 수집 중단"); break
             try:
-                r = fn(ctx, title, known_urls.get(name), log)
+                # 페이지 로딩 타임아웃·일시 오류는 2번까지 재시도(검색 결과 없음은 None 반환이라 재시도 안 함)
+                r = retry(lg, name, lambda: fn(ctx, title, known_urls.get(name), lg), tries=2, wait=3)
                 if r: results.append(r)
             except Exception as e:  # noqa: BLE001
-                log(f"{name}: 실패 — {type(e).__name__}: {str(e)[:120]}")
+                lg.warn(f"{name}: 포기 — {type(e).__name__}: {str(e)[:120]}")
     return results
 
 

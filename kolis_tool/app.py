@@ -18,15 +18,108 @@ class Api:
         self._window: webview.Window | None = None
         self._work_dir = Path("work").resolve()
         self._job: dict = {}          # {'proc': Popen, 'cancel': bool}
+        self._running: dict = {}      # kind → 시작 시각(진행 중인 스레드 작업)
+        from .logutil import UiLog
+        self.log = UiLog(self._ui_log, "kolis.app")
 
     # ---------- 공통 ----------
-    def _log(self, msg: str):
+    def _ui_log(self, msg: str):
         if self._window:
             self._window.evaluate_js(f"appendLog({json.dumps(str(msg), ensure_ascii=False)})")
+
+    def _log(self, msg: str):
+        """화면 + 파일 로그(work/logs/app-날짜.log)."""
+        self.log(msg)
 
     def _done(self, kind: str, payload: dict):
         if self._window:
             self._window.evaluate_js(f"onDone({json.dumps(kind)}, {json.dumps(payload, ensure_ascii=False, default=str)})")
+
+    def _run(self, kind: str, fn, capture: bool = False) -> dict:
+        """스레드 작업 공통 틀: 시작·종료·소요시간·예외 스택을 파일에 남기고 onDone(kind, 결과)로 알린다.
+        fn() 은 결과 dict 를 돌려준다. Cancelled → {'cancelled': True}, 그 밖의 예외 → {'error': 문구}.
+        capture=True(KOLIS 조작)면 실패 시 화면 캡처·창 목록을 저장한다."""
+        import datetime, time
+        from .enrich import Cancelled
+        if kind in self._running:
+            return {"error": f"'{kind}' 작업이 이미 진행 중입니다({self._running[kind]} 시작)"}
+        def job():
+            t0 = time.time()
+            self._running[kind] = datetime.datetime.now().strftime("%H:%M:%S")
+            self.log.debug(f"[{kind}] 시작")
+            try:
+                r = fn()
+                self.log.debug(f"[{kind}] 완료 {time.time() - t0:.1f}초: {json.dumps(r, ensure_ascii=False, default=str)[:300]}")
+                self._done(kind, r if isinstance(r, dict) else {"result": r})
+            except Cancelled:
+                self.log(f"[{kind}] 중단됨"); self._done(kind, {"cancelled": True})
+            except SystemExit as e:
+                self.log.error(f"[{kind}] {e}"); self._done(kind, {"error": str(e)})
+            except Exception as e:  # noqa: BLE001
+                self.log.exception(f"[{kind}] 실패 ({time.time() - t0:.1f}초)", e)
+                msg = "".join(traceback.format_exception_only(type(e), e)).strip()
+                if capture:
+                    try:
+                        from . import kolis_ui
+                        cap = kolis_ui.capture_failure(kolis_ui.Log(self._ui_log), f"{kind}: {msg}")
+                        if cap.get("shot"):
+                            msg += f"  [캡처: {Path(cap['shot']).name}]"
+                    except Exception:  # noqa: BLE001
+                        pass
+                self._done(kind, {"error": msg})
+            finally:
+                self._running.pop(kind, None)
+        threading.Thread(target=job, daemon=True, name=f"job-{kind}").start()
+        return {"started": True}
+
+    def diagnose(self) -> dict:
+        """진단: 환경, 진행 중 작업, KOLIS 창 상태(Edge·팝업·대화상자), 최근 로그."""
+        from .logutil import tail, log_path
+        out = {"env": self.check_env(), "running": dict(self._running), "log_path": str(log_path()), "log_tail": tail(40), "kolis": {}}
+        try:
+            from . import kolis_ui
+            from pywinauto import Desktop
+            edge = [w.window_text()[:60] for w in Desktop(backend="uia").windows() if w.class_name() == "Chrome_WidgetWin_1" and ("납본" in w.window_text() or "통합자료관리" in w.window_text())]
+            out["kolis"] = {"edge": edge, "popup": bool(kolis_ui.popup_window()), "file_dialog": bool(kolis_ui.file_dialog()),
+                            "confirm": bool(kolis_ui.confirm_dialog_now()),
+                            "upload_popup": any(w.class_name() == "Alternate Modal Top Most" for w in Desktop(backend="uia").windows())}
+        except Exception as e:  # noqa: BLE001
+            out["kolis"] = {"error": str(e)}
+        return out
+
+    def status(self, folder: str) -> dict:
+        """작품별 단계 현황: 파일 증거 + 상태 기록을 합쳐 단계마다 done/evidence/when."""
+        from .rename_files import is_done as _rd
+        from .enrich import thumbs_done
+        from .common import find_manifest, list_images
+        f = Path(folder); st = self.load_state(folder)
+        steps = []
+        def add(key, label, done, evidence="", when=""):
+            steps.append({"key": key, "label": label, "done": bool(done), "evidence": evidence, "when": when or (st.get(key) or {}).get("done_at", "")})
+        ms = next((p for p in f.iterdir() if p.is_dir() and p.name in ("원고", "원문")), None) if f.is_dir() else None
+        th = next((p for p in f.iterdir() if p.is_dir() and "썸네일" in p.name), None) if f.is_dir() else None
+        eps = [p for p in ms.iterdir() if p.is_dir()] if ms else []
+        import re as _re
+        def eight(p):   # 도구 기록이 없어도(직원 도구로 바꾼 경우) 파일이 전부 8자리 숫자면 완료로 본다
+            imgs = list_images(p)
+            return bool(imgs) and all(_re.fullmatch(r"\d{8}", q.stem) for q in imgs)
+        n_ok = sum(1 for p in eps if _rd(p) or eight(p))
+        add("manuscript", "원고 파일명", eps and n_ok == len(eps), f"{n_ok}/{len(eps)} 폴더")
+        add("thumbs", "썸네일 파일명", th and thumbs_done(th), th.name if th else "썸네일 폴더 없음")
+        xlsx = [p for p in f.glob("*.xlsx") if "기초메타데이터" in p.name and "반입용" not in p.name] if f.is_dir() else []
+        en = self._paths(xlsx[0]) if xlsx else (None, None)
+        add("enrich", "기초메타데이터 보완", en[0] and en[0].exists(), str(en[0]) if en[0] and en[0].exists() else "")
+        cv = (st.get("convert") or {}).get("out", "")
+        add("convert", "반입용 엑셀", cv and Path(cv).exists(), cv)
+        add("kolis_submit", "KOLIS 반입", bool(st.get("kolis_submit")), (st.get("kolis_submit") or {}).get("message", ""))
+        ex = (st.get("export") or {})
+        add("export", "전체출력", ex.get("file") and Path(ex["file"]).exists(), f"접수번호 {ex.get('receipt', '')} {ex.get('count', '')}건" if ex else "")
+        add("cnts", "폴더명 CNTS", ms and find_manifest(ms, "cnts", "cnts_manifest.json") is not None and eps and all(p.name.startswith("CNTS-") for p in eps),
+            f"{sum(1 for p in eps if p.name.startswith('CNTS-'))}/{len(eps)} 폴더")
+        warns = []
+        if ex.get("count") and (st.get("convert") or {}).get("rows") and int(ex["count"]) != int(st["convert"]["rows"]):
+            warns.append(f"반입 건수 {ex['count']} ≠ 반입용 행 수 {st['convert']['rows']}")
+        return {"steps": steps, "warnings": warns, "memo": st.get("memo", "")}
 
     def pick_folder(self) -> str:
         r = self._window.create_file_dialog(webview.FOLDER_DIALOG)
@@ -111,13 +204,7 @@ class Api:
     # ---------- 1. 작품 폴더 읽기 ----------
     def scan_folder_async(self, folder: str) -> dict:
         """폴더 읽기를 스레드로(원고 수백 장 세는 데 몇 초). 끝나면 onDone('scan', 결과)."""
-        def job():
-            try:
-                self._done("scan", self.scan_folder(folder))
-            except Exception as e:  # noqa: BLE001
-                self._done("scan", {"error": "".join(traceback.format_exception_only(type(e), e)).strip()})
-        threading.Thread(target=job, daemon=True).start()
-        return {"started": True}
+        return self._run("scan", lambda: self.scan_folder(folder))
 
     def scan_folder(self, folder: str) -> dict:
         from .enrich import read_sheet
@@ -230,19 +317,11 @@ class Api:
                     jpath.write_text(json.dumps({k: v for k, v in info.items() if k != "_raw"}, ensure_ascii=False, indent=1), encoding="utf-8")
                 filled = apply(src, info, out)
                 self._log("채운 칸: " + (", ".join(f"{k} {v}" for k, v in filled.items()) or "없음"))
-                self._done("enrich", {"out": str(out), "json": str(jpath), "filled": filled,
-                                      "info": {k: v for k, v in info.items() if k != "_raw"}, "review": self._review(info, filled)})
-            except Cancelled:
-                self._log("중단했습니다."); self._done("enrich", {"cancelled": True})
-            except SystemExit as e:
-                self._log("오류: " + str(e)); self._done("enrich", {"error": str(e)})
-            except Exception as e:  # noqa: BLE001
-                self._log("오류: " + "".join(traceback.format_exception_only(type(e), e)).strip())
-                self._done("enrich", {"error": str(e)})
+                return {"out": str(out), "json": str(jpath), "filled": filled,
+                        "info": {k: v for k, v in info.items() if k != "_raw"}, "review": self._review(info, filled)}
             finally:
                 self._job = {}
-        threading.Thread(target=job, daemon=True).start()
-        return {"started": True, "out": str(out)}
+        return self._run("enrich", job)
 
     def cancel(self) -> dict:
         self._job["cancel"] = True
@@ -299,7 +378,6 @@ class Api:
         from .common import list_images
         r = Path(root)
         def job():
-            try:
                 folders = [p for p in sorted(r.iterdir()) if p.is_dir() and list_images(p)] or ([r] if list_images(r) else [])
                 total = len(folders); nfiles = 0; skipped = 0
                 for i, p in enumerate(folders, 1):
@@ -309,11 +387,8 @@ class Api:
                     nfiles += len(done)
                     if i % 5 == 0 or i == total:
                         self._log(f"  [{i}/{total}] {p.name}: {len(done)}장 변경 (누계 {nfiles}장)")
-                self._done("manuscript", {"folders": total - skipped, "files": nfiles, "skipped": skipped})
-            except Exception as e:  # noqa: BLE001
-                self._done("manuscript", {"error": str(e)})
-        threading.Thread(target=job, daemon=True).start()
-        return {"started": True}
+                return {"folders": total - skipped, "files": nfiles, "skipped": skipped}
+        return self._run("manuscript", job)
 
     def manuscript_undo(self, root: str) -> dict:
         from .rename_files import undo, is_done
@@ -346,9 +421,12 @@ class Api:
         out = Path(out_name) if Path(out_name).is_absolute() else self._work_dir / out_name   # 찾아보기로 고른 전체 경로도 허용
         out.parent.mkdir(parents=True, exist_ok=True)
         try:
+            from .convert_import import verify
             n, flags = convert(Path(pub_xlsx), Path(template) if template else TEMPLATE_83, out,
                                Path(root) if root else None, None, Path(work_json) if work_json else None)
-            return {"out": str(out), "rows": n, "flags": flags}
+            v = verify(out, n)
+            self.log(f"반입용 생성: {out.name} {n}행, 노란 셀 {flags}" + (" / 경고: " + "; ".join(v["warnings"]) if v["warnings"] else ""))
+            return {"out": str(out), "rows": n, "flags": flags, "verify": v}
         except Exception as e:  # noqa: BLE001
             return {"error": "".join(traceback.format_exception_only(type(e), e)).strip()}
 
@@ -356,15 +434,7 @@ class Api:
     def kolis_prepare(self, xlsx: str, note: str) -> dict:
         """로그인된 Edge(IE 모드)에서 납본자료접수 → 일괄반입 → 확인 → 비고·첨부까지. '반입'은 누르지 않는다."""
         from . import kolis_ui
-        def job():
-            try:
-                r = kolis_ui.prepare_batch_import(note, Path(xlsx), kolis_ui.Log(self._log))
-                self._done("kolis", r)
-            except Exception as e:  # noqa: BLE001
-                self._log("오류: " + "".join(traceback.format_exception_only(type(e), e)).strip())
-                self._done("kolis", {"error": str(e)})
-        threading.Thread(target=job, daemon=True).start()
-        return {"started": True}
+        return self._run("kolis", lambda: kolis_ui.prepare_batch_import(note, Path(xlsx), kolis_ui.Log(self._ui_log)), capture=True)
 
     def kolis_submit(self, yes: str) -> dict:
         """'반입' 클릭. 화면에서 YES 를 입력받아 넘긴다(직원 동의)."""
@@ -375,26 +445,13 @@ class Api:
                 return {"error": "일괄반입 팝업이 열려 있지 않습니다"}
         except Exception as e:  # noqa: BLE001
             return {"error": str(e)}
-        def job():
-            try:
-                r = kolis_ui.submit(pop, yes, kolis_ui.Log(self._log))
-                self._done("kolis_submit", r)
-            except Exception as e:  # noqa: BLE001
-                self._log("오류: " + str(e)); self._done("kolis_submit", {"error": str(e)})
-        threading.Thread(target=job, daemon=True).start()
-        return {"started": True}
+        return self._run("kolis_submit", lambda: kolis_ui.submit(pop, yes, kolis_ui.Log(self._ui_log)), capture=True)
 
     # ---------- 6. 반입 결과 → 폴더명 CNTS ----------
     def export_download(self, receipt: str = "") -> dict:
         """KOLIS 로 이동 → (접수번호 찾기) → '전체출력' → 알림 막대 '저장' → work/접수번호 N.xls. 스레드, 끝나면 onDone('export')."""
         from . import kolis_ui
-        def job():
-            try:
-                self._done("export", kolis_ui.download_export(kolis_ui.Log(self._log), self._work_dir, receipt))
-            except Exception as e:  # noqa: BLE001
-                self._log("오류: " + str(e)); self._done("export", {"error": str(e)})
-        threading.Thread(target=job, daemon=True).start()
-        return {"started": True}
+        return self._run("export", lambda: kolis_ui.download_export(kolis_ui.Log(self._ui_log), self._work_dir, receipt), capture=True)
 
     def cnts_preview(self, export_file: str, root: str) -> dict:
         from .cnts_folders import plan
