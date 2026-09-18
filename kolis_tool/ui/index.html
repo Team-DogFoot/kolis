@@ -104,6 +104,15 @@
     <div class="row"><button class="secondary" onclick="cntsPreview()">미리보기</button><button onclick="cntsApply()">폴더명 변경</button><button class="secondary" onclick="cntsUndo()">되돌리기</button><span id="c-out" class="muted"></span></div>
     <div id="c-list" class="muted" style="font-size:12px"></div>
   </section>
+
+  <section class="card"><h2><span class="step">7</span> 썸네일 등록 반복 <span class="warn" style="font-size:12px">직원 입회 아래에서만</span></h2>
+    <p class="muted" style="margin:0 0 6px">원문일괄등록이 끝난 뒤. KOLIS 납본자료접수에서 접수번호로 찾기 → 전체 선택 → <b>수정</b> 팝업을 연 상태에서 실행합니다. 지금 열린 건부터 '다음'으로 넘기며 건마다: 비정상 행 삭제·저장 → 열람 행 체크 → 원문등록(썸네일, 유형 검증) → 저장. 예상과 다르면 그 자리에서 멈춥니다.</p>
+    <div class="row"><input type="text" id="t-xlsx" placeholder="반입용 엑셀 (편/권차 ↔ 썸네일 파일명 기준, 4단계 결과가 자동으로 들어감)"><button class="secondary" onclick="pickInto('t-xlsx')">찾아보기</button></div>
+    <div class="row"><input type="text" id="t-dir" placeholder="썸네일 폴더 (1단계에서 자동으로 들어감)"><button class="secondary" onclick="pickFolderInto('t-dir')">찾아보기</button></div>
+    <div class="row"><label>건수 <input type="text" id="t-count" value="3" style="max-width:80px"></label><span class="muted">0 = 편/권차 1까지 끝까지</span>
+      <button id="btn-treg" onclick="thumbsRegister()">등록 시작</button><button id="btn-tcancel" class="danger" onclick="cancelJob()" hidden>중단</button><span id="t-out" class="muted"></span></div>
+    <div id="t-list" class="muted" style="font-size:12px;max-height:160px;overflow:auto"></div>
+  </section>
 </div>
 <div><div id="log">준비됨.\n</div></div>
 </main>
@@ -136,7 +145,7 @@ function restoreFromState(){
   const st = S.state || {};
   $('memo').value = st.memo || '';
   if(st.enrich && st.enrich.out){ S.enrichedXlsx = st.enrich.out; S.workJson = st.enrich.json || ''; $('c-xlsx').value = st.enrich.out; $('btn-conv').disabled=false; }
-  if(st.convert && st.convert.out){ $('k-xlsx').value = st.convert.out; $('out-name').value = st.convert.out; $('conv-out').innerHTML = `<span class="muted">지난 결과 ${st.convert.done_at}: ${st.convert.rows}행, 노란 셀 ${st.convert.flags}개 → ${st.convert.out}</span>`; }
+  if(st.convert && st.convert.out){ $('k-xlsx').value = st.convert.out; $('t-xlsx').value = st.convert.out; $('out-name').value = st.convert.out; $('conv-out').innerHTML = `<span class="muted">지난 결과 ${st.convert.done_at}: ${st.convert.rows}행, 노란 셀 ${st.convert.flags}개 → ${st.convert.out}</span>`; }
   if(st.kolis_prepare){ $('k-note').value = st.kolis_prepare.note || ''; $('k-out').innerHTML = `<span class="muted">마지막 기록 ${st.kolis_prepare.done_at}: 반입 전 준비까지 함${st.kolis_submit?` · 반입 클릭 ${st.kolis_submit.done_at}`:''} — 실제 KOLIS 화면을 확인하고 진행</span>`; }
   if(st.export && st.export.file){ $('x-file').value = st.export.file; $('x-receipt').value = st.export.receipt || ''; $('x-out').innerHTML = `<span class="muted">지난 기록 ${st.export.done_at}: 접수번호 ${st.export.receipt}, ${st.export.count}건</span>`; }
   if(st.cnts){ $('c-out').innerHTML = `<span class="muted">지난 기록 ${st.cnts.done_at}: ${st.cnts.count}개 폴더 → CNTS</span>`; }
@@ -163,6 +172,17 @@ window.addEventListener('pywebviewready', async () => {
   if(!e.claude) appendLog('클로드코드가 없어 2단계(보완)를 실행할 수 없습니다. 설치 후 터미널에서 claude 를 한 번 실행해 로그인하세요.');
 });
 async function pickFolder(){ const f = await pywebview.api.pick_folder(); if(f){ $('folder').value=f; scan(); } }
+async function thumbsRegister(){
+  const x=$('t-xlsx').value.trim(), d=$('t-dir').value.trim();
+  if(!x||!d){ $('t-out').innerHTML='<span class="bad">반입용 엑셀과 썸네일 폴더가 필요합니다</span>'; return; }
+  $('btn-treg').disabled=true; $('btn-tcancel').hidden=false; $('t-list').innerHTML=''; $('t-out').innerHTML='<span class="spin"></span> 진행 중… (Edge 창을 건드리지 마세요)';
+  await pywebview.api.thumbs_register(x, d, parseInt($('t-count').value||'0'));
+}
+function onThumbProgress(r){
+  const cls = r.status==='done'?'ok':(r.status==='already'?'muted':'bad');
+  $('t-list').innerHTML += `<div><span class="${cls}">${r.status==='done'?'✓':(r.status==='already'?'–':'✗')}</span> ${r.i+1}. 편/권차 ${r.part||''} ${r.thumb||''} ${r.sec?`(${r.sec}초)`:''} ${r.error||''}</div>`;
+  $('t-list').scrollTop = $('t-list').scrollHeight;
+}
 async function pickFolderInto(id){ const f = await pywebview.api.pick_folder(); if(f) $(id).value=f; }
 async function exportDownload(){
   $('x-out').innerHTML='<span class="spin"></span> KOLIS 이동 → 찾기 → 전체출력 → 저장 중… (Edge 창을 건드리지 마세요)';
@@ -209,7 +229,7 @@ function onScan(r){
   $('btn-enrich').disabled = !r.xlsx; $('btn-thp').disabled = $('btn-thu').disabled = !r.thumbs; $('btn-tha').disabled = !r.thumbs || r.thumbs_done;
   $('btn-conv').disabled = !r.xlsx;
   $('btn-msp').disabled = $('btn-msu').disabled = !r.manuscripts; $('btn-msa').disabled = !r.manuscripts || r.manuscripts_done;
-  $('e-xlsx').value = r.xlsx; $('c-xlsx').value = r.xlsx; $('x-root').value = r.manuscripts;
+  $('e-xlsx').value = r.xlsx; $('c-xlsx').value = r.xlsx; $('x-root').value = r.manuscripts; $('t-dir').value = r.thumbs;
   $('out-name').value = `기초메타데이터(26웹툰대행5차-)_코리스 반입용_${r.title.replace(/\s/g,'')}.xlsx`;
   appendLog(`폴더 읽음: ${r.title}, ${r.rows}행, 회차 ${r.episodes}, 썸네일 ${r.thumb_files}. 비어 있는 열: ${r.empty_cols.join(', ')||'없음'}`);
   restoreFromState(); refreshSaved(); loadRecent();
@@ -242,6 +262,14 @@ async function kolisSubmit(){
 function onDone(kind, p){
   if(kind==='scan'){ onScan(p); return; }
   if(kind==='export'){ onExport(p); return; }
+  if(kind==='thumbs_register'){
+    $('btn-treg').disabled=false; $('btn-tcancel').hidden=true;
+    if(p.error){ $('t-out').innerHTML=`<span class="bad">${p.error}</span>`; return; }
+    if(p.cancelled){ $('t-out').innerHTML='<span class="warn">중단됨</span>'; return; }
+    $('t-out').innerHTML = `${p.stopped?'<span class="bad">멈춤</span>':'<span class="ok">종료</span>'} 완료 ${p.done}건, 건너뜀 ${p.skipped}건`;
+    saveState({thumbs_register:{done:(S.state.thumbs_register||{}).done ? (S.state.thumbs_register.done + p.done) : p.done}});
+    return;
+  }
   if(kind==='kolis_submit'){
     if(p.error){ $('k-sub').innerHTML=`<span class="bad">${p.error}</span>`; return; }
     $('k-sub').innerHTML = p.ok ? `<span class="ok">${p.message}</span> — KOLIS 목록에서 접수번호를 확인하세요` : `<span class="warn">${p.message||'결과 메시지 없음'}</span>`;
@@ -302,7 +330,7 @@ async function convert(){
   const v = r.verify || {warnings:[]};
   $('conv-out').innerHTML = `${r.rows}행, 확인 필요 셀 ${r.flags}개 → <a href="#" onclick="pywebview.api.open_path('${r.out.replace(/\\/g,'\\\\')}');return false">${r.out}</a>` + (v.warnings.length ? '<div class="warnbox">' + v.warnings.map(w=>`⚠ ${w}`).join('<br>') + '</div>' : ' <span class="ok">검증 통과(필수 열 채움·행 수 일치·권차 중복 없음)</span>');
   appendLog(`반입용 생성: ${r.out} (${r.rows}행, 노란 셀 ${r.flags})`);
-  $('k-xlsx').value = r.out;
+  $('k-xlsx').value = r.out; $('t-xlsx').value = r.out;
   saveState({convert:{out:r.out, rows:r.rows, flags:r.flags}});
 }
 </script>

@@ -476,6 +476,20 @@ class Api:
         except Exception as e:  # noqa: BLE001
             return {"error": str(e)}
 
+    # ---------- 7. 썸네일 등록 반복 ----------
+    def thumbs_register(self, import_xlsx: str, thumb_dir: str, count: int = 0) -> dict:
+        from . import kolis_thumbs, kolis_ui
+        self._job = {"cancel": False}; handle = self._job
+        def prog(i, r):
+            if self._window:
+                self._window.evaluate_js(f"onThumbProgress({json.dumps({'i': i, **r}, ensure_ascii=False)})")
+        def job():
+            try:
+                return kolis_thumbs.run(Path(import_xlsx), Path(thumb_dir), int(count or 0), kolis_ui.Log(self._ui_log), handle, prog)
+            finally:
+                self._job = {}
+        return self._run("thumbs_register", job, capture=True)
+
     def open_path(self, path: str) -> bool:
         import os
         os.startfile(path)  # noqa: S606
