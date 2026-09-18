@@ -484,10 +484,19 @@ class Api:
             if self._window:
                 self._window.evaluate_js(f"onThumbProgress({json.dumps({'i': i, **r}, ensure_ascii=False)})")
         def job():
+            # KOLIS 조작 중 프로그램 창이 팝업 버튼을 덮으면 클릭이 프로그램 창에 떨어진다 → 실행 중 최소화, 끝나면 복원
+            try:
+                self._window.minimize()
+            except Exception:  # noqa: BLE001
+                pass
             try:
                 return kolis_thumbs.run(Path(import_xlsx), Path(thumb_dir), int(count or 0), kolis_ui.Log(self._ui_log), handle, prog, receipt)
             finally:
                 self._job = {}
+                try:
+                    self._window.restore()
+                except Exception:  # noqa: BLE001
+                    pass
         return self._run("thumbs_register", job, capture=True)
 
     def open_path(self, path: str) -> bool:

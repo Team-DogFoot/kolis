@@ -31,7 +31,13 @@ def _desktop():
 
 
 def _focus(win):
-    """클릭 전에 KOLIS 팝업을 앞으로. 프로그램 창이 앞에 있으면 클릭이 팝업에 안 닿는다(2026-09-19 확인)."""
+    """클릭 전에 Edge 본창 → KOLIS 팝업 순으로 앞으로. 프로그램 창이 버튼을 덮고 있으면 클릭이 프로그램 창에 떨어진다(2026-09-19 확인).
+    앱에서는 실행 중 프로그램 창을 최소화해 이 문제를 원천 차단한다(app.thumbs_register)."""
+    try:
+        from . import kolis_ui as k
+        k.edge_window(lambda m: None).set_focus(); time.sleep(0.15)
+    except Exception:  # noqa: BLE001
+        pass
     try:
         win.set_focus(); time.sleep(0.25)
     except Exception:  # noqa: BLE001
