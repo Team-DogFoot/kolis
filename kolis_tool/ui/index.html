@@ -109,7 +109,7 @@
     <p class="muted" style="margin:0 0 6px">원문일괄등록이 끝난 뒤. KOLIS 납본자료접수에서 접수번호로 찾기 → 전체 선택 → <b>수정</b> 팝업을 연 상태에서 실행합니다. 지금 열린 건부터 '다음'으로 넘기며 건마다: 비정상 행 삭제·저장 → 열람 행 체크 → 원문등록(썸네일, 유형 검증) → 저장. 예상과 다르면 그 자리에서 멈춥니다.</p>
     <div class="row"><input type="text" id="t-xlsx" placeholder="반입용 엑셀 (편/권차 ↔ 썸네일 파일명 기준, 4단계 결과가 자동으로 들어감)"><button class="secondary" onclick="pickInto('t-xlsx')">찾아보기</button></div>
     <div class="row"><input type="text" id="t-dir" placeholder="썸네일 폴더 (1단계에서 자동으로 들어감)"><button class="secondary" onclick="pickFolderInto('t-dir')">찾아보기</button></div>
-    <div class="row"><label>건수 <input type="text" id="t-count" value="3" style="max-width:80px"></label><span class="muted">0 = 편/권차 1까지 끝까지</span>
+    <div class="row"><label>건수 <input type="text" id="t-count" value="0" style="max-width:80px"></label><span class="muted">0 = 끝까지(편/권차 1에서 자동 종료). 시험용으로만 숫자 지정</span>
       <button id="btn-treg" onclick="thumbsRegister()">등록 시작</button><button id="btn-tcancel" class="danger" onclick="cancelJob()" hidden>중단</button><span id="t-out" class="muted"></span></div>
     <div id="t-list" class="muted" style="font-size:12px;max-height:160px;overflow:auto"></div>
   </section>
