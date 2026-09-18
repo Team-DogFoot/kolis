@@ -153,17 +153,19 @@ async function exportDownload(){
   saveState({export:{file:r.file, receipt:r.receipt, count:r.count}});
 }
 async function cntsPreview(){
+  $('c-list').innerHTML='<span class="spin"></span> 전체출력 파일 읽고 폴더 짝 맞추는 중…';
   const r = await pywebview.api.cnts_preview($('x-file').value, $('x-root').value);
   if(r.error){ $('c-list').innerHTML=`<span class="bad">${r.error}</span>`; return; }
   $('c-list').innerHTML = `접수번호 ${r.receipt} · ${r.title} · ${r.count}개 폴더<br>` + r.pairs.map(p=>`${p[0]} → ${p[1]} (${p[2]})`).join('<br>');
 }
 async function cntsApply(){
   if(!confirm('회차 폴더 이름을 콘텐츠ID로 바꿉니다. 되돌리기 가능합니다. 진행할까요?')) return;
+  $('c-out').innerHTML='<span class="spin"></span> 폴더명 변경 중…';
   const r = await pywebview.api.cnts_apply($('x-file').value, $('x-root').value);
   $('c-out').innerHTML = r.error ? `<span class="bad">${r.error}</span>` : `<span class="ok">완료</span> ${r.count}개 폴더 → CNTS (접수번호 ${r.receipt})`;
   if(!r.error) saveState({cnts:{count:r.count, receipt:r.receipt}});
 }
-async function cntsUndo(){ const r = await pywebview.api.cnts_undo($('x-root').value); $('c-out').innerHTML = r.error ? `<span class="bad">${r.error}</span>` : `${r.count}개 되돌림`; }
+async function cntsUndo(){ $('c-out').innerHTML='<span class="spin"></span> 되돌리는 중…'; const r = await pywebview.api.cnts_undo($('x-root').value); $('c-out').innerHTML = r.error ? `<span class="bad">${r.error}</span>` : `${r.count}개 되돌림`; }
 async function pickInto(id, pattern){ const f = await pywebview.api.pick_file(pattern||'Excel (*.xlsx)'); if(f){ $(id).value=f; if(id==='e-xlsx'){ S.xlsx=f; $('btn-enrich').disabled=false; refreshSaved(); } if(id==='c-xlsx'){ S.enrichedXlsx=f; $('btn-conv').disabled=false; } } }
 async function pickSave(){ const f = await pywebview.api.pick_save($('out-name').value || '반입용.xlsx'); if(f) $('out-name').value=f; }
 function resetAll(){ if(confirm('화면을 처음 상태로 되돌립니다. 만들어 둔 파일은 지워지지 않습니다.')) location.reload(); }
