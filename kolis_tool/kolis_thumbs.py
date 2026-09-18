@@ -30,6 +30,14 @@ def _desktop():
     return Desktop(backend="uia")
 
 
+def _focus(win):
+    """클릭 전에 KOLIS 팝업을 앞으로. 프로그램 창이 앞에 있으면 클릭이 팝업에 안 닿는다(2026-09-19 확인)."""
+    try:
+        win.set_focus(); time.sleep(0.25)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def edit_popup():
     from . import kolis_ui as k
     for w in _desktop().windows():
@@ -200,7 +208,7 @@ def process_one(mapping: dict, thumb_dir: Path, log: UiLog, go_next: bool, expec
     if not ie:
         raise Stop("수정 팝업이 없습니다(납본자료접수에서 전체 선택 → 수정 으로 여세요)")
     if go_next:
-        k._button(ie, "다음").click_input()
+        _focus(w); k._button(ie, "다음").click_input()
         prev = expect_part
         wait(lambda: _norm_part(k._value(k._edit(edit_popup()[1], "편/권차"))) not in ("", _norm_part(prev)), 15, "'다음' 후 편/권차 변경", 0.3)
         d, t = dialog_text()
@@ -224,16 +232,16 @@ def process_one(mapping: dict, thumb_dir: Path, log: UiLog, go_next: bool, expec
     if bad:
         for i in range(len(rows)):
             set_check(rows[i], i in bad, x_check)
-        k._button(edit_popup()[1], "원문삭제").click_input()
+        _focus(edit_popup()[0]); k._button(edit_popup()[1], "원문삭제").click_input()
         confirm("삭제하시겠습니까")
         d2, t2 = dialog_text()
         if d2:
             d2.child_window(title="확인", class_name="Button").click_input(); time.sleep(0.3)
-        k._button(edit_popup()[1], "저장").click_input()
+        _focus(edit_popup()[0]); k._button(edit_popup()[1], "저장").click_input()
         confirm("저장하시겠습니까"); confirm("저장 되었습니다")
         rows = wait(lambda: (lambda rr: rr if len(rr) == 1 else None)(file_rows(edit_popup()[1])), 10, "삭제 후 목록 1행")
         log(f"비정상 {len(bad)}행 삭제·저장")
-    set_check(rows[0], True, x_check, "열람")
+    _focus(edit_popup()[0]); set_check(rows[0], True, x_check, "열람")
     # 원문등록
     k._button(edit_popup()[1], "원문등록").click_input()
     uie = wait(upload_ie, 15, "등록 팝업")
@@ -252,7 +260,7 @@ def process_one(mapping: dict, thumb_dir: Path, log: UiLog, go_next: bool, expec
     k._button(upload_ie(), "확인").click_input()
     confirm("등록 하시겠습니까")
     wait(lambda: any(r.get("type") == "썸네일" and r.get("name") == thumb.name for r in file_rows(edit_popup()[1])), 10, "목록에 썸네일 행")
-    k._button(edit_popup()[1], "저장").click_input()
+    _focus(edit_popup()[0]); k._button(edit_popup()[1], "저장").click_input()
     confirm("저장하시겠습니까"); confirm("저장 되었습니다")
     final = wait(lambda: (lambda rr: rr if any(x.get("type") == "썸네일" and x.get("date") for x in rr) else None)(file_rows(edit_popup()[1])), 10, "저장 후 썸네일 행 등록일")
     log(f"완료 편/권차 {part}: {[(x.get('type'), x.get('name'), x.get('date')) for x in final]}")
