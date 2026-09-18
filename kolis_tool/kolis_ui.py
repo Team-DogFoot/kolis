@@ -68,15 +68,85 @@ def _edit(container, name: str):
     return None
 
 
+def _link(container, name: str, pick: str = "first"):
+    """이름의 하이퍼링크. pick='right' 면 같은 이름 중 가장 오른쪽(온라인 패널)."""
+    key = re.sub(r"\s", "", name)
+    els = [e for e in container.descendants(control_type="Hyperlink") if re.sub(r"\s", "", e.window_text()) == key and e.rectangle().width() > 0]
+    if not els:
+        return None
+    return max(els, key=lambda e: e.rectangle().left) if pick == "right" else els[0]
+
+
 def goto_recet(win, log=print):
-    """주소창으로 납본자료접수 화면 이동(IE 모드 사이트 목록에 있어 IE 모드 유지)."""
+    """메뉴를 눌러 납본자료접수 화면으로 이동: 수집 → 납본 → (온라인 › 단행) 납본자료접수.
+    주소를 직접 입력하면 로그인이 풀리므로(2026-09-18 확인) 반드시 메뉴 경로로 간다."""
+    try:
+        if _button(ie_content(win), "일괄반입"):
+            log("이미 납본자료접수 화면"); return
+    except RuntimeError:
+        pass
+    win.set_focus(); time.sleep(0.3)
+    dismiss_notices(log)
     ie = ie_content(win)
-    if _button(ie, "일괄반입"):
-        log("이미 납본자료접수 화면"); return
-    addr = _wait(lambda: win.child_window(title="주소 표시줄 및 검색 창", control_type="Edit").wrapper_object(), 5, what="주소창")
-    addr.click_input(); addr.type_keys("^a"); addr.type_keys(RECET_URL + "{ENTER}", with_spaces=True)
-    _wait(lambda: _button(ie_content(win), "일괄반입"), 30, what="납본자료접수 화면의 '일괄반입' 버튼")
+    top = _wait(lambda: _link(ie_content(win), "수집"), 15, what="상단 메뉴 '수집'")
+    top.click_input(); log("메뉴 '수집' 클릭")
+    sub = _wait(lambda: _link(ie_content(win), "납본"), 15, what="'수집' 하위 '납본'")
+    sub.click_input(); log("메뉴 '납본' 클릭")
+    # 수집>납본 화면: 왼쪽 오프라인, 오른쪽 온라인 패널에 같은 이름 '납본자료접수' 가 있음 → 오른쪽(온라인)
+    def online_recet():
+        e = _link(ie_content(win), "납본자료접수", pick="right")
+        links = [x for x in ie_content(win).descendants(control_type="Hyperlink") if re.sub(r"\s", "", x.window_text()) == "납본자료접수" and x.rectangle().width() > 0]
+        return e if len(links) >= 2 else None
+    link = _wait(online_recet, 20, what="온라인 › 단행 › 납본접수 › '납본자료접수' 링크")
+    link.click_input(); log("'납본자료접수'(온라인) 클릭")
+    _wait(lambda: _button(ie_content(win), "일괄반입"), 40, what="납본자료접수 화면의 '일괄반입' 버튼")
     log("납본자료접수 화면 이동 완료")
+
+
+def dismiss_notices(log=print) -> int:
+    """로그인 직후 뜨는 공지 팝업 닫기. 납본자료접수 팝업은 건드리지 않는다.
+    (1) 홈 화면 안의 고정 공지 레이어(Pane id=fixedNotice: 체크박스 '24시간동안 보지 않기' + 버튼 '닫기')
+    (2) 별도 창으로 뜨는 IE 모드 공지."""
+    n = 0
+    try:
+        win = edge_window(lambda m: None)
+        ie = ie_content(win)
+        for pane in ie.descendants(control_type="Pane"):
+            if pane.element_info.automation_id == "fixedNotice" and pane.rectangle().width() > 0:
+                for cb in pane.descendants(control_type="CheckBox"):
+                    if "보지 않기" in cb.window_text():
+                        cb.click_input(); time.sleep(0.2); break
+                b = _button(pane, "닫기")
+                if b:
+                    b.click_input(); n += 1; log(f"공지 레이어 닫음(24시간 보지 않기): {pane.window_text().strip()[:40]}")
+                    time.sleep(0.5)
+    except Exception as e:  # noqa: BLE001
+        log(f"공지 레이어 확인 건너뜀: {e}")
+    for w in _desktop().windows():
+        try:
+            c = w.class_name(); t = w.window_text()
+        except Exception:  # noqa: BLE001
+            continue
+        if c == "Chrome_WidgetWin_1" or "납본자료접수" in t:
+            continue
+        ies = w.descendants(class_name="Internet Explorer_Server") if c != "Chrome_WidgetWin_1" else []
+        if not ies:
+            continue
+        closed = False
+        for name in ("닫기", "확인", "close", "Close"):
+            b = _button(w, name)
+            if b:
+                b.click_input(); closed = True; break
+        if not closed:
+            try:
+                w.close()
+                closed = True
+            except Exception:  # noqa: BLE001
+                pass
+        if closed:
+            n += 1; log(f"공지 팝업 닫음: {t[:40]}")
+            time.sleep(0.5)
+    return n
 
 
 def open_batch_import(win, log=print):
