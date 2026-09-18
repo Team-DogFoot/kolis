@@ -143,13 +143,15 @@ class Api:
         return info
 
     def get_prompt(self) -> dict:
-        from .enrich import current_prompt, RESEARCH_PROMPT, PROMPT_OVERRIDE
-        return {"text": current_prompt(), "is_default": not PROMPT_OVERRIDE.exists(), "default": RESEARCH_PROMPT}
+        """고정 부분(역할·KOLIS 금지·출력 형식)은 보여만 주고, '볼 곳·찾을 것' 부분만 편집."""
+        from .enrich import current_editable, PROMPT_OVERRIDE, build_prompt
+        full = build_prompt("<작품>", "<출판사>", "<ISBN>", "<회차 수>", "<플랫폼 힌트>", "<이용대상 힌트>")
+        return {"text": current_editable(), "is_default": not PROMPT_OVERRIDE.exists(), "full": full}
 
     def save_prompt(self, text: str) -> dict:
-        from .enrich import save_prompt, PROMPT_OVERRIDE
+        from .enrich import save_editable, PROMPT_OVERRIDE
         try:
-            t = save_prompt(text)
+            t = save_editable(text)
             return {"ok": True, "is_default": not PROMPT_OVERRIDE.exists(), "text": t}
         except ValueError as e:
             return {"error": str(e)}
@@ -173,7 +175,7 @@ class Api:
         return out, out.with_suffix(".work.json")
 
     # ---------- 2. 기초메타데이터 보완 ----------
-    def enrich(self, xlsx: str, reuse: bool = False, runner: str = "claude") -> dict:
+    def enrich(self, xlsx: str, reuse: bool = False, extra: str = "", runner: str = "claude") -> dict:
         from .enrich import research, apply, read_sheet, Cancelled
         from .platforms import gather, merge_into
         src = Path(xlsx)
@@ -194,7 +196,7 @@ class Api:
                     res: dict = {}
                     def t_research():
                         try:
-                            res["info"] = research(src, jpath, runner, log=self._log, handle=handle)
+                            res["info"] = research(src, jpath, runner, log=self._log, handle=handle, extra=extra)
                         except BaseException as e:  # noqa: BLE001
                             res["err"] = e
                     def t_platforms():

@@ -54,10 +54,12 @@
   <section class="card"><h2><span class="step">3</span> 기초메타데이터 보완</h2>
     <p class="muted" style="margin:0 0 6px">클로드가 웹에서 작품 정보를 조사(판단)하고, 동시에 Edge 가 플랫폼 페이지에서 회차별 공개일·가격을 읽습니다. 보통 3~5분. 진행은 오른쪽 로그에 실시간으로 나옵니다.</p>
     <div class="row"><input type="text" id="e-xlsx" placeholder="출판사 기초메타데이터 엑셀 (1단계에서 자동으로 들어감)"><button class="secondary" onclick="pickInto('e-xlsx')">찾아보기</button></div>
-    <details id="prompt-box" style="margin:6px 0"><summary class="muted" style="cursor:pointer">조사 프롬프트 편집 <span id="prompt-state"></span></summary>
-      <p class="muted" style="margin:6px 0;font-size:12px">클로드에게 보내는 조사 지시문입니다. {title} {publisher} {isbn} {n} {platform_hint} {audience_hint} 자리표시자와 마지막 ```json 출력 형식은 남겨야 합니다. 저장하면 다음 "새로 웹 조사"부터 적용됩니다.</p>
-      <textarea id="prompt-text" rows="14" style="width:100%;font:12px/1.5 Consolas,monospace;border:1px solid var(--line);border-radius:6px;padding:8px"></textarea>
+    <div class="row"><input type="text" id="extra" placeholder="이번 작품 추가 지시 (선택, 저장 안 됨. 예: 봄툰에서 먼저 연재됨 / 리디 등급은 무시)"></div>
+    <details id="prompt-box" style="margin:6px 0"><summary class="muted" style="cursor:pointer">조사 지시 편집 — '볼 곳·찾을 것' 부분 <span id="prompt-state"></span></summary>
+      <p class="muted" style="margin:6px 0;font-size:12px">역할, KOLIS 접근 금지, 작품 정보 자리, 출력 형식, "지어내지 말 것"은 고정이라 바꿀 수 없습니다. 아래 부분만 편집하며 모든 작품에 적용됩니다. 저장하면 다음 "새로 웹 조사"부터.</p>
+      <textarea id="prompt-text" rows="12" style="width:100%;font:12px/1.5 Consolas,monospace;border:1px solid var(--line);border-radius:6px;padding:8px"></textarea>
       <div class="row"><button onclick="savePrompt()">저장</button><button class="secondary" onclick="resetPrompt()">기본값으로</button><span id="prompt-out" class="muted"></span></div>
+      <details><summary class="muted" style="cursor:pointer;font-size:12px">실제로 보내는 전체 지시문 보기(고정 부분 포함)</summary><pre id="prompt-full" class="muted" style="font-size:11px;white-space:pre-wrap;background:#f6f7f9;padding:8px;border-radius:6px"></pre></details>
     </details>
     <div id="saved-box" class="warnbox" hidden style="background:#eef6ff;border-color:#bcd7f5">지난 조사 결과가 있습니다: <b id="saved-when"></b> <span id="saved-sum" class="muted"></span></div>
     <div class="row">
@@ -117,9 +119,9 @@ async function loadRecent(){
   $('recent').innerHTML = '<option value="">최근 작업…</option>' + items.map(i=>`<option value="${i.folder.replace(/"/g,'&quot;')}">${i.title||i.folder} (${i.when})</option>`).join('');
 }
 function openRecent(){ const f = $('recent').value; if(f){ $('folder').value = f; scan(); } }
-async function loadPrompt(){ const p = await pywebview.api.get_prompt(); $('prompt-text').value = p.text; $('prompt-state').textContent = p.is_default ? '(기본값)' : '(편집됨)'; }
-async function savePrompt(){ const r = await pywebview.api.save_prompt($('prompt-text').value); $('prompt-out').innerHTML = r.error ? `<span class="bad">${r.error}</span>` : '<span class="ok">저장됨</span>'; if(!r.error) $('prompt-state').textContent = r.is_default ? '(기본값)' : '(편집됨)'; }
-async function resetPrompt(){ const r = await pywebview.api.save_prompt(''); $('prompt-text').value = r.text; $('prompt-state').textContent='(기본값)'; $('prompt-out').innerHTML='<span class="ok">기본값으로 되돌림</span>'; }
+async function loadPrompt(){ const p = await pywebview.api.get_prompt(); $('prompt-text').value = p.text; $('prompt-full').textContent = p.full; $('prompt-state').textContent = p.is_default ? '(기본값)' : '(편집됨)'; }
+async function savePrompt(){ const r = await pywebview.api.save_prompt($('prompt-text').value); $('prompt-out').innerHTML = r.error ? `<span class="bad">${r.error}</span>` : '<span class="ok">저장됨</span>'; if(!r.error) loadPrompt(); }
+async function resetPrompt(){ await pywebview.api.save_prompt(''); await loadPrompt(); $('prompt-out').innerHTML='<span class="ok">기본값으로 되돌림</span>'; }
 window.addEventListener('pywebviewready', async () => {
   loadRecent(); loadPrompt();
   const e = await pywebview.api.check_env();
@@ -164,7 +166,7 @@ async function refreshSaved(){
 async function enrich(reuse){
   $('btn-enrich').disabled=true; $('btn-reuse').disabled=true; $('btn-cancel').hidden=false; $('review').hidden=true;
   $('enrich-out').innerHTML='<span class="spin"></span> ' + (reuse ? '지난 결과로 채우는 중…' : '웹 조사 중… (3~5분, 오른쪽 로그 참고)');
-  await pywebview.api.enrich($('e-xlsx').value || S.xlsx, !!reuse);
+  await pywebview.api.enrich($('e-xlsx').value || S.xlsx, !!reuse, $('extra').value);
 }
 async function cancelJob(){ await pywebview.api.cancel(); $('btn-cancel').disabled=true; }
 async function kolisPrepare(){

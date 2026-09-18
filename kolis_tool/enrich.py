@@ -21,7 +21,7 @@ from openpyxl.styles import PatternFill
 YELLOW = PatternFill("solid", fgColor="FFFF00")
 
 RESEARCH_PROMPT = """당신은 국립중앙도서관 웹툰 납본 사업의 서지 조사 보조자입니다. 아래 작품의 정보를 웹에서 찾아 JSON 으로만 답하세요.
-KOLIS(도서관 시스템)에는 절대 접근하지 마세요. 플랫폼(카카오페이지·네이버시리즈·리디·봄툰·코미카·레진·카카오웹툰 등)·출판사·웹툰가이드·나무위키를 보세요.
+KOLIS(도서관 시스템)에는 절대 접근하지 마세요.
 
 작품: {title}
 출판사: {publisher}
@@ -29,6 +29,19 @@ ISBN: {isbn}
 회차 수(납본 파일 기준): {n}
 출판사 기재 최초 연재 플랫폼: {platform_hint}
 출판사 기재 이용대상: {audience_hint}
+
+{editable}
+{extra}
+출력 형식: 마지막에 ```json 코드블록 하나로 아래 스키마의 JSON 만.
+{{"title":"", "platform_first":"", "platforms":[{{"name":"", "url_main":"", "url_work":"", "start_date":"YYYYMMDD 또는 빈칸"}}],
+ "authors":[{{"name":"", "role":"글|그림|원작|작화|각색"}}], "genre":"", "rating":"전체|15세|19세", "adult":false,
+ "first_publish_date":"YYYYMMDD", "episodes":[{{"no":1, "date":"YYYYMMDD", "title":"", "price":"", "source":"URL"}}],
+ "completed":true, "total_episodes":0, "price_per_episode":"", "free_episodes":0,
+ "summary":"", "publisher_place":"출판사 소재 시/도(예: 서울) 또는 빈칸", "evidence":["URL — 무엇을 확인했는지"], "notes":"확신이 낮은 항목과 이유"}}
+모르는 값은 빈 문자열/0/false 로 두고 notes 에 적으세요. 지어내지 마세요."""
+
+# 편집 가능한 부분: 어디를 보고 무엇을 찾을지. 역할·KOLIS 금지·출력 형식·지어내지 말 것은 고정(위 RESEARCH_PROMPT).
+EDITABLE_DEFAULT = """볼 곳: 플랫폼(카카오페이지·네이버시리즈·리디·봄툰·코미카·레진·카카오웹툰 등)·출판사 홈페이지·웹툰가이드·나무위키.
 
 찾을 것:
 1. 최초 연재 플랫폼 이름과, 확인되는 모든 서비스 플랫폼(이름, 플랫폼 메인 URL, 이 작품 페이지 URL).
@@ -39,15 +52,7 @@ ISBN: {isbn}
 4. 장르(주제 구분: 로맨스/BL/판타지/소년/드라마 등 플랫폼 표기), 이용등급(전체/15세/19세·성인), 완결 여부, 총 회차.
 5. 회차 가격(원 또는 코인/캐시 단위, 무료 회차 수).
 6. 작품 소개 문구(플랫폼 원문 그대로, 200자 이내).
-7. 각 값의 근거 URL.
-
-출력 형식: 마지막에 ```json 코드블록 하나로 아래 스키마의 JSON 만.
-{{"title":"", "platform_first":"", "platforms":[{{"name":"", "url_main":"", "url_work":"", "start_date":"YYYYMMDD 또는 빈칸"}}],
- "authors":[{{"name":"", "role":"글|그림|원작|작화|각색"}}], "genre":"", "rating":"전체|15세|19세", "adult":false,
- "first_publish_date":"YYYYMMDD", "episodes":[{{"no":1, "date":"YYYYMMDD", "title":"", "price":"", "source":"URL"}}],
- "completed":true, "total_episodes":0, "price_per_episode":"", "free_episodes":0,
- "summary":"", "publisher_place":"출판사 소재 시/도(예: 서울) 또는 빈칸", "evidence":["URL — 무엇을 확인했는지"], "notes":"확신이 낮은 항목과 이유"}}
-모르는 값은 빈 문자열/0/false 로 두고 notes 에 적으세요. 지어내지 마세요."""
+7. 각 값의 근거 URL."""
 
 
 def norm(s) -> str:
@@ -87,43 +92,48 @@ def friendly_error(stderr: str, returncode: int) -> str:
     return f"클로드 실행 실패(코드 {returncode}): {stderr[-400:]}"
 
 
-PROMPT_OVERRIDE = Path("work") / "research_prompt.txt"   # 프로그램에서 편집한 프롬프트(있으면 이걸 씀)
-PROMPT_FIELDS = ("{title}", "{publisher}", "{isbn}", "{n}", "{platform_hint}", "{audience_hint}")
+PROMPT_OVERRIDE = Path("work") / "research_prompt.txt"   # 프로그램에서 편집한 '볼 곳·찾을 것' 부분(있으면 이걸 씀)
 
 
-def current_prompt() -> str:
+def current_editable() -> str:
     if PROMPT_OVERRIDE.exists():
         return PROMPT_OVERRIDE.read_text(encoding="utf-8")
-    return RESEARCH_PROMPT
+    return EDITABLE_DEFAULT
 
 
-def save_prompt(text: str | None) -> str:
-    """None/빈 값이면 기본값으로 되돌림. 자리표시자가 빠지면 거부."""
+def save_editable(text: str | None) -> str:
+    """편집 가능한 부분만 저장. None/빈 값이면 기본값으로 되돌림."""
     if not text or not text.strip():
         if PROMPT_OVERRIDE.exists():
             PROMPT_OVERRIDE.unlink()
-        return RESEARCH_PROMPT
-    missing = [f for f in PROMPT_FIELDS if f not in text]
-    if missing:
-        raise ValueError("빠진 자리표시자: " + ", ".join(missing))
-    if "```json" not in text:
-        raise ValueError("출력 형식 설명(```json 코드블록)이 있어야 결과를 읽을 수 있습니다")
+        return EDITABLE_DEFAULT
+    if "{" in text or "}" in text:
+        raise ValueError("중괄호 { } 는 쓸 수 없습니다(자리표시자 충돌)")
     PROMPT_OVERRIDE.parent.mkdir(parents=True, exist_ok=True)
     PROMPT_OVERRIDE.write_text(text, encoding="utf-8")
     return text
 
 
-def research(pub_xlsx: Path, out_json: Path, runner: str = "claude", timeout: int = 900, log=None, handle: dict | None = None) -> dict:
-    """헤드리스 클로드로 작품 정보 JSON 을 만든다. log(msg) 로 진행(검색어·읽는 URL)을 실시간 보고. handle['proc'] 에 프로세스를 두어 취소 가능."""
+def build_prompt(title, publisher, isbn, n, platform_hint, audience_hint, extra: str = "") -> str:
+    ex = f"\n이번 작품 추가 지시(우선 적용):\n{extra.strip()}\n" if extra and extra.strip() else ""
+    return RESEARCH_PROMPT.format(title=title, publisher=publisher, isbn=isbn, n=n, platform_hint=platform_hint,
+                                  audience_hint=audience_hint, editable=current_editable().strip(), extra=ex)
+
+
+def research(pub_xlsx: Path, out_json: Path, runner: str = "claude", timeout: int = 900, log=None, handle: dict | None = None,
+             extra: str = "") -> dict:
+    """헤드리스 클로드로 작품 정보 JSON 을 만든다. log(msg) 로 진행(검색어·읽는 URL)을 실시간 보고. handle['proc'] 에 프로세스를 두어 취소 가능.
+    extra: 이번 작품에만 붙이는 추가 지시(저장하지 않음)."""
     log = log or (lambda m: None)
     wb, ws, col, rows = read_sheet(pub_xlsx)
     g = lambda r, k: ws.cell(row=r, column=col[k]).value if k in col else None
     r0 = rows[0]
     if PROMPT_OVERRIDE.exists():
-        log("편집된 조사 프롬프트 사용(work/research_prompt.txt)")
-    prompt = current_prompt().format(title=g(r0, "제목(도서명)"), publisher=g(r0, "출판사"), isbn=g(r0, "ISBN/UCI"), n=len(rows),
-                                    platform_hint=g(r0, "최초연제플랫폼") or g(r0, "최초연재플랫폼") or "(비어 있음)",
-                                    audience_hint=g(r0, "이용대상") or "(비어 있음)")
+        log("편집된 조사 지시 사용(work/research_prompt.txt)")
+    if extra and extra.strip():
+        log("이번 작품 추가 지시 포함")
+    prompt = build_prompt(g(r0, "제목(도서명)"), g(r0, "출판사"), g(r0, "ISBN/UCI"), len(rows),
+                          g(r0, "최초연제플랫폼") or g(r0, "최초연재플랫폼") or "(비어 있음)", g(r0, "이용대상") or "(비어 있음)", extra)
     exe = claude_exe() if runner == "claude" else (shutil.which(runner) or shutil.which(runner + ".cmd"))
     if not exe:
         raise SystemExit("클로드코드(claude)가 설치되어 있지 않거나 PATH 에 없습니다." if runner == "claude" else f"{runner} 실행파일을 찾지 못함")
