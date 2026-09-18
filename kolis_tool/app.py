@@ -85,6 +85,20 @@ class Api:
             info["has_saved"] = self._paths(xlsx[0])[1].exists()
         return info
 
+    def saved_info(self, xlsx: str) -> dict:
+        """이 엑셀에 대한 지난 조사 결과가 있는지, 있으면 언제 것인지."""
+        import datetime
+        jp = self._paths(Path(xlsx))[1]
+        if not jp.exists():
+            return {"exists": False}
+        ts = datetime.datetime.fromtimestamp(jp.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+        try:
+            info = json.loads(jp.read_text(encoding="utf-8"))
+            summary = f"{info.get('platform_first') or '?'} · 저자 {len(info.get('authors') or [])}명 · 회차 {len(info.get('episodes') or [])}건"
+        except Exception:  # noqa: BLE001
+            summary = ""
+        return {"exists": True, "when": ts, "summary": summary, "path": str(jp)}
+
     def _paths(self, xlsx: Path) -> tuple[Path, Path]:
         out = self._work_dir / f"{re.sub(r'[^\w가-힣]+', '', Path(xlsx).stem)}_보완.xlsx"
         return out, out.with_suffix(".work.json")

@@ -43,7 +43,11 @@
   <section class="card"><h2><span class="step">2</span> 기초메타데이터 보완</h2>
     <p class="muted" style="margin:0 0 6px">클로드가 웹에서 작품 정보를 조사(판단)하고, 동시에 Edge 가 플랫폼 페이지에서 회차별 공개일·가격을 읽습니다. 보통 3~5분. 진행은 오른쪽 로그에 실시간으로 나옵니다.</p>
     <div class="row"><input type="text" id="e-xlsx" placeholder="출판사 기초메타데이터 엑셀 (1단계에서 자동으로 들어감)"><button class="secondary" onclick="pickInto('e-xlsx')">찾아보기</button></div>
-    <div class="row"><button id="btn-enrich" onclick="enrich()" disabled>보완 실행</button><button id="btn-cancel" class="danger" onclick="cancelJob()" hidden>중단</button><span id="enrich-out" class="muted"></span></div>
+    <div id="saved-box" class="warnbox" hidden style="background:#eef6ff;border-color:#bcd7f5">지난 조사 결과가 있습니다: <b id="saved-when"></b> <span id="saved-sum" class="muted"></span></div>
+    <div class="row">
+      <button id="btn-enrich" onclick="enrich(false)" disabled>웹 조사해서 채우기</button>
+      <button id="btn-reuse" class="secondary" onclick="enrich(true)" hidden>지난 결과로 채우기</button>
+      <button id="btn-cancel" class="danger" onclick="cancelJob()" hidden>중단</button><span id="enrich-out" class="muted"></span></div>
     <div id="review" hidden>
       <div id="warns" class="warnbox" hidden></div>
       <table id="review-table"></table>
@@ -93,7 +97,7 @@ window.addEventListener('pywebviewready', async () => {
   if(!e.claude) appendLog('클로드코드가 없어 2단계(보완)를 실행할 수 없습니다. 설치 후 터미널에서 claude 를 한 번 실행해 로그인하세요.');
 });
 async function pickFolder(){ const f = await pywebview.api.pick_folder(); if(f){ $('folder').value=f; scan(); } }
-async function pickInto(id){ const f = await pywebview.api.pick_file(); if(f){ $(id).value=f; if(id==='e-xlsx'){ S.xlsx=f; $('btn-enrich').disabled=false; } if(id==='c-xlsx'){ S.enrichedXlsx=f; $('btn-conv').disabled=false; } } }
+async function pickInto(id){ const f = await pywebview.api.pick_file(); if(f){ $(id).value=f; if(id==='e-xlsx'){ S.xlsx=f; $('btn-enrich').disabled=false; refreshSaved(); } if(id==='c-xlsx'){ S.enrichedXlsx=f; $('btn-conv').disabled=false; } } }
 async function pickSave(){ const f = await pywebview.api.pick_save($('out-name').value || '반입용.xlsx'); if(f) $('out-name').value=f; }
 function resetAll(){ if(confirm('화면을 처음 상태로 되돌립니다. 만들어 둔 파일은 지워지지 않습니다.')) location.reload(); }
 async function scan(){
@@ -112,14 +116,20 @@ async function scan(){
   $('e-xlsx').value = r.xlsx; $('c-xlsx').value = r.xlsx;
   if(!$('out-name').value) $('out-name').value = `기초메타데이터(26웹툰대행5차-)_코리스 반입용_${r.title.replace(/\s/g,'')}.xlsx`;
   appendLog(`폴더 읽음: ${r.title}, ${r.rows}행, 회차 ${r.episodes}, 썸네일 ${r.thumb_files}. 비어 있는 열: ${r.empty_cols.join(', ')||'없음'}`);
-  if(r.has_saved) appendLog('이 작품의 지난 조사 결과가 있습니다. 보완 실행 시 새로 조사할지 묻습니다.');
+  refreshSaved();
 }
-async function enrich(){
-  let reuse = false;
-  if(S.hasSaved){ reuse = !confirm('이 작품의 지난 조사 결과가 있습니다.\n\n확인 = 새로 조사(3~5분)\n취소 = 지난 결과 사용'); }
-  $('btn-enrich').disabled=true; $('btn-cancel').hidden=false; $('review').hidden=true;
-  $('enrich-out').innerHTML='<span class="spin"></span> 실행 중…';
-  await pywebview.api.enrich($('e-xlsx').value || S.xlsx, reuse);
+async function refreshSaved(){
+  const x = $('e-xlsx').value || S.xlsx; if(!x) return;
+  const s = await pywebview.api.saved_info(x);
+  S.hasSaved = s.exists;
+  $('saved-box').hidden = !s.exists; $('btn-reuse').hidden = !s.exists;
+  if(s.exists){ $('saved-when').textContent = s.when; $('saved-sum').textContent = s.summary ? `(${s.summary})` : ''; }
+  $('btn-enrich').textContent = s.exists ? '새로 웹 조사' : '웹 조사해서 채우기';
+}
+async function enrich(reuse){
+  $('btn-enrich').disabled=true; $('btn-reuse').disabled=true; $('btn-cancel').hidden=false; $('review').hidden=true;
+  $('enrich-out').innerHTML='<span class="spin"></span> ' + (reuse ? '지난 결과로 채우는 중…' : '웹 조사 중… (3~5분, 오른쪽 로그 참고)');
+  await pywebview.api.enrich($('e-xlsx').value || S.xlsx, !!reuse);
 }
 async function cancelJob(){ await pywebview.api.cancel(); $('btn-cancel').disabled=true; }
 async function kolisPrepare(){
@@ -141,7 +151,8 @@ function onDone(kind, p){
     return;
   }
   if(kind!=='enrich') return;
-  $('btn-enrich').disabled=false; $('btn-cancel').hidden=true; $('btn-cancel').disabled=false;
+  $('btn-enrich').disabled=false; $('btn-reuse').disabled=false; $('btn-cancel').hidden=true; $('btn-cancel').disabled=false;
+  refreshSaved();
   if(p.cancelled){ $('enrich-out').innerHTML='<span class="warn">중단됨</span>'; return; }
   if(p.error){ $('enrich-out').innerHTML=`<span class="bad">${p.error}</span>`; return; }
   S.enrichedXlsx=p.out; S.workJson=p.json; S.hasSaved=true; $('c-xlsx').value=p.out;
