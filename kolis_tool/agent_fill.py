@@ -200,7 +200,7 @@ def ask_exec(q: Query, runner: str = "claude", timeout: int = 600) -> dict:
         if not exe:
             return {"proposals": [], "notes": "claude 실행파일을 찾지 못함(PATH 확인)"}
         cmd = [exe, "-p", "--output-format", "json", "--allowedTools", "Read", "WebSearch", "WebFetch"]
-        res = subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=timeout)
+        res = subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=timeout, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         if res.returncode != 0:
             return {"proposals": [], "notes": f"claude -p 실패: {res.stderr[-500:]}"}
         try:
@@ -212,7 +212,7 @@ def ask_exec(q: Query, runner: str = "claude", timeout: int = 600) -> dict:
         if not exe:
             return {"proposals": [], "notes": "codex 실행파일을 찾지 못함(PATH 확인)"}
         cmd = [exe, "exec", "--skip-git-repo-check", "-"]
-        res = subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=timeout)
+        res = subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=timeout, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         if res.returncode != 0:
             return {"proposals": [], "notes": f"codex exec 실패: {res.stderr[-500:]}"}
         text = res.stdout

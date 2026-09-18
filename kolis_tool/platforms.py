@@ -59,7 +59,8 @@ def naver_series(ctx, title: str, url: str | None = None, log=print) -> dict | N
         pn = re.search(r"productNo=(\d+)", url).group(1)
         out = {"platform": "네이버시리즈", "url_work": f"https://series.naver.com/comic/detail.series?productNo={pn}",
                "url_main": "https://series.naver.com/comic/home.series", "rating": "", "authors": [], "episodes": []}
-        pg.goto(out["url_work"], wait_until="networkidle", timeout=60000)
+        pg.goto(out["url_work"], wait_until="domcontentloaded", timeout=60000)
+        pg.wait_for_selector("#volumeList tr", timeout=20000)   # 회차 표가 그려질 때까지만 기다린다(networkidle 보다 훨씬 빠름)
         body = pg.inner_text("body")
         m = re.search(r"글\s*(\S+)\s*\n?\s*그림\s*(\S+)", body)
         if m:
@@ -103,7 +104,10 @@ def naver_series(ctx, title: str, url: str | None = None, log=print) -> dict | N
                 if (a) { a.click(); return true; } return false; }""", pno)
             if not clicked:
                 break
-            pg.wait_for_timeout(1500)
+            try:
+                pg.wait_for_function("n => { const s=document.querySelector('#volumeList'); return s && s.innerText.includes(n + '화'); }", arg=(pno - 1) * 30 + 1, timeout=8000)
+            except Exception:  # noqa: BLE001
+                pg.wait_for_timeout(1000)
             if harvest() == 0:
                 break
         for no in sorted(set(seen) | set(prices)):
@@ -150,14 +154,16 @@ def kakao_page(ctx, title: str, url: str | None = None, log=print) -> dict | Non
     pg = ctx.new_page()
     try:
         if not url:
-            pg.goto("https://page.kakao.com/search/result?keyword=" + urllib.parse.quote(title), wait_until="networkidle", timeout=60000)
+            pg.goto("https://page.kakao.com/search/result?keyword=" + urllib.parse.quote(title), wait_until="domcontentloaded", timeout=60000)
+            pg.wait_for_timeout(2000)
             links = pg.eval_on_selector_all("a[href*='/content/']", "els => els.map(e => [e.href, e.innerText.trim()])")
             t = re.sub(r"\s", "", title)
             hit = next((l for l in links if l[1] and t in re.sub(r"\s", "", l[1])), None)
             if not hit:
                 log("카카오페이지: 검색 결과 없음"); return None
             url = hit[0].split("?")[0]
-        pg.goto(url + "?tab_type=episode", wait_until="networkidle", timeout=60000)
+        pg.goto(url + "?tab_type=episode", wait_until="domcontentloaded", timeout=60000)
+        pg.wait_for_timeout(2500)
         body = pg.inner_text("body")
         if "이용할 수 없습니다" in body:
             log("카카오페이지: 판매 중이 아닌 작품(회차 없음)"); return None
@@ -188,12 +194,14 @@ def kakao_page(ctx, title: str, url: str | None = None, log=print) -> dict | Non
 ADAPTERS = {"네이버시리즈": naver_series, "리디": ridi, "카카오페이지": kakao_page}
 
 
-def gather(title: str, known_urls: dict[str, str] | None = None, log=print, headless: bool = True) -> list[dict]:
-    """모든 어댑터를 돌려 플랫폼별 결과 목록을 돌려준다. known_urls: {'리디': url, ...} (LLM 리서치가 찾은 URL)."""
+def gather(title: str, known_urls: dict[str, str] | None = None, log=print, headless: bool = True, handle: dict | None = None) -> list[dict]:
+    """모든 어댑터를 돌려 플랫폼별 결과 목록을 돌려준다. known_urls: {'리디': url, ...} (LLM 리서치가 찾은 URL). handle['cancel'] 이면 중단."""
     known_urls = known_urls or {}
     results = []
     with browser(headless) as ctx:
         for name, fn in ADAPTERS.items():
+            if handle and handle.get("cancel"):
+                log("플랫폼 수집 중단"); break
             try:
                 r = fn(ctx, title, known_urls.get(name), log)
                 if r: results.append(r)

@@ -37,6 +37,7 @@ pip install -r requirements.txt
 ## 프로그램(창) 실행 — 2026-09-18부터 기본
 `bin\app.bat` (또는 `python -m kolis_tool.app`). 납품 폴더 선택 → ② 기초메타데이터 보완(웹 리서치 + 플랫폼 회차 수집) → ③ 썸네일 이름 → ④ 반입용 엑셀. 결과는 `work\`.
 플랫폼 회차 수집은 Playwright 가 이 PC 의 Edge 를 헤드리스로 띄운다(`pip install playwright`, 브라우저 추가 설치 불필요).
+바탕화면 바로 가기는 `bin\app.vbs`(콘솔 없음)를 가리킨다. 웹 리서치 모델은 소넷이 기본(`KOLIS_RESEARCH_MODEL` 로 변경). 리서치와 플랫폼 수집은 동시에 돈다.
 
 ## 명령
 ```

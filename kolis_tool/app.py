@@ -1,11 +1,11 @@
-﻿"""창 하나짜리 실행 프로그램 (pywebview). 기능은 하나씩 붙인다.  실행: python -m kolis_tool.app
+"""창 하나짜리 실행 프로그램 (pywebview). 기능은 하나씩 붙인다.  실행: bin\\app.vbs (콘솔 없음) 또는 python -m kolis_tool.app
 
 화면(kolis_tool/ui/index.html)은 아래 Api 의 메서드를 window.pywebview.api.<이름>() 으로 부른다.
-오래 걸리는 작업(웹 리서치)은 스레드로 돌리고 진행 로그를 화면에 밀어 넣는다(evaluate_js).
+오래 걸리는 작업(웹 리서치·플랫폼 수집)은 스레드로 돌리고 진행 로그를 화면에 밀어 넣는다(evaluate_js). 둘은 서로 독립이라 동시에 돈다.
 KOLIS 에는 접근하지 않는다.
 """
 from __future__ import annotations
-import json, re, threading, traceback
+import json, re, shutil, threading, traceback
 from pathlib import Path
 import webview
 
@@ -17,6 +17,7 @@ class Api:
     def __init__(self):
         self._window: webview.Window | None = None
         self._work_dir = Path("work").resolve()
+        self._job: dict = {}          # {'proc': Popen, 'cancel': bool}
 
     # ---------- 공통 ----------
     def _log(self, msg: str):
@@ -31,13 +32,25 @@ class Api:
         r = self._window.create_file_dialog(webview.FOLDER_DIALOG)
         return r[0] if r else ""
 
-    def pick_file(self, pattern: str = "Excel (*.xlsx)") -> str:
-        r = self._window.create_file_dialog(webview.OPEN_DIALOG, file_types=(pattern, "All files (*.*)"))
-        return r[0] if r else ""
+    def check_env(self) -> dict:
+        """시작 시 전제 조건: 클로드코드 설치·로그인 흔적, Edge, Playwright."""
+        from .enrich import claude_exe
+        out = {"claude": bool(claude_exe()), "claude_login": None, "edge": False, "playwright": False}
+        cred = Path.home() / ".claude" / ".credentials.json"
+        cfg = Path.home() / ".claude.json"
+        out["claude_login"] = cred.exists() or (cfg.exists() and '"oauthAccount"' in cfg.read_text(encoding="utf-8", errors="ignore"))
+        for p in (r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe", r"C:\Program Files\Microsoft\Edge\Application\msedge.exe"):
+            if Path(p).exists():
+                out["edge"] = True
+        try:
+            import playwright  # noqa: F401
+            out["playwright"] = True
+        except ImportError:
+            pass
+        return out
 
     # ---------- 1. 작품 폴더 읽기 ----------
     def scan_folder(self, folder: str) -> dict:
-        """납품 폴더 구조 파악: 기초메타데이터 xlsx, 원고 폴더(회차 하위폴더), 회차썸네일 폴더."""
         from .enrich import read_sheet
         from .common import list_images
         f = Path(folder)
@@ -47,7 +60,8 @@ class Api:
         manuscripts = next((p for p in f.iterdir() if p.is_dir() and p.name in ("원고", "원문")), None)
         thumbs = next((p for p in f.iterdir() if p.is_dir() and "썸네일" in p.name), None)
         info = {"folder": str(f), "xlsx": str(xlsx[0]) if xlsx else "", "manuscripts": str(manuscripts) if manuscripts else "",
-                "thumbs": str(thumbs) if thumbs else "", "episodes": 0, "images": 0, "thumb_files": 0, "rows": 0, "title": "", "empty_cols": []}
+                "thumbs": str(thumbs) if thumbs else "", "episodes": 0, "images": 0, "thumb_files": 0, "rows": 0, "title": "",
+                "empty_cols": [], "has_saved": False, "thumbs_done": bool(thumbs and (thumbs / "thumbs_manifest.json").exists())}
         if manuscripts:
             eps = [p for p in manuscripts.iterdir() if p.is_dir()]
             info["episodes"] = len(eps); info["images"] = sum(len(list_images(p)) for p in eps)
@@ -57,49 +71,109 @@ class Api:
             wb, ws, col, rows = read_sheet(xlsx[0])
             info["rows"] = len(rows)
             info["title"] = str(ws.cell(row=rows[0], column=col["제목(도서명)"]).value or "") if rows else ""
-            empties = []
-            for k, c in col.items():
-                if k in ("No",):
-                    continue
-                if all(ws.cell(row=r, column=c).value in (None, "") for r in rows):
-                    empties.append(k)
-            info["empty_cols"] = empties
+            info["empty_cols"] = [k for k, c in col.items() if k != "No" and all(ws.cell(row=r, column=c).value in (None, "") for r in rows)]
+            info["has_saved"] = self._paths(xlsx[0])[1].exists()
         return info
 
+    def _paths(self, xlsx: Path) -> tuple[Path, Path]:
+        out = self._work_dir / f"{re.sub(r'[^\w가-힣]+', '', Path(xlsx).stem)}_보완.xlsx"
+        return out, out.with_suffix(".work.json")
+
     # ---------- 2. 기초메타데이터 보완 ----------
-    def enrich(self, xlsx: str, use_saved: bool = True, use_platforms: bool = True, runner: str = "claude") -> dict:
-        from .enrich import research, apply, read_sheet
+    def enrich(self, xlsx: str, reuse: bool = False, runner: str = "claude") -> dict:
+        from .enrich import research, apply, read_sheet, Cancelled
+        from .platforms import gather, merge_into
         src = Path(xlsx)
-        out = self._work_dir / f"{re.sub(r'[^\w가-힣]+', '', src.stem)}_보완.xlsx"
-        jpath = out.with_suffix(".work.json")
+        out, jpath = self._paths(src)
+        self._job = {"cancel": False}
+        handle = self._job
 
         def job():
             try:
                 self._work_dir.mkdir(parents=True, exist_ok=True)
-                if use_saved and jpath.exists():
+                wb, ws, col, rows = read_sheet(src)
+                title = str(ws.cell(row=rows[0], column=col["제목(도서명)"]).value or "")
+                if reuse and jpath.exists():
                     info = json.loads(jpath.read_text(encoding="utf-8"))
-                    self._log(f"저장된 작품 정보 재사용: {jpath}")
+                    self._log(f"지난 조사 결과 사용: {jpath}")
                 else:
-                    self._log(f"웹 리서치 시작({runner} -p 헤드리스, 보통 3~6분). KOLIS 접근 없음.")
-                    info = research(src, jpath, runner)
-                    self._log(f"작품 정보 JSON 저장: {jpath}")
-                if use_platforms and not info.get("_platforms_done"):
-                    from .platforms import gather, merge_into
-                    wb, ws, col, rows = read_sheet(src)
-                    title = str(ws.cell(row=rows[0], column=col["제목(도서명)"]).value or "")
-                    known = {p.get("name", ""): p.get("url_work", "") for p in info.get("platforms", []) if p.get("url_work")}
-                    self._log("플랫폼 페이지에서 회차별 공개일·가격 수집 시작(Edge 헤드리스)")
-                    info = merge_into(info, gather(title, known, self._log))
+                    # 리서치(클로드)와 플랫폼 수집(Edge)은 독립 → 동시에
+                    res: dict = {}
+                    def t_research():
+                        try:
+                            res["info"] = research(src, jpath, runner, log=self._log, handle=handle)
+                        except BaseException as e:  # noqa: BLE001
+                            res["err"] = e
+                    def t_platforms():
+                        try:
+                            res["plat"] = gather(title, {}, self._log, handle=handle)
+                        except BaseException as e:  # noqa: BLE001
+                            res["perr"] = e
+                    self._log("① 클로드 웹 리서치 시작(판단: 플랫폼·저자·등급·소재지·근거)  ② 동시에 Edge 로 플랫폼 회차 수집 시작")
+                    a, b = threading.Thread(target=t_research, daemon=True), threading.Thread(target=t_platforms, daemon=True)
+                    a.start(); b.start(); a.join(); b.join()
+                    if handle.get("cancel"):
+                        raise Cancelled("중단됨")
+                    if "err" in res:
+                        raise res["err"]
+                    info = res["info"]
+                    if "perr" in res:
+                        self._log(f"플랫폼 수집 실패(리서치 결과만 사용): {res['perr']}")
+                    else:
+                        info = merge_into(info, res["plat"])
                     info["_platforms_done"] = True
                     jpath.write_text(json.dumps({k: v for k, v in info.items() if k != "_raw"}, ensure_ascii=False, indent=1), encoding="utf-8")
                 filled = apply(src, info, out)
                 self._log("채운 칸: " + (", ".join(f"{k} {v}" for k, v in filled.items()) or "없음"))
-                self._done("enrich", {"out": str(out), "json": str(jpath), "filled": filled, "info": {k: v for k, v in info.items() if k != "_raw"}})
+                self._done("enrich", {"out": str(out), "json": str(jpath), "filled": filled,
+                                      "info": {k: v for k, v in info.items() if k != "_raw"}, "review": self._review(info, filled)})
+            except Cancelled:
+                self._log("중단했습니다."); self._done("enrich", {"cancelled": True})
+            except SystemExit as e:
+                self._log("오류: " + str(e)); self._done("enrich", {"error": str(e)})
             except Exception as e:  # noqa: BLE001
                 self._log("오류: " + "".join(traceback.format_exception_only(type(e), e)).strip())
                 self._done("enrich", {"error": str(e)})
+            finally:
+                self._job = {}
         threading.Thread(target=job, daemon=True).start()
         return {"started": True, "out": str(out)}
+
+    def cancel(self) -> dict:
+        self._job["cancel"] = True
+        p = self._job.get("proc")
+        if p and p.poll() is None:
+            p.kill()
+        self._log("중단 요청…")
+        return {"ok": True}
+
+    @staticmethod
+    def _review(info: dict, filled: dict) -> dict:
+        """화면 검토표: 채운 값·근거, 눈에 띄어야 할 경고."""
+        from .enrich import authors_text, price_number
+        eps = info.get("episodes") or []
+        dated = sum(1 for e in eps if e.get("date"))
+        rows = [
+            ["최초 연재 플랫폼", info.get("platform_first", ""), ", ".join(p.get("name", "") for p in info.get("platforms", []))],
+            ["저자", authors_text(info.get("authors", [])), "역할어: 글/그림/원작/작화/각색만"],
+            ["주제 구분(장르)", info.get("genre", ""), ""],
+            ["1회차 공개일", info.get("first_publish_date", ""), "가장 이른 플랫폼 기준"],
+            ["회차별 공개일", f"{dated}/{len(eps)}건", "없는 회차는 노란 셀"],
+            ["정가", price_number(info.get("price_per_episode")), str(info.get("price_per_episode", ""))],
+            ["이용등급", info.get("rating", ""), ", ".join(f"{k}={v or '?'}" for k, v in (info.get("rating_by_platform") or {}).items())],
+            ["출판사 소재지", info.get("publisher_place", ""), ""],
+        ]
+        warns = []
+        rb = {v for v in (info.get("rating_by_platform") or {}).values() if v}
+        if info.get("rating") and rb and len(rb | {info["rating"]}) > 1:
+            warns.append("플랫폼마다 이용등급이 다릅니다. 직원 확인 필요.")
+        if eps and dated < len(eps):
+            warns.append(f"회차 {len(eps) - dated}건은 공개일을 찾지 못했습니다.")
+        if not eps:
+            warns.append("회차별 공개일을 하나도 찾지 못했습니다(1회차만 채움).")
+        if info.get("notes"):
+            warns.append("리서치 메모: " + str(info["notes"]))
+        return {"rows": rows, "warns": warns, "evidence": info.get("evidence", [])[:8]}
 
     # ---------- 3. 썸네일 파일명 ----------
     def thumbs_preview(self, folder: str, title: str) -> list:
@@ -109,8 +183,7 @@ class Api:
     def thumbs_apply(self, folder: str, title: str) -> dict:
         from .enrich import rename_thumbs
         try:
-            pairs = rename_thumbs(Path(folder), title)
-            return {"count": len(pairs)}
+            return {"count": len(rename_thumbs(Path(folder), title))}
         except SystemExit as e:
             return {"error": str(e)}
 
@@ -138,7 +211,7 @@ class Api:
 
 def main():
     api = Api()
-    window = webview.create_window("KOLIS 웹툰 납본 도우미", str(HERE / "ui" / "index.html"), js_api=api, width=1100, height=820, text_select=True)
+    window = webview.create_window("KOLIS 웹툰 납본 도우미", str(HERE / "ui" / "index.html"), js_api=api, width=1150, height=860, text_select=True)
     api._window = window
     webview.start(debug=False)
 

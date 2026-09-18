@@ -12,7 +12,7 @@
   - 플랫폼에서만 확인한 값은 convert 단계에서 각괄호 규칙을 적용하므로 여기서는 값 그대로 적고 근거만 남긴다.
 """
 from __future__ import annotations
-import json, re, shutil, subprocess
+import json, re, shutil, subprocess, threading, time
 from pathlib import Path
 import openpyxl
 from openpyxl.comments import Comment
@@ -65,37 +65,90 @@ def read_sheet(path: Path):
     return wb, ws, col, data_rows
 
 
-def research(pub_xlsx: Path, out_json: Path, runner: str = "claude", timeout: int = 900) -> dict:
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)   # 창 없는 실행(pythonw)에서 콘솔이 튀어나오지 않게
+
+
+class Cancelled(Exception):
+    pass
+
+
+def claude_exe() -> str | None:
+    return shutil.which("claude") or shutil.which("claude.cmd") or shutil.which("claude.exe")
+
+
+def friendly_error(stderr: str, returncode: int) -> str:
+    s = (stderr or "").lower()
+    if "not logged in" in s or "login" in s or "authentication" in s or "unauthorized" in s or "401" in s:
+        return "클로드코드에 로그인이 되어 있지 않습니다. 터미널에서 `claude` 를 한 번 실행해 로그인한 뒤 다시 시도하세요."
+    if "enotfound" in s or "econnrefused" in s or "fetch failed" in s or "network" in s or "certificate" in s:
+        return "네트워크 또는 인증서 문제로 클로드가 외부에 접속하지 못했습니다(보안 에이전트 확인). 원문: " + stderr[-300:]
+    if "rate limit" in s or "overloaded" in s or "429" in s:
+        return "클로드 사용량 한도에 걸렸습니다. 잠시 뒤 다시 시도하세요."
+    return f"클로드 실행 실패(코드 {returncode}): {stderr[-400:]}"
+
+
+def research(pub_xlsx: Path, out_json: Path, runner: str = "claude", timeout: int = 900, log=None, handle: dict | None = None) -> dict:
+    """헤드리스 클로드로 작품 정보 JSON 을 만든다. log(msg) 로 진행(검색어·읽는 URL)을 실시간 보고. handle['proc'] 에 프로세스를 두어 취소 가능."""
+    log = log or (lambda m: None)
     wb, ws, col, rows = read_sheet(pub_xlsx)
     g = lambda r, k: ws.cell(row=r, column=col[k]).value if k in col else None
     r0 = rows[0]
     prompt = RESEARCH_PROMPT.format(title=g(r0, "제목(도서명)"), publisher=g(r0, "출판사"), isbn=g(r0, "ISBN/UCI"), n=len(rows),
                                     platform_hint=g(r0, "최초연제플랫폼") or g(r0, "최초연재플랫폼") or "(비어 있음)",
                                     audience_hint=g(r0, "이용대상") or "(비어 있음)")
-    exe = shutil.which(runner) or shutil.which(runner + ".cmd") or shutil.which(runner + ".exe")
+    exe = claude_exe() if runner == "claude" else (shutil.which(runner) or shutil.which(runner + ".cmd"))
     if not exe:
-        raise SystemExit(f"{runner} 실행파일을 찾지 못함(PATH 확인)")
+        raise SystemExit("클로드코드(claude)가 설치되어 있지 않거나 PATH 에 없습니다." if runner == "claude" else f"{runner} 실행파일을 찾지 못함")
     if runner == "claude":
-        cmd = [exe, "-p", "--output-format", "json", "--allowedTools", "WebSearch", "WebFetch"]
+        # 모델: 검색·정리 작업이라 소넷으로 충분(빠르고 저렴). 환경변수 KOLIS_RESEARCH_MODEL 로 바꿀 수 있다
+        import os
+        cmd = [exe, "-p", "--verbose", "--output-format", "stream-json", "--model", os.environ.get("KOLIS_RESEARCH_MODEL", "sonnet"),
+               "--allowedTools", "WebSearch", "WebFetch"]
     else:
         cmd = [exe, "exec", "--skip-git-repo-check", "-"]
-    res = subprocess.run(cmd, input=prompt, capture_output=True, text=True, encoding="utf-8", timeout=timeout)
-    if res.returncode != 0:
-        raise SystemExit(f"{runner} 실패: {res.stderr[-800:]}")
-    text = res.stdout
-    if runner == "claude":
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8",
+                            errors="replace", creationflags=NO_WINDOW)
+    if handle is not None:
+        handle["proc"] = proc
+    proc.stdin.write(prompt); proc.stdin.close()
+    text, lines = "", []
+    t0 = time.time()
+    err_buf: list[str] = []
+    threading.Thread(target=lambda: err_buf.append(proc.stderr.read()), daemon=True).start()
+    for line in proc.stdout:
+        lines.append(line)
+        if runner != "claude":
+            continue
         try:
-            text = json.loads(res.stdout).get("result", res.stdout)
+            ev = json.loads(line)
         except json.JSONDecodeError:
-            pass
+            continue
+        if ev.get("type") == "assistant":
+            for b in (ev.get("message") or {}).get("content", []):
+                if b.get("type") == "tool_use":
+                    inp = b.get("input") or {}
+                    what = inp.get("query") or inp.get("url") or ""
+                    log(f"  [{int(time.time() - t0)}s] {'검색' if b.get('name') == 'WebSearch' else '페이지 읽기'}: {str(what)[:90]}")
+                elif b.get("type") == "text" and b.get("text", "").strip():
+                    log(f"  [{int(time.time() - t0)}s] 클로드: {b['text'].strip()[:120]}")
+        elif ev.get("type") == "result":
+            text = ev.get("result") or ""
+    rc = proc.wait(timeout=timeout)
+    if handle is not None and handle.get("cancel"):
+        raise Cancelled("사용자가 중단함")
+    if rc != 0:
+        raise SystemExit(friendly_error("".join(err_buf), rc))
+    if runner != "claude":
+        text = "".join(lines)
     m = re.findall(r"```json\s*(\{.*?\})\s*```", text, re.S)
     if not m:
         (out_json.with_suffix(".raw.txt")).write_text(text, encoding="utf-8")
-        raise SystemExit(f"JSON 블록 없음 → {out_json.with_suffix('.raw.txt')} 확인")
+        raise SystemExit(f"클로드 답변에서 JSON 을 찾지 못했습니다 → {out_json.with_suffix('.raw.txt')} 확인")
     data = json.loads(m[-1])
     data["_raw"] = text
     out_json.parent.mkdir(parents=True, exist_ok=True)
     out_json.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+    log(f"  리서치 완료 ({int(time.time() - t0)}초)")
     return data
 
 
