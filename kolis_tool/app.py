@@ -384,6 +384,38 @@ class Api:
         threading.Thread(target=job, daemon=True).start()
         return {"started": True}
 
+    # ---------- 6. 반입 결과 → 폴더명 CNTS ----------
+    def export_download(self) -> dict:
+        """KOLIS 납본자료접수 화면의 '전체출력' 클릭 → 알림 막대 '저장' → Downloads 의 ExcelDown….xls 를 work/접수번호 N.xls 로 복사."""
+        from . import kolis_ui
+        try:
+            return kolis_ui.download_export(kolis_ui.Log(self._log), self._work_dir)
+        except Exception as e:  # noqa: BLE001
+            return {"error": str(e)}
+
+    def cnts_preview(self, export_file: str, root: str) -> dict:
+        from .cnts_folders import plan
+        try:
+            p = plan(Path(export_file), Path(root))
+            return {**p, "pairs": p["pairs"][:3] + ([["…", "…", "…"]] if p["count"] > 3 else [])}
+        except SystemExit as e:
+            return {"error": str(e)}
+
+    def cnts_apply(self, export_file: str, root: str) -> dict:
+        from .cnts_folders import apply
+        try:
+            p = apply(Path(export_file), Path(root))
+            return {"receipt": p["receipt"], "count": p["count"]}
+        except SystemExit as e:
+            return {"error": str(e)}
+
+    def cnts_undo(self, root: str) -> dict:
+        from .cnts_folders import undo
+        try:
+            return {"count": undo(Path(root))}
+        except Exception as e:  # noqa: BLE001
+            return {"error": str(e)}
+
     def open_path(self, path: str) -> bool:
         import os
         os.startfile(path)  # noqa: S606

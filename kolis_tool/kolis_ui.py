@@ -414,6 +414,44 @@ def close_popup(pop, log=None) -> None:
         b.click_input(); log("팝업 닫음")
 
 
+def download_export(log=None, work_dir: Path = Path("work")) -> dict:
+    """납본자료접수 화면 '전체출력' → IE 알림 막대(Frame Notification Bar) '저장' → Downloads 에 ExcelDown….xls.
+    2026-09-18 실측: 알림 막대 버튼은 이름('저장')으로 잡히지만 control_type 이 Button 이 아니라 descendants 전체에서 이름으로 찾는다."""
+    import glob, os, re as _re, shutil
+    log = _aslog(log)
+    from .ids_from_export import receipt_map
+    win = edge_window(log)
+    if not _button(ie_content(win), "전체출력"):
+        raise RuntimeError("납본자료접수 화면이 아닙니다('전체출력' 버튼 없음)")
+    dl = Path(os.path.expanduser("~/Downloads"))
+    before = set(glob.glob(str(dl / "ExcelDown*")))
+    def click_export():
+        win.set_focus(); time.sleep(0.3); _button(ie_content(win), "전체출력").click_input()
+    def bar():
+        bars = win.descendants(class_name="Frame Notification Bar")
+        return bars[0] if bars else None
+    b = _act(log, "'전체출력' 클릭 → 다운로드 알림 막대", click_export, bar, T_DIALOG)
+    def click_save():
+        s = [e for e in bar().descendants() if e.window_text() == "저장"]
+        if not s:
+            raise RuntimeError("알림 막대에 '저장' 없음")
+        s[0].click_input()
+    def new_file():
+        cand = [p for p in set(glob.glob(str(dl / "ExcelDown*"))) - before if not p.endswith(".partial") and not p.endswith(".crdownload")]
+        return cand[0] if cand else None
+    path = Path(_act(log, "알림 막대 '저장' → 파일 내려받기", click_save, new_file, 40))
+    time.sleep(1)
+    m = receipt_map(path)
+    if not m:
+        raise RuntimeError(f"내려받은 파일에서 접수번호·콘텐츠ID 를 찾지 못함: {path.name}")
+    receipt = m[0]["no"].split("-")[0]
+    work_dir.mkdir(parents=True, exist_ok=True)
+    dst = work_dir / f"접수번호 {receipt}.xls"
+    shutil.copy(path, dst)
+    log(f"전체출력 저장: {dst} ({len(m)}건, 접수번호 {receipt})")
+    return {"file": str(dst), "receipt": receipt, "count": len(m), "first": m[0]["cnts"], "last": m[-1]["cnts"], "title": m[0]["title"]}
+
+
 def prepare_batch_import(note: str, xlsx: Path, log=None) -> dict:
     """전체 준비 시퀀스(반입 전까지). 실패하면 화면 캡처·창 목록을 남기고 예외."""
     log = _aslog(log)

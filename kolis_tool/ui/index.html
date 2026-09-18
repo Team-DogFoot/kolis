@@ -89,6 +89,15 @@
     <div id="k-fields" class="muted" style="font-size:12px"></div>
     <div class="row" style="margin-top:10px"><input type="text" id="k-yes" placeholder="직원 동의 후 YES 입력" style="max-width:200px"><button class="danger" onclick="kolisSubmit()">반입 실행</button><span id="k-sub" class="muted"></span></div>
   </section>
+
+  <section class="card"><h2><span class="step">6</span> 반입 결과 → 원고 폴더명을 콘텐츠ID로</h2>
+    <p class="muted" style="margin:0 0 6px">가이드 3.4-가. KOLIS 화면에서 "전체출력"을 눌러 내려받은 파일(접수번호 ↔ 콘텐츠ID)로 회차 폴더 이름을 CNTS-… 로 바꿉니다. 원문일괄등록(폴더)은 이 이름을 기준으로 합니다.</p>
+    <div class="row"><button class="secondary" onclick="exportDownload()">KOLIS 에서 전체출력 받기</button><span id="x-out" class="muted"></span></div>
+    <div class="row"><input type="text" id="x-file" placeholder="전체출력 파일 (ExcelDown….xls / 접수번호 N.xls)"><button class="secondary" onclick="pickInto('x-file', 'Excel (*.xls;*.xlsx)')">찾아보기</button></div>
+    <div class="row"><input type="text" id="x-root" placeholder="원고 상위 폴더 (1단계에서 자동으로 들어감)"><button class="secondary" onclick="pickFolderInto('x-root')">찾아보기</button></div>
+    <div class="row"><button class="secondary" onclick="cntsPreview()">미리보기</button><button onclick="cntsApply()">폴더명 변경</button><button class="secondary" onclick="cntsUndo()">되돌리기</button><span id="c-out" class="muted"></span></div>
+    <div id="c-list" class="muted" style="font-size:12px"></div>
+  </section>
 </div>
 <div><div id="log">준비됨.\n</div></div>
 </main>
@@ -96,7 +105,7 @@
 const S = { folder:'', xlsx:'', ms:'', th:'', title:'', enrichedXlsx:'', workJson:'', hasSaved:false };
 const $ = id => document.getElementById(id);
 function appendLog(m){ const l=$('log'); l.textContent += new Date().toLocaleTimeString()+'  '+m+'\n'; l.scrollTop=l.scrollHeight; }
-const STEP_LABEL = {manuscript:'원고 파일명', thumbs:'썸네일 파일명', enrich:'보완', convert:'반입용 엑셀', kolis_prepare:'KOLIS 준비', kolis_submit:'KOLIS 반입'};
+const STEP_LABEL = {manuscript:'원고 파일명', thumbs:'썸네일 파일명', enrich:'보완', convert:'반입용 엑셀', kolis_prepare:'KOLIS 준비', kolis_submit:'KOLIS 반입', export:'전체출력', cnts:'폴더명 CNTS'};
 async function saveState(patch){ if(!S.folder) return; S.state = await pywebview.api.save_state(S.folder, patch); renderState(); }
 async function saveMemo(){ await saveState({memo: $('memo').value}); }
 function renderState(){
@@ -110,6 +119,8 @@ function restoreFromState(){
   if(st.enrich && st.enrich.out){ S.enrichedXlsx = st.enrich.out; S.workJson = st.enrich.json || ''; $('c-xlsx').value = st.enrich.out; $('btn-conv').disabled=false; }
   if(st.convert && st.convert.out){ $('k-xlsx').value = st.convert.out; $('out-name').value = st.convert.out; $('conv-out').innerHTML = `<span class="muted">지난 결과 ${st.convert.done_at}: ${st.convert.rows}행, 노란 셀 ${st.convert.flags}개 → ${st.convert.out}</span>`; }
   if(st.kolis_prepare){ $('k-note').value = st.kolis_prepare.note || ''; $('k-out').innerHTML = `<span class="muted">마지막 기록 ${st.kolis_prepare.done_at}: 반입 전 준비까지 함${st.kolis_submit?` · 반입 클릭 ${st.kolis_submit.done_at}`:''} — 실제 KOLIS 화면을 확인하고 진행</span>`; }
+  if(st.export && st.export.file){ $('x-file').value = st.export.file; $('x-out').innerHTML = `<span class="muted">지난 기록 ${st.export.done_at}: 접수번호 ${st.export.receipt}, ${st.export.count}건</span>`; }
+  if(st.cnts){ $('c-out').innerHTML = `<span class="muted">지난 기록 ${st.cnts.done_at}: ${st.cnts.count}개 폴더 → CNTS</span>`; }
   if(st.manuscript){ $('ms-out').innerHTML = `<span class="muted">지난 기록 ${st.manuscript.done_at}: ${st.manuscript.files}장 변경</span>`; }
   if(st.thumbs){ $('th-out').innerHTML = `<span class="muted">지난 기록 ${st.thumbs.done_at}: ${st.thumbs.count}장 변경</span>`; }
   renderState();
@@ -133,7 +144,27 @@ window.addEventListener('pywebviewready', async () => {
   if(!e.claude) appendLog('클로드코드가 없어 2단계(보완)를 실행할 수 없습니다. 설치 후 터미널에서 claude 를 한 번 실행해 로그인하세요.');
 });
 async function pickFolder(){ const f = await pywebview.api.pick_folder(); if(f){ $('folder').value=f; scan(); } }
-async function pickInto(id){ const f = await pywebview.api.pick_file(); if(f){ $(id).value=f; if(id==='e-xlsx'){ S.xlsx=f; $('btn-enrich').disabled=false; refreshSaved(); } if(id==='c-xlsx'){ S.enrichedXlsx=f; $('btn-conv').disabled=false; } } }
+async function pickFolderInto(id){ const f = await pywebview.api.pick_folder(); if(f) $(id).value=f; }
+async function exportDownload(){
+  $('x-out').innerHTML='<span class="spin"></span> KOLIS 전체출력 → 저장 중… (Edge 창을 건드리지 마세요)';
+  const r = await pywebview.api.export_download();
+  if(r.error){ $('x-out').innerHTML=`<span class="bad">${r.error}</span>`; return; }
+  $('x-file').value = r.file; $('x-out').innerHTML = `<span class="ok">접수번호 ${r.receipt}, ${r.count}건</span> (${r.first} … ${r.last}) → ${r.file}`;
+  saveState({export:{file:r.file, receipt:r.receipt, count:r.count}});
+}
+async function cntsPreview(){
+  const r = await pywebview.api.cnts_preview($('x-file').value, $('x-root').value);
+  if(r.error){ $('c-list').innerHTML=`<span class="bad">${r.error}</span>`; return; }
+  $('c-list').innerHTML = `접수번호 ${r.receipt} · ${r.title} · ${r.count}개 폴더<br>` + r.pairs.map(p=>`${p[0]} → ${p[1]} (${p[2]})`).join('<br>');
+}
+async function cntsApply(){
+  if(!confirm('회차 폴더 이름을 콘텐츠ID로 바꿉니다. 되돌리기 가능합니다. 진행할까요?')) return;
+  const r = await pywebview.api.cnts_apply($('x-file').value, $('x-root').value);
+  $('c-out').innerHTML = r.error ? `<span class="bad">${r.error}</span>` : `<span class="ok">완료</span> ${r.count}개 폴더 → CNTS (접수번호 ${r.receipt})`;
+  if(!r.error) saveState({cnts:{count:r.count, receipt:r.receipt}});
+}
+async function cntsUndo(){ const r = await pywebview.api.cnts_undo($('x-root').value); $('c-out').innerHTML = r.error ? `<span class="bad">${r.error}</span>` : `${r.count}개 되돌림`; }
+async function pickInto(id, pattern){ const f = await pywebview.api.pick_file(pattern||'Excel (*.xlsx)'); if(f){ $(id).value=f; if(id==='e-xlsx'){ S.xlsx=f; $('btn-enrich').disabled=false; refreshSaved(); } if(id==='c-xlsx'){ S.enrichedXlsx=f; $('btn-conv').disabled=false; } } }
 async function pickSave(){ const f = await pywebview.api.pick_save($('out-name').value || '반입용.xlsx'); if(f) $('out-name').value=f; }
 function resetAll(){ if(confirm('화면을 처음 상태로 되돌립니다. 만들어 둔 파일은 지워지지 않습니다.')) location.reload(); }
 async function scan(){
@@ -155,7 +186,7 @@ function onScan(r){
   $('btn-enrich').disabled = !r.xlsx; $('btn-thp').disabled = $('btn-thu').disabled = !r.thumbs; $('btn-tha').disabled = !r.thumbs || r.thumbs_done;
   $('btn-conv').disabled = !r.xlsx;
   $('btn-msp').disabled = $('btn-msu').disabled = !r.manuscripts; $('btn-msa').disabled = !r.manuscripts || r.manuscripts_done;
-  $('e-xlsx').value = r.xlsx; $('c-xlsx').value = r.xlsx;
+  $('e-xlsx').value = r.xlsx; $('c-xlsx').value = r.xlsx; $('x-root').value = r.manuscripts;
   $('out-name').value = `기초메타데이터(26웹툰대행5차-)_코리스 반입용_${r.title.replace(/\s/g,'')}.xlsx`;
   appendLog(`폴더 읽음: ${r.title}, ${r.rows}행, 회차 ${r.episodes}, 썸네일 ${r.thumb_files}. 비어 있는 열: ${r.empty_cols.join(', ')||'없음'}`);
   restoreFromState(); refreshSaved(); loadRecent();
