@@ -364,15 +364,47 @@ def select_file_dialog(path: Path, log=None, title: str = FILE_DIALOG_TITLE) -> 
     log(f"파일 선택: {path.name}")
 
 
-def submit(pop, yes: str, log=None) -> None:
-    """'반입' 클릭. yes 가 정확히 'YES' 일 때만. KOLIS 에 실제 반입되는 동작."""
+T_IMPORT = 900   # 반입 처리 대기(초). 2026-09-18 실측: 수 분 걸림
+
+
+def submit(pop, yes: str, log=None, wait: bool = True) -> dict:
+    """'반입' 클릭 → "일괄반입이 진행됩니다. 진행하시겠습니까?" 확인 → (wait) "반입이 완료되었습니다" 까지 대기 → 확인.
+    yes 가 정확히 'YES' 일 때만. KOLIS 에 실제 반입되는 동작.
+    2026-09-18 실측: 팝업이 앞에 있지 않으면 클릭이 먹지 않음 → set_focus 후 클릭, 확인창이 뜰 때까지 재시도."""
     log = _aslog(log)
     if yes != "YES":
         raise RuntimeError("반입은 직원 동의 후 YES 를 넘겨야 합니다")
-    b = _button(ie_content(pop), "반입")
-    if not b:
-        raise RuntimeError("'반입' 버튼이 없습니다")
-    b.click_input(); log("'반입' 클릭함")
+    def click_import():
+        pop.set_focus(); time.sleep(0.4)
+        b = _button(ie_content(pop), "반입")
+        if not b:
+            raise RuntimeError("'반입' 버튼이 없습니다")
+        b.click_input()
+    dlg = _act(log, "'반입' 클릭 → 진행 확인창", click_import, confirm_dialog_now, T_DIALOG)
+    txt = " ".join(t.window_text() for t in dlg.descendants(class_name="Static") if t.window_text())
+    log(f"확인창: {txt[:80]}")
+    if "진행" not in txt:
+        dlg.child_window(title="취소", class_name="Button").click()
+        raise RuntimeError(f"예상과 다른 확인창(취소함): {txt[:80]}")
+    dlg.child_window(title="확인", class_name="Button").click()
+    log("'확인' 클릭 — KOLIS 가 반입 처리 중(수 분 걸릴 수 있음)")
+    if not wait:
+        return {"submitted": True, "message": ""}
+    t0 = time.time()
+    while time.time() - t0 < T_IMPORT:
+        d = confirm_dialog_now()
+        if d:
+            msg = " ".join(t.window_text() for t in d.descendants(class_name="Static") if t.window_text())
+            log(f"결과 메시지: {msg[:120]} ({int(time.time() - t0)}초)")
+            d.child_window(title="확인", class_name="Button").click()
+            time.sleep(1.5)
+            return {"submitted": True, "message": msg, "ok": "완료" in msg, "popup_open": bool(popup_window())}
+        if not popup_window():
+            log("팝업이 닫힘(결과 메시지 없이)"); return {"submitted": True, "message": "", "ok": None, "popup_open": False}
+        if int(time.time() - t0) % 30 == 0:
+            log(f"  반입 처리 대기 중… {int(time.time() - t0)}초")
+        time.sleep(1)
+    raise TimeoutError(f"반입 결과 메시지가 {T_IMPORT}초 안에 뜨지 않음")
 
 
 def close_popup(pop, log=None) -> None:

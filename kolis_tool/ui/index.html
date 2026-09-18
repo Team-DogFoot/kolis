@@ -182,11 +182,16 @@ async function kolisPrepare(){
 }
 async function kolisSubmit(){
   const r = await pywebview.api.kolis_submit($('k-yes').value.trim());
-  $('k-sub').innerHTML = r.error ? `<span class="bad">${r.error}</span>` : '<span class="ok">반입 클릭함 — KOLIS 화면의 결과를 확인하세요</span>';
-  if(!r.error) saveState({kolis_submit:{}});
+  if(r.error){ $('k-sub').innerHTML = `<span class="bad">${r.error}</span>`; return; }
+  $('k-sub').innerHTML = '<span class="spin"></span> 반입 처리 중… KOLIS 가 끝낼 때까지 기다립니다(수 분). Edge 창을 건드리지 마세요.';
 }
 function onDone(kind, p){
   if(kind==='scan'){ onScan(p); return; }
+  if(kind==='kolis_submit'){
+    if(p.error){ $('k-sub').innerHTML=`<span class="bad">${p.error}</span>`; return; }
+    $('k-sub').innerHTML = p.ok ? `<span class="ok">${p.message}</span> — KOLIS 목록에서 접수번호를 확인하세요` : `<span class="warn">${p.message||'결과 메시지 없음'}</span>`;
+    saveState({kolis_submit:{message:p.message||'', ok:p.ok}}); return;
+  }
   if(kind==='manuscript'){
     $('btn-msp').disabled=$('btn-msu').disabled=false;
     if(p.error){ $('ms-out').innerHTML=`<span class="bad">${p.error}</span>`; $('btn-msa').disabled=false; return; }

@@ -373,10 +373,16 @@ class Api:
             pop = kolis_ui.popup_window()
             if not pop:
                 return {"error": "일괄반입 팝업이 열려 있지 않습니다"}
-            kolis_ui.submit(pop, yes, kolis_ui.Log(self._log))
-            return {"ok": True}
         except Exception as e:  # noqa: BLE001
             return {"error": str(e)}
+        def job():
+            try:
+                r = kolis_ui.submit(pop, yes, kolis_ui.Log(self._log))
+                self._done("kolis_submit", r)
+            except Exception as e:  # noqa: BLE001
+                self._log("오류: " + str(e)); self._done("kolis_submit", {"error": str(e)})
+        threading.Thread(target=job, daemon=True).start()
+        return {"started": True}
 
     def open_path(self, path: str) -> bool:
         import os
