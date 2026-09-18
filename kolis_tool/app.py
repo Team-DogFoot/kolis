@@ -348,8 +348,7 @@ class Api:
         from . import kolis_ui
         def job():
             try:
-                self._log("KOLIS 일괄반입 준비 시작(반입 버튼은 누르지 않음)")
-                r = kolis_ui.prepare_batch_import(note, Path(xlsx), self._log)
+                r = kolis_ui.prepare_batch_import(note, Path(xlsx), kolis_ui.Log(self._log))
                 self._done("kolis", r)
             except Exception as e:  # noqa: BLE001
                 self._log("오류: " + "".join(traceback.format_exception_only(type(e), e)).strip())
@@ -364,7 +363,7 @@ class Api:
             pop = kolis_ui.popup_window()
             if not pop:
                 return {"error": "일괄반입 팝업이 열려 있지 않습니다"}
-            kolis_ui.submit(pop, yes, self._log)
+            kolis_ui.submit(pop, yes, kolis_ui.Log(self._log))
             return {"ok": True}
         except Exception as e:  # noqa: BLE001
             return {"error": str(e)}
