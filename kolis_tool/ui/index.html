@@ -92,7 +92,8 @@
 
   <section class="card"><h2><span class="step">6</span> 반입 결과 → 원고 폴더명을 콘텐츠ID로</h2>
     <p class="muted" style="margin:0 0 6px">가이드 3.4-가. KOLIS 화면에서 "전체출력"을 눌러 내려받은 파일(접수번호 ↔ 콘텐츠ID)로 회차 폴더 이름을 CNTS-… 로 바꿉니다. 원문일괄등록(폴더)은 이 이름을 기준으로 합니다.</p>
-    <div class="row"><button class="secondary" onclick="exportDownload()">KOLIS 에서 전체출력 받기</button><span id="x-out" class="muted"></span></div>
+    <div class="row"><label>접수번호 <input type="text" id="x-receipt" placeholder="예: 811" style="max-width:120px"></label><button class="secondary" onclick="exportDownload()">KOLIS 에서 전체출력 받기</button><span id="x-out" class="muted"></span></div>
+    <p class="muted" style="margin:0 0 6px;font-size:12px">홈 등 다른 화면이어도 납본자료접수로 이동해 접수번호로 찾은 뒤 전체출력합니다. 접수번호를 비우면 지금 화면의 목록을 그대로 출력합니다.</p>
     <div class="row"><input type="text" id="x-file" placeholder="전체출력 파일 (ExcelDown….xls / 접수번호 N.xls)"><button class="secondary" onclick="pickInto('x-file', 'Excel (*.xls;*.xlsx)')">찾아보기</button></div>
     <div class="row"><input type="text" id="x-root" placeholder="원고 상위 폴더 (1단계에서 자동으로 들어감)"><button class="secondary" onclick="pickFolderInto('x-root')">찾아보기</button></div>
     <div class="row"><button class="secondary" onclick="cntsPreview()">미리보기</button><button onclick="cntsApply()">폴더명 변경</button><button class="secondary" onclick="cntsUndo()">되돌리기</button><span id="c-out" class="muted"></span></div>
@@ -119,7 +120,7 @@ function restoreFromState(){
   if(st.enrich && st.enrich.out){ S.enrichedXlsx = st.enrich.out; S.workJson = st.enrich.json || ''; $('c-xlsx').value = st.enrich.out; $('btn-conv').disabled=false; }
   if(st.convert && st.convert.out){ $('k-xlsx').value = st.convert.out; $('out-name').value = st.convert.out; $('conv-out').innerHTML = `<span class="muted">지난 결과 ${st.convert.done_at}: ${st.convert.rows}행, 노란 셀 ${st.convert.flags}개 → ${st.convert.out}</span>`; }
   if(st.kolis_prepare){ $('k-note').value = st.kolis_prepare.note || ''; $('k-out').innerHTML = `<span class="muted">마지막 기록 ${st.kolis_prepare.done_at}: 반입 전 준비까지 함${st.kolis_submit?` · 반입 클릭 ${st.kolis_submit.done_at}`:''} — 실제 KOLIS 화면을 확인하고 진행</span>`; }
-  if(st.export && st.export.file){ $('x-file').value = st.export.file; $('x-out').innerHTML = `<span class="muted">지난 기록 ${st.export.done_at}: 접수번호 ${st.export.receipt}, ${st.export.count}건</span>`; }
+  if(st.export && st.export.file){ $('x-file').value = st.export.file; $('x-receipt').value = st.export.receipt || ''; $('x-out').innerHTML = `<span class="muted">지난 기록 ${st.export.done_at}: 접수번호 ${st.export.receipt}, ${st.export.count}건</span>`; }
   if(st.cnts){ $('c-out').innerHTML = `<span class="muted">지난 기록 ${st.cnts.done_at}: ${st.cnts.count}개 폴더 → CNTS</span>`; }
   if(st.manuscript){ $('ms-out').innerHTML = `<span class="muted">지난 기록 ${st.manuscript.done_at}: ${st.manuscript.files}장 변경</span>`; }
   if(st.thumbs){ $('th-out').innerHTML = `<span class="muted">지난 기록 ${st.thumbs.done_at}: ${st.thumbs.count}장 변경</span>`; }
@@ -146,10 +147,12 @@ window.addEventListener('pywebviewready', async () => {
 async function pickFolder(){ const f = await pywebview.api.pick_folder(); if(f){ $('folder').value=f; scan(); } }
 async function pickFolderInto(id){ const f = await pywebview.api.pick_folder(); if(f) $(id).value=f; }
 async function exportDownload(){
-  $('x-out').innerHTML='<span class="spin"></span> KOLIS 전체출력 → 저장 중… (Edge 창을 건드리지 마세요)';
-  const r = await pywebview.api.export_download();
+  $('x-out').innerHTML='<span class="spin"></span> KOLIS 이동 → 찾기 → 전체출력 → 저장 중… (Edge 창을 건드리지 마세요)';
+  await pywebview.api.export_download($('x-receipt').value.trim());
+}
+function onExport(r){
   if(r.error){ $('x-out').innerHTML=`<span class="bad">${r.error}</span>`; return; }
-  $('x-file').value = r.file; $('x-out').innerHTML = `<span class="ok">접수번호 ${r.receipt}, ${r.count}건</span> (${r.first} … ${r.last}) → ${r.file}`;
+  $('x-file').value = r.file; $('x-receipt').value = r.receipt; $('x-out').innerHTML = `<span class="ok">접수번호 ${r.receipt}, ${r.count}건</span> (${r.first} … ${r.last}) → ${r.file}`;
   saveState({export:{file:r.file, receipt:r.receipt, count:r.count}});
 }
 async function cntsPreview(){
@@ -220,6 +223,7 @@ async function kolisSubmit(){
 }
 function onDone(kind, p){
   if(kind==='scan'){ onScan(p); return; }
+  if(kind==='export'){ onExport(p); return; }
   if(kind==='kolis_submit'){
     if(p.error){ $('k-sub').innerHTML=`<span class="bad">${p.error}</span>`; return; }
     $('k-sub').innerHTML = p.ok ? `<span class="ok">${p.message}</span> — KOLIS 목록에서 접수번호를 확인하세요` : `<span class="warn">${p.message||'결과 메시지 없음'}</span>`;

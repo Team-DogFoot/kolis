@@ -414,15 +414,42 @@ def close_popup(pop, log=None) -> None:
         b.click_input(); log("팝업 닫음")
 
 
-def download_export(log=None, work_dir: Path = Path("work")) -> dict:
+def search_receipt(win, receipt: str, log=None) -> int:
+    """납본자료접수 화면에서 접수번호를 넣고 '찾기' → 목록(접수번호 N-M 텍스트)이 뜰 때까지. 건수를 돌려준다."""
+    log = _aslog(log)
+    receipt = str(receipt).strip()
+    if not receipt.isdigit():
+        raise RuntimeError(f"접수번호는 숫자여야 합니다: '{receipt}'")
+    def put():
+        e = _edit(ie_content(win), "접수번호")
+        if not e:
+            raise RuntimeError("'접수번호' 입력칸이 없습니다")
+        e.click_input(); e.type_keys("^a" + receipt)
+    _act(log, "접수번호 입력", put, lambda: _value(_edit(ie_content(win), "접수번호")).strip() == receipt, 5)
+    def rows():
+        return [t for t in ie_content(win).descendants(control_type="Text") if re.fullmatch(rf"{receipt}-\d+", t.window_text().strip())]
+    _act(log, "'찾기' 클릭 → 목록", lambda: _button(ie_content(win), "찾기").click_input(), rows, T_PAGE)
+    n = len(rows())
+    log(f"접수번호 {receipt} 목록 표시(화면에 {n}건 이상)")
+    return n
+
+
+def download_export(log=None, work_dir: Path = Path("work"), receipt: str = "") -> dict:
     """납본자료접수 화면 '전체출력' → IE 알림 막대(Frame Notification Bar) '저장' → Downloads 에 ExcelDown….xls.
+    다른 화면(홈 등)이면 메뉴로 이동하고, receipt 가 있으면 접수번호로 '찾기' 해서 목록을 띄운 뒤 출력한다.
     2026-09-18 실측: 알림 막대 버튼은 이름('저장')으로 잡히지만 control_type 이 Button 이 아니라 descendants 전체에서 이름으로 찾는다."""
-    import glob, os, re as _re, shutil
+    import glob, os, shutil
     log = _aslog(log)
     from .ids_from_export import receipt_map
+    cleanup_stray_dialogs(log)
     win = edge_window(log)
-    if not _button(ie_content(win), "전체출력"):
-        raise RuntimeError("납본자료접수 화면이 아닙니다('전체출력' 버튼 없음)")
+    goto_recet(win, log)
+    if receipt:
+        search_receipt(win, receipt, log)
+    else:
+        has_rows = [t for t in ie_content(win).descendants(control_type="Text") if re.fullmatch(r"\d+-\d+", t.window_text().strip())]
+        if not has_rows:
+            raise RuntimeError("화면에 목록이 없습니다. 접수번호를 넣고 다시 실행하세요")
     dl = Path(os.path.expanduser("~/Downloads"))
     before = set(glob.glob(str(dl / "ExcelDown*")))
     def click_export():

@@ -385,13 +385,16 @@ class Api:
         return {"started": True}
 
     # ---------- 6. 반입 결과 → 폴더명 CNTS ----------
-    def export_download(self) -> dict:
-        """KOLIS 납본자료접수 화면의 '전체출력' 클릭 → 알림 막대 '저장' → Downloads 의 ExcelDown….xls 를 work/접수번호 N.xls 로 복사."""
+    def export_download(self, receipt: str = "") -> dict:
+        """KOLIS 로 이동 → (접수번호 찾기) → '전체출력' → 알림 막대 '저장' → work/접수번호 N.xls. 스레드, 끝나면 onDone('export')."""
         from . import kolis_ui
-        try:
-            return kolis_ui.download_export(kolis_ui.Log(self._log), self._work_dir)
-        except Exception as e:  # noqa: BLE001
-            return {"error": str(e)}
+        def job():
+            try:
+                self._done("export", kolis_ui.download_export(kolis_ui.Log(self._log), self._work_dir, receipt))
+            except Exception as e:  # noqa: BLE001
+                self._log("오류: " + str(e)); self._done("export", {"error": str(e)})
+        threading.Thread(target=job, daemon=True).start()
+        return {"started": True}
 
     def cnts_preview(self, export_file: str, root: str) -> dict:
         from .cnts_folders import plan
