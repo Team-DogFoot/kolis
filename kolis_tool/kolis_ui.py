@@ -421,14 +421,22 @@ def search_receipt(win, receipt: str, log=None) -> int:
     receipt = str(receipt).strip()
     if not receipt.isdigit():
         raise RuntimeError(f"접수번호는 숫자여야 합니다: '{receipt}'")
+    def rows():
+        return [t for t in ie_content(win).descendants(control_type="Text") if re.fullmatch(rf"{receipt}-\d+", t.window_text().strip())]
+    if _value(_edit(ie_content(win), "접수번호")).strip() == receipt and rows():
+        log(f"접수번호 {receipt} 목록이 이미 표시됨"); return len(rows())
     def put():
         e = _edit(ie_content(win), "접수번호")
         if not e:
             raise RuntimeError("'접수번호' 입력칸이 없습니다")
-        e.click_input(); e.type_keys("^a" + receipt)
-    _act(log, "접수번호 입력", put, lambda: _value(_edit(ie_content(win), "접수번호")).strip() == receipt, 5)
-    def rows():
-        return [t for t in ie_content(win).descendants(control_type="Text") if re.fullmatch(rf"{receipt}-\d+", t.window_text().strip())]
+        e.click_input(); e.type_keys("^a{BACKSPACE}" + receipt)
+        time.sleep(0.5)
+        d = confirm_dialog_now()      # 목록이 떠 있으면 "검색 조건을 변경하면 그리드가 초기화 됩니다" 확인창(2026-09-19 확인)
+        if d:
+            txt = " ".join(t.window_text() for t in d.descendants(class_name="Static") if t.window_text())
+            d.child_window(title="확인", class_name="Button").click_input(); time.sleep(0.5)
+            log(f"확인창 처리: {txt[:40]}")
+    _act(log, "접수번호 입력", put, lambda: not confirm_dialog_now() and _value(_edit(ie_content(win), "접수번호")).strip() == receipt, 5)
     _act(log, "'찾기' 클릭 → 목록", lambda: _button(ie_content(win), "찾기").click_input(), rows, T_PAGE)
     n = len(rows())
     log(f"접수번호 {receipt} 목록 표시(화면에 {n}건 이상)")

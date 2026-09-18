@@ -259,9 +259,42 @@ def process_one(mapping: dict, thumb_dir: Path, log: UiLog, go_next: bool, expec
     return {"part": part, "status": "done", "thumb": thumb.name}
 
 
-def run(import_xlsx: Path, thumb_dir: Path, count: int, log: UiLog, handle: dict, progress=None) -> dict:
-    """현재 열린 수정 팝업부터 count 건(0=끝까지). handle['cancel'] 로 중단. progress(i, result) 콜백."""
+def open_edit_popup(receipt: str, log: UiLog):
+    """홈 등 어느 화면에서든: 납본자료접수 이동 → 접수번호 찾기 → 목록 헤더 체크박스로 전체 선택 → '수정' → 수정 팝업."""
+    from . import kolis_ui as k
+    from pywinauto import mouse
+    k.cleanup_stray_dialogs(log)
+    win = k.edge_window(log)
+    k.goto_recet(win, log)
+    k.search_receipt(win, receipt, log)
+    ie = k.ie_content(win)
+    hdr = [c for c in ie.descendants(control_type="CheckBox") if c.rectangle().width() > 0]
+    if not hdr:
+        raise Stop("목록 헤더 체크박스를 찾지 못함")
+    cb = min(hdr, key=lambda c: (c.rectangle().top, c.rectangle().left))   # 목록 맨 위·왼쪽 = 전체 선택
+    r = cb.rectangle(); cx, cy = (r.left + r.right) // 2, (r.top + r.bottom) // 2
+    for _ in range(3):
+        if checked(cx, cy):
+            break
+        mouse.click(coords=(cx, cy)); time.sleep(0.6)
+    if not checked(cx, cy):
+        raise Stop("전체 선택 체크가 되지 않음")
+    log("목록 전체 선택")
+    k._button(k.ie_content(win), "수정").click_input()
+    w, ie = wait(lambda: (lambda p: p if p[1] else None)(edit_popup()), 20, "수정 팝업")
+    d, t = dialog_text()
+    if d:
+        raise Stop(f"수정 클릭 후 알림창: '{t[:80]}'")
+    log(f"수정 팝업 열림(편/권차 {k._value(k._edit(ie, '편/권차'))})")
+
+
+def run(import_xlsx: Path, thumb_dir: Path, count: int, log: UiLog, handle: dict, progress=None, receipt: str = "") -> dict:
+    """수정 팝업부터 count 건(0=끝까지). 팝업이 없고 receipt 가 있으면 홈에서부터 열어 시작. handle['cancel'] 로 중단."""
     mapping = load_map(import_xlsx)
+    if not edit_popup()[1]:
+        if not receipt:
+            raise Stop("수정 팝업이 없습니다. 접수번호를 넣으면 프로그램이 납본자료접수 → 찾기 → 전체 선택 → 수정까지 엽니다")
+        open_edit_popup(receipt, log)
     log(f"썸네일 등록 시작: 엑셀 행 {len(mapping)}, 폴더 {thumb_dir}, 목표 {count or '끝까지'}건")
     results = []; i = 0; last_part = None
     t0 = time.time()
