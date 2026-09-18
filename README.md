@@ -13,6 +13,18 @@
 - `mods-check` 는 가이드 캡처에서 옮겨 적은 실제 형식 XML(`tests/fixtures/`)로 검증.
 - 다음 단계: `docs/HANDOFF.md` 참조.
 
+## 다른 PC 에서 시작하기
+```
+git clone https://github.com/Team-DogFoot/kolis.git
+cd kolis
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+copy .env.example .env       (메모장으로 열어 KOLIS_ID, KOLIS_PW 입력)
+claude
+```
+클로드코드가 뜨면 **"시작"** 이라고만 입력한다. 나머지 지시는 `docs/HANDOFF.md` 0절에 있다.
+
 ## 설치
 ```
 python -m venv .venv && .venv\Scripts\activate      (윈도)
