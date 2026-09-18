@@ -52,8 +52,11 @@
     </div>
   </section>
 
-  <section class="card"><h2><span class="step">3</span> 회차 썸네일 파일명</h2>
-    <div class="row"><span class="muted">규칙: &lt;제목 공백제거&gt;&lt;회차 2자리&gt;.jpg (완료 사례 5-190/201/206)</span></div>
+  <section class="card"><h2><span class="step">3</span> 파일명 정리</h2>
+    <p style="margin:0 0 4px"><b>가. 원고 파일명</b> <span class="muted">— 회차 폴더마다 8자리 일련번호(00000001.jpg …). 가이드 3.3, 다크네이머 대체</span></p>
+    <div class="row"><button class="secondary" id="btn-msp" onclick="msPreview()" disabled>미리보기</button><button id="btn-msa" onclick="msApply()" disabled>이름 변경</button><button class="secondary" id="btn-msu" onclick="msUndo()" disabled>되돌리기</button><span id="ms-out" class="muted"></span></div>
+    <div id="ms-list" class="muted" style="font-size:12px"></div>
+    <p style="margin:12px 0 4px"><b>나. 회차 썸네일 파일명</b> <span class="muted">— &lt;제목 공백제거&gt;&lt;회차 2자리&gt;.jpg (완료 사례 5-190/201/206)</span></p>
     <div class="row"><button class="secondary" id="btn-thp" onclick="thumbsPreview()" disabled>미리보기</button><button id="btn-tha" onclick="thumbsApply()" disabled>이름 변경</button><button class="secondary" id="btn-thu" onclick="thumbsUndo()" disabled>되돌리기</button><span id="th-out" class="muted"></span></div>
     <div id="th-list" class="muted" style="font-size:12px"></div>
   </section>
@@ -100,11 +103,12 @@ async function scan(){
   $('scan-table').hidden=false;
   $('s-xlsx').innerHTML = r.xlsx ? r.xlsx : '<span class="bad">없음</span>';
   $('s-title').textContent = `${r.title} / ${r.rows}행`;
-  $('s-ms').textContent = r.manuscripts ? `${r.manuscripts}  (회차 폴더 ${r.episodes}개, 이미지 ${r.images}장)` : '없음';
+  $('s-ms').innerHTML = r.manuscripts ? `${r.manuscripts}  (회차 폴더 ${r.episodes}개, 이미지 ${r.images}장)` + (r.manuscripts_done ? ' <span class="ok">이미 이름 변경됨</span>' : '') : '없음';
   $('s-th').innerHTML = r.thumbs ? `${r.thumbs}  (${r.thumb_files}장)` + (r.thumbs_done ? ' <span class="ok">이미 이름 변경됨</span>' : '') : '없음';
   $('s-empty').innerHTML = r.empty_cols.map(c=>`<span>${c}</span>`).join('') || '<span class="ok">없음</span>';
   $('btn-enrich').disabled = !r.xlsx; $('btn-thp').disabled = $('btn-thu').disabled = !r.thumbs; $('btn-tha').disabled = !r.thumbs || r.thumbs_done;
   $('btn-conv').disabled = !r.xlsx;
+  $('btn-msp').disabled = $('btn-msu').disabled = !r.manuscripts; $('btn-msa').disabled = !r.manuscripts || r.manuscripts_done;
   $('e-xlsx').value = r.xlsx; $('c-xlsx').value = r.xlsx;
   if(!$('out-name').value) $('out-name').value = `기초메타데이터(26웹툰대행5차-)_코리스 반입용_${r.title.replace(/\s/g,'')}.xlsx`;
   appendLog(`폴더 읽음: ${r.title}, ${r.rows}행, 회차 ${r.episodes}, 썸네일 ${r.thumb_files}. 비어 있는 열: ${r.empty_cols.join(', ')||'없음'}`);
@@ -150,6 +154,13 @@ function onDone(kind, p){
   $('e-filled').textContent = '채운 칸: ' + (Object.entries(p.filled||{}).map(([k,v])=>`${k} ${v}`).join(', ')||'없음') + '  (노란 셀, 셀 메모에 근거)';
   appendLog('보완 완료: '+p.out);
 }
+async function msPreview(){
+  const r = await pywebview.api.manuscript_preview(S.ms);
+  const s = r.sample.map(x=>`${x.folder}: ${x.count}장  ${x.first.map(p=>p[0]+'→'+p[1]).join(', ')} … ${x.last.map(p=>p[0]+'→'+p[1]).join('')}`).join('<br>');
+  $('ms-list').innerHTML = `회차 폴더 ${r.folders}개, 파일 ${r.files}장` + (r.already.length?` <span class="warn">(이미 변경된 폴더 ${r.already.length}개)</span>`:'') + '<br>' + s;
+}
+async function msApply(){ const r = await pywebview.api.manuscript_apply(S.ms); $('ms-out').textContent = r.error? r.error : `폴더 ${r.folders}개, 파일 ${r.files}장 변경 (되돌리기 가능)`; if(!r.error) $('btn-msa').disabled=true; appendLog('원고 파일명: '+JSON.stringify(r)); }
+async function msUndo(){ const r = await pywebview.api.manuscript_undo(S.ms); $('ms-out').textContent = `폴더 ${r.folders}개, 파일 ${r.files}장 되돌림`; $('btn-msa').disabled=false; }
 async function thumbsPreview(){ const r = await pywebview.api.thumbs_preview(S.th, S.title); $('th-list').textContent = r.slice(0,5).map(p=>p[0]+' → '+p[1]).join('  |  ') + (r.length>5?`  … 총 ${r.length}개`:''); }
 async function thumbsApply(){ const r = await pywebview.api.thumbs_apply(S.th, S.title); $('th-out').textContent = r.error? r.error : `${r.count}개 변경 (되돌리기 가능)`; if(!r.error) $('btn-tha').disabled=true; appendLog('썸네일: '+JSON.stringify(r)); }
 async function thumbsUndo(){ const r = await pywebview.api.thumbs_undo(S.th); $('th-out').textContent = `${r.count}개 되돌림`; $('btn-tha').disabled=false; }

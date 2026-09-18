@@ -74,6 +74,7 @@ class Api:
         if manuscripts:
             eps = [p for p in manuscripts.iterdir() if p.is_dir()]
             info["episodes"] = len(eps); info["images"] = sum(len(list_images(p)) for p in eps)
+            info["manuscripts_done"] = any((p / "rename_manifest.json").exists() for p in eps)
         if thumbs:
             info["thumb_files"] = len(list_images(thumbs))
         if xlsx:
@@ -184,7 +185,37 @@ class Api:
             warns.append("리서치 메모: " + str(info["notes"]))
         return {"rows": rows, "warns": warns, "evidence": info.get("evidence", [])[:8]}
 
-    # ---------- 3. 썸네일 파일명 ----------
+    # ---------- 3-가. 원고 파일명(8자리 일련번호, 다크네이머 대체) ----------
+    def manuscript_preview(self, root: str) -> dict:
+        from .rename_files import plan, MANIFEST
+        from .common import list_images
+        r = Path(root)
+        folders = [p for p in sorted(r.iterdir()) if p.is_dir() and list_images(p)] or ([r] if list_images(r) else [])
+        done = [p.name for p in folders if (p / MANIFEST).exists()]
+        sample = []
+        for p in folders[:2]:
+            pairs = plan(p)
+            sample.append({"folder": p.name, "count": len(pairs), "first": [(a.name, b.name) for a, b in pairs[:2]], "last": [(a.name, b.name) for a, b in pairs[-1:]]})
+        return {"folders": len(folders), "files": sum(len(list_images(p)) for p in folders), "already": done, "sample": sample}
+
+    def manuscript_apply(self, root: str) -> dict:
+        from .rename_files import apply_tree
+        try:
+            res = apply_tree(Path(root))
+            return {"folders": len(res), "files": sum(len(v) for v in res.values())}
+        except SystemExit as e:
+            return {"error": str(e)}
+
+    def manuscript_undo(self, root: str) -> dict:
+        from .rename_files import undo, MANIFEST
+        r = Path(root)
+        targets = [r] if (r / MANIFEST).exists() else [p for p in r.iterdir() if p.is_dir() and (p / MANIFEST).exists()]
+        n = 0
+        for t in targets:
+            n += undo(t)
+        return {"folders": len(targets), "files": n}
+
+    # ---------- 3-나. 썸네일 파일명 ----------
     def thumbs_preview(self, folder: str, title: str) -> list:
         from .enrich import rename_thumbs
         return rename_thumbs(Path(folder), title, dry_run=True)
