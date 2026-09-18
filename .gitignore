@@ -7,5 +7,7 @@ work/
 samples/
 *.har
 *.xlsx
-!docs/**/*.xlsx
+*.xlsm
+!docs/source/**/*.xlsx
+!docs/source/**/*.xlsm
 kolis.json
