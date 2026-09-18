@@ -30,7 +30,7 @@
 <main>
 <div>
   <section class="card"><h2><span class="step">1</span> 납품 폴더</h2>
-    <div class="row"><input type="text" id="folder" placeholder="예: C:\Users\User\Downloads\케나즈_34. 죽고못사는연애"><button class="secondary" onclick="pickFolder()">찾아보기</button><button onclick="scan()">읽기</button></div>
+    <div class="row"><input type="text" id="folder" placeholder="예: C:\Users\User\Downloads\케나즈_34. 죽고못사는연애"><button class="secondary" onclick="pickFolder()">찾아보기</button><button id="btn-scan" onclick="scan()">읽기</button><span id="scan-out" class="muted"></span></div>
     <table id="scan-table" hidden>
       <tr><th>기초메타데이터</th><td id="s-xlsx"></td></tr>
       <tr><th>작품 / 행 수</th><td id="s-title"></td></tr>
@@ -137,8 +137,13 @@ async function pickInto(id){ const f = await pywebview.api.pick_file(); if(f){ $
 async function pickSave(){ const f = await pywebview.api.pick_save($('out-name').value || '반입용.xlsx'); if(f) $('out-name').value=f; }
 function resetAll(){ if(confirm('화면을 처음 상태로 되돌립니다. 만들어 둔 파일은 지워지지 않습니다.')) location.reload(); }
 async function scan(){
-  const r = await pywebview.api.scan_folder($('folder').value);
-  if(r.error){ appendLog(r.error); return; }
+  if(!$('folder').value.trim()) return;
+  $('btn-scan').disabled=true; $('scan-out').innerHTML='<span class="spin"></span> 폴더 읽는 중… (원고 장수 세는 중)';
+  await pywebview.api.scan_folder_async($('folder').value);
+}
+function onScan(r){
+  $('btn-scan').disabled=false; $('scan-out').textContent='';
+  if(r.error){ $('scan-out').innerHTML=`<span class="bad">${r.error}</span>`; appendLog(r.error); return; }
   Object.assign(S, {folder:r.folder, xlsx:r.xlsx, ms:r.manuscripts, th:r.thumbs, title:r.title, hasSaved:r.has_saved, state:r.state||{}, enrichedXlsx:'', workJson:''});
   $('conv-out').textContent=''; $('k-out').textContent=''; $('ms-out').textContent=''; $('th-out').textContent=''; $('review').hidden=true;
   $('scan-table').hidden=false;
@@ -181,6 +186,7 @@ async function kolisSubmit(){
   if(!r.error) saveState({kolis_submit:{}});
 }
 function onDone(kind, p){
+  if(kind==='scan'){ onScan(p); return; }
   if(kind==='manuscript'){
     $('btn-msp').disabled=$('btn-msu').disabled=false;
     if(p.error){ $('ms-out').innerHTML=`<span class="bad">${p.error}</span>`; $('btn-msa').disabled=false; return; }

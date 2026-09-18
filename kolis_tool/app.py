@@ -109,6 +109,16 @@ class Api:
             return []
 
     # ---------- 1. 작품 폴더 읽기 ----------
+    def scan_folder_async(self, folder: str) -> dict:
+        """폴더 읽기를 스레드로(원고 수백 장 세는 데 몇 초). 끝나면 onDone('scan', 결과)."""
+        def job():
+            try:
+                self._done("scan", self.scan_folder(folder))
+            except Exception as e:  # noqa: BLE001
+                self._done("scan", {"error": "".join(traceback.format_exception_only(type(e), e)).strip()})
+        threading.Thread(target=job, daemon=True).start()
+        return {"started": True}
+
     def scan_folder(self, folder: str) -> dict:
         from .enrich import read_sheet
         from .common import list_images
