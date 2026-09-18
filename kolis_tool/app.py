@@ -203,6 +203,33 @@ class Api:
         except Exception as e:  # noqa: BLE001
             return {"error": "".join(traceback.format_exception_only(type(e), e)).strip()}
 
+    # ---------- 5. KOLIS 일괄반입 준비 (직원 입회) ----------
+    def kolis_prepare(self, xlsx: str, note: str) -> dict:
+        """로그인된 Edge(IE 모드)에서 납본자료접수 → 일괄반입 → 확인 → 비고·첨부까지. '반입'은 누르지 않는다."""
+        from . import kolis_ui
+        def job():
+            try:
+                self._log("KOLIS 일괄반입 준비 시작(반입 버튼은 누르지 않음)")
+                r = kolis_ui.prepare_batch_import(note, Path(xlsx), self._log)
+                self._done("kolis", r)
+            except Exception as e:  # noqa: BLE001
+                self._log("오류: " + "".join(traceback.format_exception_only(type(e), e)).strip())
+                self._done("kolis", {"error": str(e)})
+        threading.Thread(target=job, daemon=True).start()
+        return {"started": True}
+
+    def kolis_submit(self, yes: str) -> dict:
+        """'반입' 클릭. 화면에서 YES 를 입력받아 넘긴다(직원 동의)."""
+        from . import kolis_ui
+        try:
+            pop = kolis_ui.popup_window()
+            if not pop:
+                return {"error": "일괄반입 팝업이 열려 있지 않습니다"}
+            kolis_ui.submit(pop, yes, self._log)
+            return {"ok": True}
+        except Exception as e:  # noqa: BLE001
+            return {"error": str(e)}
+
     def open_path(self, path: str) -> bool:
         import os
         os.startfile(path)  # noqa: S606
