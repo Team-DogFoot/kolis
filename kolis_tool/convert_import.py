@@ -114,7 +114,7 @@ def parse_authors(raw) -> list[tuple[str, str]]:
     """'MUSK 그림\\n이상 글' / '강구' / '글 홍길동, 그림 김철수' → [(이름, 역할)]"""
     if raw is None:
         return []
-    text = str(raw).replace("／", "/").strip()
+    text = str(raw).replace("／", "/").replace("：", ":").strip()
     parts = re.split(r"[\n,;/]+", text)
     out = []
     for p in parts:
@@ -122,6 +122,9 @@ def parse_authors(raw) -> list[tuple[str, str]]:
         if not p:
             continue
         role = None
+        m = re.match(r"^\s*(" + "|".join(map(re.escape, sorted(ROLE_WORDS, key=len, reverse=True))) + r")\s*:\s*(.+)$", p)   # '글: 기범' (enrich 형식)
+        if m:
+            out.append((m.group(2).strip(), m.group(1))); continue
         for rw in sorted(ROLE_WORDS, key=len, reverse=True):
             if p.endswith(" " + rw) or p.endswith(rw) and len(p) > len(rw) and p[-len(rw) - 1] in " ":
                 role = rw; p = p[: -len(rw)].strip(); break
@@ -143,10 +146,44 @@ def guess_place(publisher: str, place_hint: str | None, lookup: dict[str, str]) 
     return place, region_code_from_place(place)
 
 
-def build_row(pub: dict, folder: Path | None, publisher_place: dict[str, str]) -> Row:
+def build_row(pub: dict, folder: Path | None, publisher_place: dict[str, str], work: dict | None = None,
+              n_notes: int = 2, n_topics: int = 1, n_urls: int = 1) -> Row:
+    """work: enrich 가 만든 작품 정보 JSON(URL·이용등급·발행지). 템플릿마다 note/subject/url 열 수가 달라 위치를 맞춘다.
+    완료 사례(83열, 5차-190/201/206): note#0 기타(한자표제 등), note#1 이용대상, note#2 수집처 / subject/topic 2개(만화, 웹툰) / url 2개(플랫폼 메인, 작품)."""
+    work = work or {}
     r = Row(); r.source = pub
+    ta = 1 if n_notes >= 3 else 0          # target audience 주기 위치
     for col, v in CONSTANTS.items():
+        if col[0] == "/mods/note" or col[0] == "/mods/note[@type]":
+            continue
         r.set(col, v)
+    r.set(K("/mods/note", ta), "전체이용가"); r.set(K("/mods/note[@type]", ta), "target audience")
+    r.set(K("/mods/note", ta + 1), CONSTANTS[K("/mods/note", 1)]); r.set(K("/mods/note[@type]", ta + 1), "acquisition")
+    if n_topics >= 2:
+        r.set(K("/mods/subject/topic", 1), "웹툰")
+    # 원문주소: 플랫폼 메인 + 작품 페이지(매뉴얼 14.1). enrich JSON 의 최초 연재 플랫폼 항목 우선
+    plats = [p for p in (work.get("platforms") or []) if p.get("url_work")]
+    # 원문주소는 지금 서비스 중인 페이지여야 한다(매뉴얼 14.1: 연재처 소멸 시 기재하지 않음).
+    # 우선순위: 회차 목록을 실제로 수집한 플랫폼 > 최초 연재 플랫폼 > 첫 항목
+    live = {e.get("source") for e in (work.get("episodes") or []) if e.get("source")}
+    first = (next((p for p in plats if p["name"] in live), None)
+             or next((p for p in plats if p.get("name") == work.get("platform_first")), None) or (plats[0] if plats else {}))
+    if first.get("url_main"):
+        r.set(K("/mods/location/url", 0), first["url_main"])
+    if first.get("url_work") and n_urls >= 2:
+        r.set(K("/mods/location/url", 1), first["url_work"])
+    if first and first.get("name") != work.get("platform_first"):
+        r.flag(K("/mods/location/url", 0), f"최초 연재 플랫폼 '{work.get('platform_first')}' 은 현재 접속 불가로 보여 '{first.get('name')}' 주소를 씀. 확인")
+    # 성인용: 이용대상자 성인용 + 주기 '19세 미만 구독불가' + 공개여부 1 (완료 사례 5-190, 가이드 이용대상자 절)
+    adult = bool(work.get("adult")) or str(work.get("rating", "")).startswith("19") or "성인" in str(work.get("rating", ""))
+    if adult:
+        r.set(K("/mods/targetAudience"), "성인용"); r.set(K("/mods/note", ta), "19세 미만 구독불가")
+        r.set(K("/mods/accessCondition/licenseType"), "1")
+        by = ", ".join(f"{k}={v or '?'}" for k, v in (work.get("rating_by_platform") or {}).items())
+        r.flag(K("/mods/targetAudience"), f"플랫폼 이용등급 '{work.get('rating')}' 로 성인용 처리(공개여부 1, 주기 '19세 미만 구독불가'). "
+                                          f"출판사 기재 '{pub.get('이용대상')}', 플랫폼별 {by or '미확인'} — 엇갈리면 직원 확인")
+    if work.get("publisher_place") and not publisher_place.get(str(pub.get("출판사") or "").strip()):
+        publisher_place = dict(publisher_place, **{str(pub.get("출판사") or "").strip(): f"[{work['publisher_place']}]"})
     title = str(pub.get("제목(도서명)") or "").strip()
     r.set(C("/mods/titleInfo/title", 0), title)
     r.flag(C("/mods/titleInfo/title", 0), "표제: 원문 표지/크레딧과 대조. 시즌·외전 문구는 표제관련정보로, 부제는 subTitle로 분리(가이드 1.1~1.2)")
@@ -160,8 +197,9 @@ def build_row(pub: dict, folder: Path | None, publisher_place: dict[str, str]) -
         # 완료 사례: 파일명은 '07화'인데 원문 표기는 '07회', 마지막 회차는 '최종회 (완결)'. 파일명은 힌트일 뿐 원문이 으뜸정보원.
         r.flag(C("/mods/titleInfo/partNumber", 0), f"파일명 기준 '{fname_part}'. 원문 타이틀컷 표기(회/화, 최종회 등)로 확정")
     elif vol is not None and str(vol).strip() != "":
-        r.set(C("/mods/titleInfo/partNumber", 0), str(vol).strip())
-        r.flag(C("/mods/titleInfo/partNumber", 0), "권차는 원문 표기 그대로(예: '1'→'01회'). 외전·프롤로그는 권차 비우고 권차표제(partName)에")
+        v = str(vol).strip()
+        r.set(C("/mods/titleInfo/partNumber", 0), f"{v}화" if v.isdigit() else v)   # 완료 사례 5-201: '1화'. 5-190 은 '1' — 원문 표기로 확정
+        r.flag(C("/mods/titleInfo/partNumber", 0), "권차는 원문 타이틀컷 표기로 확정('1화'/'01회'/'최종화'). 외전·프롤로그는 권차 비우고 권차표제(partName)에")
     else:
         r.flag(C("/mods/titleInfo/partNumber", 0), "권차 비어 있음: 원문에서 회차 확인(프롤로그·에필로그는 권차 대신 권차표제)")
     # 저자
@@ -218,11 +256,11 @@ def build_row(pub: dict, folder: Path | None, publisher_place: dict[str, str]) -
         r.flag(C("/mods/physicalDescription/extent"), "원문 폴더 미연결: 용량(MB) 계산 못함")
     # 이용대상
     aud = str(pub.get("이용대상") or "").strip()
-    if aud and aud not in ("일반", "전체", "전체이용가"):
+    if aud and aud not in ("일반", "전체", "전체이용가", "전연령") and not adult:
         m = re.search(r"(\d{2})", aud)
-        r.set(C("/mods/note", 0), f"{m.group(1)}세 이용가" if m else aud)   # 완료 사례: '15세' → '15세 이용가'
-        r.flag(C("/mods/note", 0), f"이용대상 '{aud}': 주기 문구 확인(완료 사례 표기 '15세 이용가')")
-    r.flag(C("/mods/location/url"), "원문주소: 플랫폼 작품 페이지 URL(웹 리서치 대상, 완료 사례는 작품 홈 + 회차 페이지 2개)")
+        r.set(C("/mods/note", ta), f"{m.group(1)}세 이용가" if m else aud)   # 완료 사례: '15세' → '15세 이용가'
+        r.flag(C("/mods/note", ta), f"이용대상 '{aud}': 주기 문구 확인(완료 사례 표기 '15세 이용가')")
+    r.flag(C("/mods/location/url"), "원문주소: 플랫폼 메인 + 작품 페이지(매뉴얼 14.1). enrich JSON 값이면 플랫폼 페이지에서 확인")
     # 식별기호
     ident = re.sub(r"[\s-]", "", str(pub.get("ISBN/UCI") or ""))
     if re.fullmatch(r"97[89]\d{10}", ident):
@@ -235,9 +273,8 @@ def build_row(pub: dict, folder: Path | None, publisher_place: dict[str, str]) -
         r.flag(C("/mods/identifier"), "식별기호 없음")
     # 주제
     subj = pub.get("주제구분")
-    if subj:
-        r.set(C("/mods/subject/topic"), str(subj).strip())
-    r.flag(C("/mods/subject/topic"), "주제명: 구축 단계에서 주제명표목표 연결(일반주제명 만화, 장르주제명 웹툰). 반입 값 규칙은 현장 확인")
+    # 완료 사례(BL 작품 5-190 포함) 모두 topic = 만화 / 웹툰. 출판사 '주제 구분'(BL·로맨스 등)은 반입 값이 아니라 메모로만
+    r.flag(C("/mods/subject/topic"), f"주제명: 완료 사례는 '만화'+'웹툰'. 출판사 주제 구분 '{subj or ''}' 은 구축 단계 주제명표목표 연결 때 참고")
     # 가격·보상
     price_raw = pub.get("정가")
     price = int(re.sub(r"\D", "", str(price_raw))) if price_raw not in (None, "") and re.sub(r"\D", "", str(price_raw)) else None
@@ -246,8 +283,13 @@ def build_row(pub: dict, folder: Path | None, publisher_place: dict[str, str]) -
     r.set(C("contents_price"), price)
     reward_raw = str(pub.get("보상여부") or "")
     reward = "N" if ("안함" in reward_raw or "무보상" in reward_raw or reward_raw.strip().upper() == "N") else ("Y" if reward_raw else None)
-    r.set(C("reward_yn"), reward)
-    r.set(C("compensation"), price if reward == "Y" else 0 if reward == "N" else None)
+    if reward == "N" and price:
+        # 완료 사례 5-190/201/206(케나즈 '보상안함')도 반입용은 보상여부 Y·보상금=정가 로 반입돼 가원부 발급됨. 그 관행을 따르되 사람 확인
+        r.set(C("reward_yn"), "Y"); r.set(C("compensation"), price)
+        r.flag(C("reward_yn"), f"출판사 기재 '{reward_raw}' 이지만 완료 사례는 Y·보상금=정가. 규칙 확정 필요(FIELD-CHECKLIST C)")
+    else:
+        r.set(C("reward_yn"), reward)
+        r.set(C("compensation"), price if reward == "Y" else 0 if reward == "N" else None)
     if price is None:
         r.flag(C("contents_price"), "정가 없음: 플랫폼 유통가 확인")
     if reward is None:
@@ -284,8 +326,9 @@ def match_folder(pub: dict, root: Path | None, index: int = 0, total: int = 0) -
 
 
 def convert(pub_xlsx: Path, template_xlsx: Path, out_xlsx: Path, root: Path | None = None,
-            publisher_place_json: Path | None = None) -> tuple[int, int]:
+            publisher_place_json: Path | None = None, work_json: Path | None = None) -> tuple[int, int]:
     publisher_place = json.load(open(publisher_place_json, encoding="utf-8")) if publisher_place_json else {}
+    work = json.load(open(work_json, encoding="utf-8")) if work_json else {}
     pubs = read_publisher_sheet(Path(pub_xlsx))
     shutil.copy(template_xlsx, out_xlsx)
     wb = openpyxl.load_workbook(out_xlsx)
@@ -301,9 +344,10 @@ def convert(pub_xlsx: Path, template_xlsx: Path, out_xlsx: Path, root: Path | No
     if ws.max_row >= start_row:
         ws.delete_rows(start_row, ws.max_row - start_row + 1)
     nflags = 0; missing: set[str] = set()
+    n_notes, n_topics, n_urls = seen.get("/mods/note", 0), seen.get("/mods/subject/topic", 0), seen.get("/mods/location/url", 0)
     for idx, pub in enumerate(pubs):
         folder, how = match_folder(pub, root, idx, len(pubs))
-        row = build_row(pub, folder, publisher_place)
+        row = build_row(pub, folder, publisher_place, work, n_notes, n_topics, n_urls)
         if root is not None and folder is None:
             row.flag(C("/mods/physicalDescription/extent"), "원문 폴더를 찾지 못함(파일명/제목 불일치)")
         elif how.startswith("순서"):

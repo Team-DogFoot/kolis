@@ -28,9 +28,15 @@ def main(argv=None):
     a = sub.add_parser("inspect"); a.add_argument("root"); a.add_argument("-o", "--out", default="out")
     a = sub.add_parser("rename"); a.add_argument("root"); a.add_argument("--start", type=int, default=1)
     a.add_argument("--digits", type=int, default=8); a.add_argument("--dry-run", action="store_true"); a.add_argument("--undo", action="store_true")
+    a = sub.add_parser("enrich", help="출판사용 기초메타데이터의 빈 칸을 웹 리서치(claude -p)로 채움"); a.add_argument("publisher_xlsx")
+    a.add_argument("-o", "--out", required=True, help="채운 xlsx 출력 경로"); a.add_argument("--json", help="작품 정보 JSON(있으면 리서치 생략)")
+    a.add_argument("--cliptoon", nargs="+", help="ClipToon V8 '엑셀 다운로드' 파일(플랫폼별 여러 개 가능). 있으면 LLM 리서치 대신 사용")
+    a.add_argument("--runner", choices=["claude", "codex"], default="claude"); a.add_argument("--research-only", action="store_true")
+    a = sub.add_parser("thumbs", help="회차 썸네일 파일명을 '<제목><NN>.jpg' 로"); a.add_argument("folder"); a.add_argument("--title", required=True)
+    a.add_argument("--dry-run", action="store_true"); a.add_argument("--undo", action="store_true")
     a = sub.add_parser("convert"); a.add_argument("publisher_xlsx"); a.add_argument("--template", required=True)
     a.add_argument("-o", "--out", required=True); a.add_argument("--root", help="원문 상위 폴더(작품별 하위폴더)")
-    a.add_argument("--publisher-place", help="출판사→발행지 JSON")
+    a.add_argument("--publisher-place", help="출판사→발행지 JSON"); a.add_argument("--work-json", help="enrich 가 만든 작품 정보 JSON(URL·이용등급·발행지)")
     a = sub.add_parser("agent", help="반입용 xlsx 노란 셀을 LLM 으로 보완 → '제안' 시트"); a.add_argument("xlsx")
     a.add_argument("--root", help="원문 상위 폴더"); a.add_argument("--dry-run", action="store_true", help="API 호출 없이 질의 묶음 json 만 생성")
     a.add_argument("--limit", type=int); a.add_argument("--apply", action="store_true", help="'제안' 시트의 승인(Y) 행을 본문에 반영")
@@ -63,10 +69,35 @@ def main(argv=None):
             for folder, pairs in res.items():
                 print(folder, f"{len(pairs)}개", "(미리보기)" if ns.dry_run else "")
                 for a, b in pairs[:3]: print("   ", a, "→", b)
+    elif ns.cmd == "enrich":
+        import json
+        from .enrich import research, apply, from_cliptoon
+        out = Path(ns.out); jpath = Path(ns.json) if ns.json else out.with_suffix(".work.json")
+        if ns.cliptoon:
+            info = from_cliptoon([Path(p) for p in ns.cliptoon])
+            jpath.parent.mkdir(parents=True, exist_ok=True)
+            jpath.write_text(json.dumps(info, ensure_ascii=False, indent=1), encoding="utf-8")
+            print(f"ClipToon {len(ns.cliptoon)}개 파일 → 회차 {info['total_episodes']}건, 최초 플랫폼 {info['platform_first']}, 1회 {info['first_publish_date']} → {jpath}")
+        elif ns.json and jpath.exists():
+            info = json.loads(jpath.read_text(encoding="utf-8"))
+        else:
+            print(f"웹 리서치({ns.runner} -p) 실행 중… KOLIS 접근 없음"); info = research(Path(ns.publisher_xlsx), jpath, ns.runner)
+            print(f"작품 정보 JSON → {jpath}")
+        if ns.research_only: return
+        filled = apply(Path(ns.publisher_xlsx), info, out)
+        print("채운 칸:", ", ".join(f"{k} {v}" for k, v in filled.items()) or "없음", "→", out)
+    elif ns.cmd == "thumbs":
+        from .enrich import rename_thumbs, undo_thumbs
+        if ns.undo:
+            print("되돌림", undo_thumbs(Path(ns.folder)), "개")
+        else:
+            pairs = rename_thumbs(Path(ns.folder), ns.title, ns.dry_run)
+            print(f"{len(pairs)}개", "(미리보기)" if ns.dry_run else "변경")
+            for a, b in pairs[:3]: print("   ", a, "→", b)
     elif ns.cmd == "convert":
         from .convert_import import convert
         n, f = convert(Path(ns.publisher_xlsx), Path(ns.template), Path(ns.out), Path(ns.root) if ns.root else None,
-                       Path(ns.publisher_place) if ns.publisher_place else None)
+                       Path(ns.publisher_place) if ns.publisher_place else None, Path(ns.work_json) if ns.work_json else None)
         print(f"{n}행 변환, 확인 필요 셀 {f}개 → {ns.out}")
     elif ns.cmd == "agent":
         from .agent_fill import run, apply_approved

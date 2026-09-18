@@ -10,5 +10,6 @@ samples/
 *.xlsx
 *.xlsm
 !docs/source/**/*.xlsx
+!kolis_tool/templates/*.xlsx
 !docs/source/**/*.xlsm
 kolis.json

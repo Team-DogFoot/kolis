@@ -34,8 +34,15 @@ pip install -r requirements.txt
 ## 단계별 실행(윈도)
 `bin\setup.bat` 한 번 → `bin\1_inspect.bat` → `2_rename` → `3_convert` → `4_agent` → `5_check`. 각 단계는 끝나면 멈추고 사람이 결과를 확인한다.
 
+## 프로그램(창) 실행 — 2026-09-18부터 기본
+`bin\app.bat` (또는 `python -m kolis_tool.app`). 납품 폴더 선택 → ② 기초메타데이터 보완(웹 리서치 + 플랫폼 회차 수집) → ③ 썸네일 이름 → ④ 반입용 엑셀. 결과는 `work\`.
+플랫폼 회차 수집은 Playwright 가 이 PC 의 Edge 를 헤드리스로 띄운다(`pip install playwright`, 브라우저 추가 설치 불필요).
+
 ## 명령
 ```
+python -m kolis_tool enrich   <출판사용.xlsx> -o work/보완.xlsx [--json 작품정보.json | --cliptoon 파일…]   # ② 빈 칸 채움(웹 리서치)
+python -m kolis_tool thumbs   <회차썸네일 폴더> --title "<제목>" [--dry-run|--undo]                     # 썸네일 파일명 규칙
+python -m kolis_tool convert  … --template kolis_tool/templates/import_template_83.xlsx --work-json 작품정보.json
 python -m kolis_tool unzip    <출판사.zip> -o <폴더>                 # 한글 파일명 보존
 python -m kolis_tool inspect  <원문 상위폴더>            # 검수 → out/inspect.xlsx
 python -m kolis_tool rename   <원문 상위폴더> [--dry-run|--undo]
