@@ -32,6 +32,15 @@ class Api:
         r = self._window.create_file_dialog(webview.FOLDER_DIALOG)
         return r[0] if r else ""
 
+    def pick_file(self, pattern: str = "Excel (*.xlsx)") -> str:
+        r = self._window.create_file_dialog(webview.OPEN_DIALOG, file_types=(pattern, "All files (*.*)"))
+        return r[0] if r else ""
+
+    def pick_save(self, default_name: str = "") -> str:
+        r = self._window.create_file_dialog(webview.SAVE_DIALOG, directory=str(self._work_dir), save_filename=default_name,
+                                            file_types=("Excel (*.xlsx)",))
+        return (r[0] if isinstance(r, (list, tuple)) else r) or ""
+
     def check_env(self) -> dict:
         """시작 시 전제 조건: 클로드코드 설치·로그인 흔적, Edge, Playwright."""
         from .enrich import claude_exe
@@ -194,8 +203,8 @@ class Api:
     # ---------- 4. 반입용 엑셀 ----------
     def convert(self, pub_xlsx: str, root: str, work_json: str, out_name: str, template: str = "") -> dict:
         from .convert_import import convert
-        out = self._work_dir / out_name
-        self._work_dir.mkdir(parents=True, exist_ok=True)
+        out = Path(out_name) if Path(out_name).is_absolute() else self._work_dir / out_name   # 찾아보기로 고른 전체 경로도 허용
+        out.parent.mkdir(parents=True, exist_ok=True)
         try:
             n, flags = convert(Path(pub_xlsx), Path(template) if template else TEMPLATE_83, out,
                                Path(root) if root else None, None, Path(work_json) if work_json else None)
