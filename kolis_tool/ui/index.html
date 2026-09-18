@@ -26,7 +26,7 @@
   a { color:var(--accent); } ul.ev { margin:4px 0 0 16px; padding:0; font-size:12px; color:var(--muted); }
 </style></head>
 <body>
-<header><h1>KOLIS 웹툰 납본 도우미</h1><small>납품 폴더 → 파일명 정리 → 기초메타데이터 보완 → 반입용 엑셀 → KOLIS 일괄반입 준비</small><span id="env" class="muted">환경 확인 중…</span><button class="secondary" style="margin-left:12px" onclick="resetAll()">새로 시작</button></header>
+<header><h1>KOLIS 웹툰 납본 도우미</h1><small>납품 폴더 → 파일명 정리 → 기초메타데이터 보완 → 반입용 엑셀 → KOLIS 일괄반입 준비</small><span id="env" class="muted">환경 확인 중…</span><select id="recent" style="margin-left:12px;padding:6px;font:inherit" onchange="openRecent()"><option value="">최근 작업…</option></select><button class="secondary" style="margin-left:6px" onclick="resetAll()">새로 시작</button></header>
 <main>
 <div>
   <section class="card"><h2><span class="step">1</span> 납품 폴더</h2>
@@ -37,6 +37,8 @@
       <tr><th>원고</th><td id="s-ms"></td></tr>
       <tr><th>회차썸네일</th><td id="s-th"></td></tr>
       <tr><th>비어 있는 열</th><td id="s-empty" class="chips"></td></tr>
+      <tr><th>진행 상태</th><td id="s-state" class="muted"></td></tr>
+      <tr><th>메모</th><td><textarea id="memo" rows="2" style="width:100%;font:inherit;border:1px solid var(--line);border-radius:6px;padding:6px" placeholder="이 작품에 대한 메모(직원 결정 사항 등). 자동 저장" onchange="saveMemo()"></textarea></td></tr>
     </table>
   </section>
 
@@ -52,6 +54,11 @@
   <section class="card"><h2><span class="step">3</span> 기초메타데이터 보완</h2>
     <p class="muted" style="margin:0 0 6px">클로드가 웹에서 작품 정보를 조사(판단)하고, 동시에 Edge 가 플랫폼 페이지에서 회차별 공개일·가격을 읽습니다. 보통 3~5분. 진행은 오른쪽 로그에 실시간으로 나옵니다.</p>
     <div class="row"><input type="text" id="e-xlsx" placeholder="출판사 기초메타데이터 엑셀 (1단계에서 자동으로 들어감)"><button class="secondary" onclick="pickInto('e-xlsx')">찾아보기</button></div>
+    <details id="prompt-box" style="margin:6px 0"><summary class="muted" style="cursor:pointer">조사 프롬프트 편집 <span id="prompt-state"></span></summary>
+      <p class="muted" style="margin:6px 0;font-size:12px">클로드에게 보내는 조사 지시문입니다. {title} {publisher} {isbn} {n} {platform_hint} {audience_hint} 자리표시자와 마지막 ```json 출력 형식은 남겨야 합니다. 저장하면 다음 "새로 웹 조사"부터 적용됩니다.</p>
+      <textarea id="prompt-text" rows="14" style="width:100%;font:12px/1.5 Consolas,monospace;border:1px solid var(--line);border-radius:6px;padding:8px"></textarea>
+      <div class="row"><button onclick="savePrompt()">저장</button><button class="secondary" onclick="resetPrompt()">기본값으로</button><span id="prompt-out" class="muted"></span></div>
+    </details>
     <div id="saved-box" class="warnbox" hidden style="background:#eef6ff;border-color:#bcd7f5">지난 조사 결과가 있습니다: <b id="saved-when"></b> <span id="saved-sum" class="muted"></span></div>
     <div class="row">
       <button id="btn-enrich" onclick="enrich(false)" disabled>웹 조사해서 채우기</button>
@@ -87,7 +94,34 @@
 const S = { folder:'', xlsx:'', ms:'', th:'', title:'', enrichedXlsx:'', workJson:'', hasSaved:false };
 const $ = id => document.getElementById(id);
 function appendLog(m){ const l=$('log'); l.textContent += new Date().toLocaleTimeString()+'  '+m+'\n'; l.scrollTop=l.scrollHeight; }
+const STEP_LABEL = {manuscript:'원고 파일명', thumbs:'썸네일 파일명', enrich:'보완', convert:'반입용 엑셀', kolis_prepare:'KOLIS 준비', kolis_submit:'KOLIS 반입'};
+async function saveState(patch){ if(!S.folder) return; S.state = await pywebview.api.save_state(S.folder, patch); renderState(); }
+async function saveMemo(){ await saveState({memo: $('memo').value}); }
+function renderState(){
+  const st = S.state || {};
+  const parts = Object.keys(STEP_LABEL).filter(k=>st[k] && st[k].done_at).map(k=>`<span class="ok">✓ ${STEP_LABEL[k]}</span> <span class="muted">${st[k].done_at}</span>`);
+  $('s-state').innerHTML = parts.length ? parts.join(' &nbsp;·&nbsp; ') : '아직 진행한 단계 없음';
+}
+function restoreFromState(){
+  const st = S.state || {};
+  $('memo').value = st.memo || '';
+  if(st.enrich && st.enrich.out){ S.enrichedXlsx = st.enrich.out; S.workJson = st.enrich.json || ''; $('c-xlsx').value = st.enrich.out; $('btn-conv').disabled=false; }
+  if(st.convert && st.convert.out){ $('k-xlsx').value = st.convert.out; $('out-name').value = st.convert.out; $('conv-out').innerHTML = `<span class="muted">지난 결과 ${st.convert.done_at}: ${st.convert.rows}행, 노란 셀 ${st.convert.flags}개 → ${st.convert.out}</span>`; }
+  if(st.kolis_prepare){ $('k-note').value = st.kolis_prepare.note || ''; $('k-out').innerHTML = `<span class="muted">마지막 기록 ${st.kolis_prepare.done_at}: 반입 전 준비까지 함${st.kolis_submit?` · 반입 클릭 ${st.kolis_submit.done_at}`:''} — 실제 KOLIS 화면을 확인하고 진행</span>`; }
+  if(st.manuscript){ $('ms-out').innerHTML = `<span class="muted">지난 기록 ${st.manuscript.done_at}: ${st.manuscript.files}장 변경</span>`; }
+  if(st.thumbs){ $('th-out').innerHTML = `<span class="muted">지난 기록 ${st.thumbs.done_at}: ${st.thumbs.count}장 변경</span>`; }
+  renderState();
+}
+async function loadRecent(){
+  const items = await pywebview.api.recent();
+  $('recent').innerHTML = '<option value="">최근 작업…</option>' + items.map(i=>`<option value="${i.folder.replace(/"/g,'&quot;')}">${i.title||i.folder} (${i.when})</option>`).join('');
+}
+function openRecent(){ const f = $('recent').value; if(f){ $('folder').value = f; scan(); } }
+async function loadPrompt(){ const p = await pywebview.api.get_prompt(); $('prompt-text').value = p.text; $('prompt-state').textContent = p.is_default ? '(기본값)' : '(편집됨)'; }
+async function savePrompt(){ const r = await pywebview.api.save_prompt($('prompt-text').value); $('prompt-out').innerHTML = r.error ? `<span class="bad">${r.error}</span>` : '<span class="ok">저장됨</span>'; if(!r.error) $('prompt-state').textContent = r.is_default ? '(기본값)' : '(편집됨)'; }
+async function resetPrompt(){ const r = await pywebview.api.save_prompt(''); $('prompt-text').value = r.text; $('prompt-state').textContent='(기본값)'; $('prompt-out').innerHTML='<span class="ok">기본값으로 되돌림</span>'; }
 window.addEventListener('pywebviewready', async () => {
+  loadRecent(); loadPrompt();
   const e = await pywebview.api.check_env();
   const parts = [];
   parts.push(e.claude ? (e.claude_login ? '<span class="ok">클로드코드 ✓</span>' : '<span class="warn">클로드코드 설치됨, 로그인 미확인</span>') : '<span class="bad">클로드코드 없음</span>');
@@ -103,7 +137,8 @@ function resetAll(){ if(confirm('화면을 처음 상태로 되돌립니다. 만
 async function scan(){
   const r = await pywebview.api.scan_folder($('folder').value);
   if(r.error){ appendLog(r.error); return; }
-  Object.assign(S, {folder:r.folder, xlsx:r.xlsx, ms:r.manuscripts, th:r.thumbs, title:r.title, hasSaved:r.has_saved});
+  Object.assign(S, {folder:r.folder, xlsx:r.xlsx, ms:r.manuscripts, th:r.thumbs, title:r.title, hasSaved:r.has_saved, state:r.state||{}, enrichedXlsx:'', workJson:''});
+  $('conv-out').textContent=''; $('k-out').textContent=''; $('ms-out').textContent=''; $('th-out').textContent=''; $('review').hidden=true;
   $('scan-table').hidden=false;
   $('s-xlsx').innerHTML = r.xlsx ? r.xlsx : '<span class="bad">없음</span>';
   $('s-title').textContent = `${r.title} / ${r.rows}행`;
@@ -114,9 +149,9 @@ async function scan(){
   $('btn-conv').disabled = !r.xlsx;
   $('btn-msp').disabled = $('btn-msu').disabled = !r.manuscripts; $('btn-msa').disabled = !r.manuscripts || r.manuscripts_done;
   $('e-xlsx').value = r.xlsx; $('c-xlsx').value = r.xlsx;
-  if(!$('out-name').value) $('out-name').value = `기초메타데이터(26웹툰대행5차-)_코리스 반입용_${r.title.replace(/\s/g,'')}.xlsx`;
+  $('out-name').value = `기초메타데이터(26웹툰대행5차-)_코리스 반입용_${r.title.replace(/\s/g,'')}.xlsx`;
   appendLog(`폴더 읽음: ${r.title}, ${r.rows}행, 회차 ${r.episodes}, 썸네일 ${r.thumb_files}. 비어 있는 열: ${r.empty_cols.join(', ')||'없음'}`);
-  refreshSaved();
+  restoreFromState(); refreshSaved(); loadRecent();
 }
 async function refreshSaved(){
   const x = $('e-xlsx').value || S.xlsx; if(!x) return;
@@ -141,19 +176,21 @@ async function kolisPrepare(){
 async function kolisSubmit(){
   const r = await pywebview.api.kolis_submit($('k-yes').value.trim());
   $('k-sub').innerHTML = r.error ? `<span class="bad">${r.error}</span>` : '<span class="ok">반입 클릭함 — KOLIS 화면의 결과를 확인하세요</span>';
+  if(!r.error) saveState({kolis_submit:{}});
 }
 function onDone(kind, p){
   if(kind==='manuscript'){
     $('btn-msp').disabled=$('btn-msu').disabled=false;
     if(p.error){ $('ms-out').innerHTML=`<span class="bad">${p.error}</span>`; $('btn-msa').disabled=false; return; }
     $('ms-out').innerHTML = `<span class="ok">완료</span> 폴더 ${p.folders}개, 파일 ${p.files}장 변경` + (p.skipped?` (이미 변경된 ${p.skipped}개 건너뜀)`:'') + ' — 되돌리기 가능';
-    appendLog(`원고 파일명 변경 완료: ${p.files}장`); return;
+    appendLog(`원고 파일명 변경 완료: ${p.files}장`); saveState({manuscript:{files:p.files, folders:p.folders}}); return;
   }
   if(kind==='kolis'){
     $('btn-kprep').disabled=false;
     if(p.error){ $('k-out').innerHTML=`<span class="bad">${p.error}</span>`; return; }
     $('k-out').innerHTML = p.attached ? '<span class="ok">준비 완료 — 팝업에 비고·첨부파일 들어감. 직원 확인 후 반입.</span>' : '<span class="warn">첨부 확인 안 됨 — 팝업을 직접 확인하세요</span>';
     $('k-fields').innerHTML = Object.entries(p.popup_fields||{}).map(([k,v])=>`${k}: ${v}`).join('<br>');
+    saveState({kolis_prepare:{note:$('k-note').value, xlsx:$('k-xlsx').value, attached:!!p.attached}});
     return;
   }
   if(kind!=='enrich') return;
@@ -170,6 +207,7 @@ function onDone(kind, p){
   $('evidence').innerHTML = rv.evidence.map(e=>`<li>${e}</li>`).join('');
   $('e-filled').textContent = '채운 칸: ' + (Object.entries(p.filled||{}).map(([k,v])=>`${k} ${v}`).join(', ')||'없음') + '  (노란 셀, 셀 메모에 근거)';
   appendLog('보완 완료: '+p.out);
+  saveState({enrich:{out:p.out, json:p.json}});
 }
 async function msPreview(){
   const r = await pywebview.api.manuscript_preview(S.ms);
@@ -187,7 +225,7 @@ async function msUndo(){
   $('ms-out').textContent = `폴더 ${r.folders}개, 파일 ${r.files}장 되돌림`; $('btn-msa').disabled=$('btn-msp').disabled=$('btn-msu').disabled=false;
 }
 async function thumbsPreview(){ const r = await pywebview.api.thumbs_preview(S.th, S.title); $('th-list').textContent = r.slice(0,5).map(p=>p[0]+' → '+p[1]).join('  |  ') + (r.length>5?`  … 총 ${r.length}개`:''); }
-async function thumbsApply(){ $('th-out').innerHTML='<span class="spin"></span> 변경 중…'; const r = await pywebview.api.thumbs_apply(S.th, S.title); $('th-out').textContent = r.error? r.error : `${r.count}개 변경 (되돌리기 가능)`; if(!r.error) $('btn-tha').disabled=true; appendLog('썸네일: '+JSON.stringify(r)); }
+async function thumbsApply(){ $('th-out').innerHTML='<span class="spin"></span> 변경 중…'; const r = await pywebview.api.thumbs_apply(S.th, S.title); $('th-out').textContent = r.error? r.error : `${r.count}개 변경 (되돌리기 가능)`; if(!r.error){ $('btn-tha').disabled=true; saveState({thumbs:{count:r.count}}); } appendLog('썸네일: '+JSON.stringify(r)); }
 async function thumbsUndo(){ const r = await pywebview.api.thumbs_undo(S.th); $('th-out').textContent = `${r.count}개 되돌림`; $('btn-tha').disabled=false; }
 async function convert(){
   $('conv-out').innerHTML='<span class="spin"></span> 생성 중…';
@@ -196,6 +234,7 @@ async function convert(){
   $('conv-out').innerHTML = `${r.rows}행, 확인 필요 셀 ${r.flags}개 → <a href="#" onclick="pywebview.api.open_path('${r.out.replace(/\\/g,'\\\\')}');return false">${r.out}</a>`;
   appendLog(`반입용 생성: ${r.out} (${r.rows}행, 노란 셀 ${r.flags})`);
   $('k-xlsx').value = r.out;
+  saveState({convert:{out:r.out, rows:r.rows, flags:r.flags}});
 }
 </script>
 </body></html>

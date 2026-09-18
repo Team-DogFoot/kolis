@@ -87,13 +87,41 @@ def friendly_error(stderr: str, returncode: int) -> str:
     return f"클로드 실행 실패(코드 {returncode}): {stderr[-400:]}"
 
 
+PROMPT_OVERRIDE = Path("work") / "research_prompt.txt"   # 프로그램에서 편집한 프롬프트(있으면 이걸 씀)
+PROMPT_FIELDS = ("{title}", "{publisher}", "{isbn}", "{n}", "{platform_hint}", "{audience_hint}")
+
+
+def current_prompt() -> str:
+    if PROMPT_OVERRIDE.exists():
+        return PROMPT_OVERRIDE.read_text(encoding="utf-8")
+    return RESEARCH_PROMPT
+
+
+def save_prompt(text: str | None) -> str:
+    """None/빈 값이면 기본값으로 되돌림. 자리표시자가 빠지면 거부."""
+    if not text or not text.strip():
+        if PROMPT_OVERRIDE.exists():
+            PROMPT_OVERRIDE.unlink()
+        return RESEARCH_PROMPT
+    missing = [f for f in PROMPT_FIELDS if f not in text]
+    if missing:
+        raise ValueError("빠진 자리표시자: " + ", ".join(missing))
+    if "```json" not in text:
+        raise ValueError("출력 형식 설명(```json 코드블록)이 있어야 결과를 읽을 수 있습니다")
+    PROMPT_OVERRIDE.parent.mkdir(parents=True, exist_ok=True)
+    PROMPT_OVERRIDE.write_text(text, encoding="utf-8")
+    return text
+
+
 def research(pub_xlsx: Path, out_json: Path, runner: str = "claude", timeout: int = 900, log=None, handle: dict | None = None) -> dict:
     """헤드리스 클로드로 작품 정보 JSON 을 만든다. log(msg) 로 진행(검색어·읽는 URL)을 실시간 보고. handle['proc'] 에 프로세스를 두어 취소 가능."""
     log = log or (lambda m: None)
     wb, ws, col, rows = read_sheet(pub_xlsx)
     g = lambda r, k: ws.cell(row=r, column=col[k]).value if k in col else None
     r0 = rows[0]
-    prompt = RESEARCH_PROMPT.format(title=g(r0, "제목(도서명)"), publisher=g(r0, "출판사"), isbn=g(r0, "ISBN/UCI"), n=len(rows),
+    if PROMPT_OVERRIDE.exists():
+        log("편집된 조사 프롬프트 사용(work/research_prompt.txt)")
+    prompt = current_prompt().format(title=g(r0, "제목(도서명)"), publisher=g(r0, "출판사"), isbn=g(r0, "ISBN/UCI"), n=len(rows),
                                     platform_hint=g(r0, "최초연제플랫폼") or g(r0, "최초연재플랫폼") or "(비어 있음)",
                                     audience_hint=g(r0, "이용대상") or "(비어 있음)")
     exe = claude_exe() if runner == "claude" else (shutil.which(runner) or shutil.which(runner + ".cmd"))

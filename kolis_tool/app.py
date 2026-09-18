@@ -58,6 +58,56 @@ class Api:
             pass
         return out
 
+    # ---------- 작업 상태 저장/복원 ----------
+    def _state_path(self, folder: str) -> Path:
+        return self._work_dir / (re.sub(r'[^\w가-힣]+', '', Path(folder).name) + ".상태.json")
+
+    def load_state(self, folder: str) -> dict:
+        p = self._state_path(folder)
+        if p.exists():
+            try:
+                return json.loads(p.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001
+                return {}
+        return {}
+
+    def save_state(self, folder: str, patch: dict) -> dict:
+        """단계별 결과를 병합 저장. patch 예: {"convert": {"out": "...", "flags": 350}} → done_at 자동 기록."""
+        import datetime
+        self._work_dir.mkdir(parents=True, exist_ok=True)
+        st = self.load_state(folder)
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        for k, v in patch.items():
+            if isinstance(v, dict):
+                v = {**st.get(k, {}), **v, "done_at": v.get("done_at", now)}
+            st[k] = v
+        st["folder"] = folder; st["updated"] = now
+        self._state_path(folder).write_text(json.dumps(st, ensure_ascii=False, indent=1), encoding="utf-8")
+        self._touch_recent(folder, st.get("title", ""))
+        return st
+
+    def _touch_recent(self, folder: str, title: str):
+        import datetime
+        p = self._work_dir / "recent.json"
+        items = []
+        if p.exists():
+            try:
+                items = json.loads(p.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001
+                items = []
+        items = [i for i in items if i.get("folder") != folder]
+        items.insert(0, {"folder": folder, "title": title, "when": datetime.datetime.now().strftime("%Y-%m-%d %H:%M")})
+        p.write_text(json.dumps(items[:15], ensure_ascii=False, indent=1), encoding="utf-8")
+
+    def recent(self) -> list:
+        p = self._work_dir / "recent.json"
+        if not p.exists():
+            return []
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            return []
+
     # ---------- 1. 작품 폴더 읽기 ----------
     def scan_folder(self, folder: str) -> dict:
         from .enrich import read_sheet
@@ -83,7 +133,26 @@ class Api:
             info["title"] = str(ws.cell(row=rows[0], column=col["제목(도서명)"]).value or "") if rows else ""
             info["empty_cols"] = [k for k, c in col.items() if k != "No" and all(ws.cell(row=r, column=c).value in (None, "") for r in rows)]
             info["has_saved"] = self._paths(xlsx[0])[1].exists()
+        # 작업 상태 복원(파일로 알 수 없는 것: 완료 시각·결과 경로·비고·메모·KOLIS 진행)
+        st = self.load_state(str(f))
+        if info["title"] and st.get("title") != info["title"]:
+            st = self.save_state(str(f), {"title": info["title"]})
+        else:
+            self._touch_recent(str(f), info["title"])
+        info["state"] = st
         return info
+
+    def get_prompt(self) -> dict:
+        from .enrich import current_prompt, RESEARCH_PROMPT, PROMPT_OVERRIDE
+        return {"text": current_prompt(), "is_default": not PROMPT_OVERRIDE.exists(), "default": RESEARCH_PROMPT}
+
+    def save_prompt(self, text: str) -> dict:
+        from .enrich import save_prompt, PROMPT_OVERRIDE
+        try:
+            t = save_prompt(text)
+            return {"ok": True, "is_default": not PROMPT_OVERRIDE.exists(), "text": t}
+        except ValueError as e:
+            return {"error": str(e)}
 
     def saved_info(self, xlsx: str) -> dict:
         """이 엑셀에 대한 지난 조사 결과가 있는지, 있으면 언제 것인지."""
