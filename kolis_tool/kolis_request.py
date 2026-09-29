@@ -23,6 +23,18 @@ S_RECEIVED, S_TARGET, S_RECORD = "DS_1100", "DS_2100", "DS_3100"      # 접수 /
 
 U_IMPORT = "/online/reg/bo/accrectarget/fileUpload.do"
 IMPORT_DIR = "/Upload1/jangseo/ImpCont/amcont/"
+U_HANDLER = "/dext5upload/handler/dext5handler.jsp"          # 업로더가 파일을 보내는 주소(업로더 설정: JAVA, 기본 주소)
+U_DIR = "/online/series/popup/getDefaultDirectory.do"
+U_SETLIST = "/online/cmmn/setFileList.do"
+U_FILES = "/online/cmmn/getfileList.do"
+U_TOC = "/online/cmmn/getTocFile.do"
+U_CHECK = "/online/cmmn/searchTextCheck.do"
+U_CHECK_SAVE = "/online/cmmn/updateTextCheck.do"
+U_TEXT = "/online/cmmn/insertContentsText.do"
+TEMP_ROOT = "/Upload1/tmp/wonmun/"         # 팝업 스크립트가 전송 시작 때 정하는 임시 위치(+ 날짜와 시각)
+TEXT_KIND = "01"                           # 원문유형 열람
+CHUNK_LIMIT = 10485760                     # 이 크기부터 업로더는 조각으로 나눠 보낸다(업로더 설정)
+MIME = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif", ".bmp": "image/bmp", ".tif": "image/tiff", ".tiff": "image/tiff"}
 U_KEY = "/online/acq/bodepst/depstrecet/onlineDepstRecet/getReceiptKeyByRcptNo.do"
 U_LIST = "/online/acq/bodepst/depstrecet/onlineDepstRecet/selectMultipleOnlineDepstrecetList.do"
 U_TARGET = "/online/acq/bodepst/depstrecet/onlineDepstRecet/updateTargetProcessing.do"
@@ -315,6 +327,121 @@ def export_receipt(page: Page, year: str, receipt: str, work_dir: Path = Path("w
     it = c["items"]
     return {"file": str(out), "receipt": str(receipt), "count": c["count"], "first": it[0]["id"], "last": it[-1]["id"], "title": it[0]["title"],
             "files": sum(1 for i in it if i["files"] > 0)}
+
+
+# ---------- 원문일괄등록 ----------
+def uploader_param(text: str) -> str:
+    """업로더의 값 감싸기(설정 encrypt_param=1): base64("R" + base64(값)), '+' 는 '%2B' 로."""
+    import base64
+    inner = base64.b64encode(text.encode("utf-8")).decode("ascii")
+    return base64.b64encode(("R" + inner).encode("ascii")).decode("ascii").replace("+", "%2B")
+
+
+def uploader_answer(text: str) -> str:
+    import base64
+    t = re.sub(r"<[^>]+>", "", text or "").strip()
+    t = re.sub(r"^\[[A-Z0-9-]+\]", "", t)
+    a = base64.b64decode(re.sub(r"[^A-Za-z0-9+/=]", "", t) + "===").decode("ascii", "replace")
+    return base64.b64decode(re.sub(r"[^A-Za-z0-9+/=]", "", a[1:]) + "===").decode("utf-8", "replace")
+
+
+def upload_fields(guid: str, name: str, index: str, rule: str) -> dict:
+    ff, vt = "\x0c", "\x0b"
+    pairs = (("d01", "uploadPRequest"), ("d07", guid), ("d08", name), ("d12", ""), ("d38", index), ("d11", rule), ("d09", "REALFILENAME"), ("d10", "_"), ("d35", "0|"))
+    return {"d00": uploader_param("".join(f"{k}{ff}{v}{vt}" for k, v in pairs)), "mark": ""}
+
+
+def file_record(name: str, size: int, guid: str, server: str, folder: str, local: Path) -> str:
+    """전송이 끝난 뒤 업로더가 화면에 돌려주는 파일 한 건(항목 16개, 2026-09-29 기록의 형식)."""
+    import datetime
+    when = datetime.datetime.fromtimestamp(local.stat().st_mtime).strftime("%Y.%m.%d %H:%M:%S")
+    ext = local.suffix.lower().lstrip(".")
+    return "\x0c".join([name, name, str(size), guid.replace("-", "").lower(), server, "complete", folder + "\\", ext, str(local), "", "", "1", "",
+                        when, MIME.get(local.suffix.lower(), "application/octet-stream"), "0"])
+
+
+def upload_folders(client, year: str, receipt: str, root: Path, ids: list[str], log=None, handle: dict | None = None, check=None) -> dict:
+    """원고 폴더(이름 = 콘텐츠ID)를 KOLIS 에 올리고 건마다 정보입력·원문등록까지 한다(화면의 원문일괄등록 팝업이 하는 일 전부).
+    순서: 파일 전송(임시 위치) → 파일 목록 등록 → 건마다 [파일 목록 확인 → 정보입력] → 건마다 [원문등록] → 목록을 다시 읽어 원문 수 확인."""
+    import datetime, uuid
+    log = log or (lambda m: None)
+    handle = handle or {}
+    check = check or (lambda name, ok, value="", why="": None)
+    root = Path(root)
+    folders = sorted(p for p in root.iterdir() if p.is_dir())
+    check("원고 폴더 이름 = 콘텐츠ID", sorted(p.name for p in folders) == sorted(ids), sorted(p.name for p in folders)[:3])
+    files = {p.name: sorted(q for q in p.iterdir() if q.is_file()) for p in folders}
+    big = [f"{k}/{q.name}" for k, v in files.items() for q in v if q.stat().st_size >= CHUNK_LIMIT]
+    check("10MB 이상 파일 없음", not big, big[:3] or "없음", "10MB 이상 파일은 나눠 보내야 하는데 그 방식은 아직 만들지 않았습니다")
+    odd = [f"{k}/{q.name}" for k, v in files.items() for q in v if q.suffix.lower() not in MIME]
+    check("이미지 파일만 있음", not odd, odd[:3] or "예")
+    total = sum(len(v) for v in files.values()); size = sum(q.stat().st_size for v in files.values() for q in v)
+    d = client.send("POST", U_DIR, urlencode({"har_type_cd": WORK_CODE}), FORM)
+    directory = _text(d.get("direPath"))
+    check("서버 저장 위치", directory.startswith("/"), directory)
+    stamp = datetime.datetime.now().strftime("%Y%m%d") + str(int(time.time() * 1000))
+    log(f"전송 시작: 폴더 {len(folders)}개, 파일 {total}개, {size / 1048576:.1f}MB → 임시 위치 {TEMP_ROOT}{stamp}/")
+    records, n, t0 = [], 0, time.time()
+    for folder in folders:
+        rule = f"{TEMP_ROOT}{stamp}/{folder.name}"
+        for q in files[folder.name]:
+            if handle.get("cancel"):
+                raise Stop(f"사용자가 중단함(파일 {n}/{total}개 전송)")
+            n += 1
+            guid = str(uuid.uuid4()).upper()
+            data = q.read_bytes()
+            raw = client.upload(U_HANDLER, upload_fields(guid, q.name, f"{n - 1}z" if n == total else str(n - 1), rule), q.name, data,
+                                MIME[q.suffix.lower()], note={"rule": rule, "guid": guid, "index": n - 1})
+            try:
+                ans = uploader_answer(raw).split("|")
+            except Exception as e:  # noqa: BLE001
+                raise Stop(f"전송 응답을 읽지 못했습니다({folder.name}/{q.name}): {raw[:120]}") from e
+            server = ans[1].split("::", 1)[-1] if len(ans) > 1 else ""
+            want = f"/{rule}/{q.name}"
+            if ans[0] != "success" or server != want or (len(ans) > 3 and ans[3] != str(len(data))):
+                raise Stop(f"전송 결과가 예상과 다릅니다({folder.name}/{q.name}): {ans} (예상 위치 {want}, 크기 {len(data)})")
+            records.append(file_record(q.name, len(data), guid, server, folder.name, q))
+            if n % 50 == 0 or n == total:
+                log(f"  전송 {n}/{total} ({int(time.time() - t0)}초)")
+    d = client.send("POST", U_SETLIST, urlencode({"textNew": "\x0b".join(records)}), FORM, wait=180, shown=f"(파일 {len(records)}건의 목록)")
+    info = _text(d.get("fileInfoId"))
+    check("파일 목록 등록", bool(info), f"fileInfoId {info}")
+    paths = {p.name: f"/{TEMP_ROOT}{stamp}/{p.name}" for p in folders}
+
+    def listing(i: int, name: str) -> dict:
+        body = urlencode({"folder_path": paths[name], "index": str(i), "file_info_id": info, "directory_info": directory, "contents": ""})
+        r = client.send("POST", U_FILES, body, FORM, wait=120)
+        got = sorted(_text(x.get("FILE_NAME") or x.get("SERVER_FILE_NAME")) for x in r.get("list") or [])
+        check(f"{name}: 서버의 파일 목록 = PC 의 파일", got == sorted(q.name for q in files[name]), f"{len(got)}개 / {len(files[name])}개")
+        client.send("POST", U_TOC, body, FORM)
+        return r
+
+    for i, p in enumerate(folders):            # 일괄정보입력
+        r = listing(i, p.name)
+        c = client.send("POST", U_CHECK, urlencode({"contents_id": p.name}), FORM)
+        check(f"{p.name}: KOLIS 에 등록된 메타데이터 있음", bool(c.get("contents")), _text((c.get("contents") or {}).get("CONTENTS_NM")))
+        old = c.get("textCheck") or {}
+        bc = (_text(r.get("book_count")).split(",") + ["", "", "", ""])[:4]
+        v = {"contents_id": p.name, "copyrightYN": "", "licenseYN": "",
+             "colorCnt": _text(old.get("COLOR_CNT")) or bc[0] or "0", "blackCnt": _text(old.get("BLACK_CNT")) or bc[1] or "0", "totalCnt": _text(old.get("TOTAL_CNT")) or bc[2] or "0",
+             "checkCnt": _text(old.get("CHECK_CNT")) or "0", "errorCnt": _text(old.get("ERROR_CNT")) or "0", "errorRate": _text(old.get("ERROR_RATE")) or "0",
+             "bookCnt": _text(old.get("BOOK_CNT")) or bc[3] or "0", "startPage": _text(old.get("START_PAGE")) or "1", "coverYN": _text(old.get("COVER_YN")) or "Y",
+             "tocYN": _text(old.get("TOC_YN")) or "Y", "tocDetailYN": _text(old.get("TOC_DETAIL_YN")) or "N", "abstractYN": _text(old.get("ABSTRACT_YN")) or "N",
+             "saleYN": _text(old.get("SALE_YN")) or "N"}
+        check(f"{p.name}: 쪽수 = 파일 수", v["totalCnt"] == str(len(files[p.name])), f"{v['totalCnt']} / {len(files[p.name])} (천연색 {v['colorCnt']}, 흑백 {v['blackCnt']})")
+        client.send("POST", U_CHECK_SAVE, urlencode(v), FORM)
+        log(f"  정보입력 {i + 1}/{len(folders)}: {p.name} 쪽수 {v['totalCnt']}")
+    for i, p in enumerate(folders):            # 원문등록
+        if handle.get("cancel"):
+            raise Stop(f"사용자가 중단함(원문등록 {i}/{len(folders)}건)")
+        listing(i, p.name)
+        client.send("POST", U_TEXT, urlencode({"reg_contentsId": p.name, "reg_cdNum": "", "reg_path": paths[p.name], "reg_directory": directory,
+                                               "reg_fileNm": p.name, "text_gbn": TEXT_KIND, "file_info_id": info}), FORM, wait=600)
+        log(f"  원문등록 {i + 1}/{len(folders)}: {p.name}")
+    after = {i["CONTENTS_ID"]: int(i.get("CNT_FILES") or 0) for i in receipt_items(client, year, receipt)}
+    check("전 건에 원문이 등록됨", sorted(after) == sorted(ids) and all(x >= 1 for x in after.values()), {k: x for k, x in after.items() if x < 1} or f"{len(after)}건 모두 1 이상")
+    return {"folders": len(folders), "files": total, "mb": round(size / 1048576, 1), "seconds": int(time.time() - t0), "directory": directory, "temp": f"{TEMP_ROOT}{stamp}/",
+            "file_info_id": info, "message": "원문이 등록되었습니다."}
 
 
 # ---------- 바꾸는 요청 ----------

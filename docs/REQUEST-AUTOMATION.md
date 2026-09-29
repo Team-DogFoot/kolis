@@ -7,6 +7,37 @@
 
 근거: 타임머신 대소동(접수번호 939 → 가원부번호 2026-1615)을 화면 방식으로 끝까지 진행하면서 받은 요청 기록 223줄(요청 36건, 확인창·알림창 11건, 팝업 4건, 폼 전송 4건).
 
+## 0. 결론 (2026-09-30 실행으로 확인)
+
+**반입용 엑셀 확인 뒤의 KOLIS 등록은 브라우저 없이 전부 된다.** 프로그램이 `.env` 의 계정으로 직접 로그인해서 요청만으로 한다.
+
+타임머신 대소동(3권, 이미지 192장, 26.7MB)을 프로그램 창의 "KOLIS 등록" 버튼으로 실행한 결과: 접수번호 941, 가원부번호 2026-1616, **전체 28.9초**, 확인 36개 통과, 요청 228건.
+
+| 단계 | 시간 | 요청 |
+|---|---|---|
+| 로그인 | 1.1초 | `GET /main/login.do` → `POST /main/loginprocess.do` (uid, pwd, jsp_ip) |
+| 일괄반입 | 0.9초 | `POST /online/reg/bo/accrectarget/fileUpload.do` (파일 첨부 형식) |
+| 콘텐츠ID 받기 | 0.2초 | `POST …/onlineDepstRecet/selectMultipleOnlineDepstrecetList.do` |
+| 원고 폴더명 | 0.4초 | (PC 안의 일) |
+| 원문일괄등록 | 21.6초 | 파일마다 `POST /dext5upload/handler/dext5handler.jsp` → `setFileList.do` → 건마다 `getfileList.do`·`getTocFile.do`·`searchTextCheck.do`·`updateTextCheck.do` → 건마다 `insertContentsText.do` |
+| 등록대상처리 → 가원부번호 → 가원부 파일 | 4초 | `updateTargetProcessing.do` → `insertTempAccessionRecNo.do` → `selectAccRecMngListWithParam.do` |
+
+만든 가원부 파일은 화면 방식으로 받은 파일(2026-1615)과 콘텐츠ID·관리번호만 다르고 나머지 칸이 전부 같다. 열 구성은 직원이 준 가원부 파일과 같다.
+
+시험 방법(2026-09-30 직원 안내): 같은 작품으로 가원부번호까지 여러 번 실행해도 된다. 실행한 접수번호는 `work/취소요청_목록.csv` 에 남고, 마지막에 성공한 것만 두고 나머지는 주무관에게 취소를 요청한다.
+
+코드: `kolis_http.py`(로그인·접속), `kolis_request.py`(요청 본문과 확인), `kolis_flow.py`(순서·확인·목록), `journal.py`(기록).
+
+아직 브라우저 없이 하지 못하는 것: **썸네일 등록**(재료가 없어 요청을 본 적이 없음. 동봉된 납품이면 화면 방식 `kolis_thumbs` 를 부른다), **10MB 이상 파일**(업로더가 조각으로 나눠 보내는 방식은 만들지 않음. 있으면 시작 전에 멈춘다).
+
+알아 둘 것
+- 비밀번호를 5번 틀리면 계정이 잠긴다. 로그인은 실행당 한 번만 시도하고 실패하면 다시 시도하지 않는다.
+- 업로더가 보내는 값은 `base64("R" + base64(값))` 로 감싼다(업로더 설정 encrypt_param=1). 응답도 같은 방식이다.
+- 임시 저장 위치는 보내는 쪽이 정한다: `/Upload1/tmp/wonmun/<날짜+시각>/<콘텐츠ID>`. 파일 이름은 그대로 저장된다.
+- 같은 계정으로 프로그램이 로그인해도 직원의 Edge 로그인이 풀리는지는 확인하지 않았다.
+
+아래 1~4절은 이 결론에 이르기 전의 분석 기록이다(Edge 화면 안에서 요청을 보내는 방식, 화면 방식). 그 코드는 남아 있지만 프로그램의 기본 경로가 아니다.
+
 ## 1. 요청을 어떻게 보내는가
 
 | 방법 | 가능 여부 | 이유 |

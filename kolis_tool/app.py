@@ -446,9 +446,9 @@ class Api:
                 "platforms": [{"name": p.get("name"), "status": p.get("status"), "start_date": p.get("start_date"), "url": p.get("url_work")} for p in res.get("platforms") or []],
                 "searched": len(res.get("searched") or [])}
 
-    # ---------- 2. KOLIS 등록 전체(반입 → 원문 → 가원부번호)를 한 번에 ----------
-    def flow_run(self, tab: str, folder: str, note: str, yes: str, receipt: str = "", mode: str = "request") -> dict:
-        """반입용 엑셀 확인(사람) 뒤의 KOLIS 단계를 이어서 한다. 끝난 단계는 건너뛴다(이어서 하기)."""
+    # ---------- 2. KOLIS 등록 전체(반입 → 원문 → 가원부번호)를 한 번에, 브라우저 없이 ----------
+    def flow_run(self, tab: str, folder: str, note: str, yes: str) -> dict:
+        """반입용 엑셀 확인(사람) 뒤의 KOLIS 단계를 처음부터 끝까지. 매번 새로 반입한다(지난 접수번호는 취소 요청 목록에 남는다)."""
         from . import kolis_flow, prepare
         w = prepare.load(Path(folder), self._work_dir) or {}
         if not w.get("output_xlsx"):
@@ -457,16 +457,32 @@ class Api:
         def send(fn, *args):
             if self._window:
                 self._window.evaluate_js(f"{fn}({', '.join(json.dumps(a, ensure_ascii=False) for a in args)})")
+        def save(patch):
+            st = self.load_state(folder)
+            gone = [k for k, v in patch.items() if v is None]
+            if gone:
+                for k in gone:
+                    st.pop(k, None)
+                self._state_path(folder).write_text(json.dumps(st, ensure_ascii=False, indent=1), encoding="utf-8")
+            keep = {k: v for k, v in patch.items() if v is not None}
+            if keep:
+                self.save_state(folder, keep)
         def job():
             try:
-                return kolis_flow.run(w, self.load_state(folder), lambda p: self.save_state(folder, p), note.strip(), yes, self._work_dir,
-                                      self._kolis_log(tab), handle, lambda key, status, text="": send("onFlowStep", key, status, text, tab),
-                                      receipt, lambda i, r: send("onThumbProgress", {"i": i, **r}, tab), "screen" if mode == "screen" else "request")
+                return kolis_flow.run(w, note.strip(), yes, self._work_dir, self._kolis_log(tab), handle,
+                                      lambda key, status, text="": send("onFlowStep", key, status, text, tab),
+                                      lambda i, r: send("onThumbProgress", {"i": i, **r}, tab), save)
             except kolis_flow.Stop as e:
                 raise SystemExit(str(e)) from e
             finally:
                 self._jobs.pop(tab, None)
-        return self._run("flow", job, capture=True, tab=tab)
+        # 브라우저를 쓰지 않으므로 KOLIS 창 잠금을 걸지 않고 프로그램 창도 내리지 않는다(여러 작품 동시 실행 가능). 썸네일이 있는 납품만 Edge 를 쓴다
+        return self._run("flow", job, tab=tab, screen=bool(w.get("thumbs")))
+
+    def flow_ledger(self) -> dict:
+        """실행한 접수번호 목록(work/취소요청_목록.csv). 처리 = 유지 / 취소 요청."""
+        from . import kolis_flow
+        return {"file": str(self._work_dir / kolis_flow.LEDGER), "rows": kolis_flow.ledger_read(self._work_dir)}
 
     def flow_steps(self) -> list:
         from . import kolis_flow
