@@ -1,6 +1,6 @@
 """공통 상수·유틸."""
 from __future__ import annotations
-import re
+import hashlib, re
 from pathlib import Path
 
 IMAGE_EXT_ALLOWED = {".jpg", ".jpeg"}                      # 지침: JPG, JPEG
@@ -35,30 +35,75 @@ CORPORATE_HINTS = ["주식회사", "(주)", "㈜", "스튜디오", "studio", "�
                    "출판", "북스", "books", "코믹스", "comics", "제작", "팀", "team", "협회", "센터", "랩", "lab"]
 
 
-MANIFEST_DIR = "_kolis_manifests"
+MANIFEST_DIR = "_kolis_manifests"          # 예전 위치(납품 폴더 안). 지금은 쓰지 않고, 남아 있으면 새 위치로 옮긴다
+MANIFEST_HOME = Path(__file__).resolve().parent.parent / "work" / "manifests"
+
+
+def _manifest_name(target: Path, kind: str) -> str:
+    t = Path(target).resolve()
+    tag = hashlib.sha1(str(t).lower().encode("utf-8")).hexdigest()[:10]
+    return f"{re.sub(r'[^0-9A-Za-z가-힣_-]+', '_', t.parent.name)[:30]}__{re.sub(r'[^0-9A-Za-z가-힣_-]+', '_', t.name)[:40]}__{tag}.{kind}.json"
 
 
 def manifest_path(target: Path, kind: str) -> Path:
-    """되돌리기 기록 파일의 위치. 대상 폴더 **안이 아니라** 그 부모의 `_kolis_manifests/<폴더명>.<kind>.json`.
-    2026-09-18 교훈: 원고 폴더 안에 기록 파일을 두면 KOLIS 원문일괄등록(폴더 드래그) 때 같이 올라가 오류를 낸다."""
-    target = Path(target)
-    d = target.parent / MANIFEST_DIR
-    d.mkdir(parents=True, exist_ok=True)
-    return d / f"{target.name}.{kind}.json"
+    """되돌리기 기록 파일의 위치: 프로그램의 `work/manifests/`. **납품 폴더 안에는 아무것도 만들지 않는다.**
+    2026-09-18 교훈: 원고 폴더 안에 기록 파일을 두면 KOLIS 원문일괄등록(폴더 끌어다 놓기) 때 같이 올라가 오류를 낸다.
+    2026-09-29: 원고 상위 폴더에 둔 `_kolis_manifests` 폴더도 회차 폴더와 나란히 보여 같이 끌려갈 수 있어 밖으로 옮김."""
+    MANIFEST_HOME.mkdir(parents=True, exist_ok=True)
+    return MANIFEST_HOME / _manifest_name(target, kind)
 
 
 def find_manifest(target: Path, kind: str, legacy_name: str) -> Path | None:
-    """새 위치 → 없으면 예전 위치(폴더 안)를 찾는다. 예전 위치면 새 위치로 옮긴 뒤 돌려준다."""
+    """새 위치 → 없으면 예전 위치(상위의 _kolis_manifests, 폴더 안)를 찾는다. 예전 위치면 새 위치로 옮기고, 빈 예전 폴더는 지운다."""
     target = Path(target)
-    new = target.parent / MANIFEST_DIR / f"{target.name}.{kind}.json"
+    new = manifest_path(target, kind)
     if new.exists():
         return new
-    old = target / legacy_name
-    if old.exists():
-        new.parent.mkdir(parents=True, exist_ok=True)
-        old.rename(new)
-        return new
+    for old in (target.parent / MANIFEST_DIR / f"{target.name}.{kind}.json", target / legacy_name):
+        if old.exists():
+            old.replace(new)
+            try:
+                if old.parent.name == MANIFEST_DIR and not any(old.parent.iterdir()):
+                    old.parent.rmdir()
+            except OSError:
+                pass
+            return new
     return None
+
+
+def migrate_legacy(root: Path) -> int:
+    """납품 폴더 안에 남아 있는 예전 기록 폴더(_kolis_manifests)를 비운다: 기록을 새 위치로 옮기고 빈 폴더를 지운다.
+    root 는 원고 상위 폴더. 그 안과 그 부모의 _kolis_manifests 를 본다. 회차 폴더 이름이 이미 CNTS 로 바뀌었으면 바뀐 이름으로 옮긴다."""
+    import json
+    root = Path(root)
+    renamed = {}
+    for d in (root.parent / MANIFEST_DIR, root / MANIFEST_DIR):      # 폴더명 변경 기록을 먼저(회차 폴더의 지금 이름을 알기 위해)
+        if not d.is_dir():
+            continue
+        for f in sorted(d.glob("*.json"), key=lambda p: 0 if p.name.endswith(".cnts.json") else 1):
+            name, kind = f.name[:-5].rsplit(".", 1)
+            target = d.parent / name
+            if kind == "cnts":
+                try:
+                    renamed.update({a: b for a, b, _ in json.loads(f.read_text(encoding="utf-8")).get("done", [])})
+                except Exception:  # noqa: BLE001
+                    pass
+            elif not target.exists() and name in renamed:
+                target = d.parent / renamed[name]
+            f.replace(manifest_path(target, kind))
+        try:
+            if not any(d.iterdir()):
+                d.rmdir()
+        except OSError:
+            pass
+    return len(renamed)
+
+
+def retarget_manifest(old_target: Path, new_target: Path, kind: str) -> None:
+    """폴더 이름이 바뀌면(회차 폴더 → CNTS-…) 그 폴더의 되돌리기 기록도 새 이름으로 찾을 수 있게 옮긴다."""
+    a, b = manifest_path(old_target, kind), manifest_path(new_target, kind)
+    if a.exists() and a != b:
+        a.replace(b)
 
 
 def natural_key(s: str):

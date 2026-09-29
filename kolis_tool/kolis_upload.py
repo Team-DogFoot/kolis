@@ -13,11 +13,12 @@ from __future__ import annotations
 import re, time
 from collections import Counter
 from pathlib import Path
-from . import kolis_ui as k
-from .common import IMAGE_EXT_ACCEPTED
+from . import kolis_ui as k, ie_dom
+from .common import IMAGE_EXT_ACCEPTED, migrate_legacy
 
 T_UPLOAD_MIN = 120          # 전송 최소 대기 한도(초)
 SEC_PER_MB = 1.6            # 전송 한도 계산용(실측 1.1MB/초보다 넉넉히)
+INFO_DONE = "정보입력이 되었습니다"
 PROGRESS_RE = re.compile(r"\d+\s*/\s*\d+|MB/초|남은 시간|^\d+%")
 
 
@@ -28,6 +29,7 @@ class Stop(Exception):
 def check_local(root: Path) -> dict:
     """끌어다 놓을 원고 상위 폴더 검사: 하위 폴더가 전부 CNTS-… 이고, 그 안에 이미지 외 파일·하위 폴더가 없어야 한다."""
     root = Path(root)
+    migrate_legacy(root)       # 납품 폴더 안의 예전 기록 폴더를 비운다(끌어다 놓을 때 같이 올라가지 않게)
     dirs = [p for p in root.iterdir() if p.is_dir()]
     stray = [p.name for p in root.iterdir() if p.is_file()]
     bad_name = [p.name for p in dirs if not re.fullmatch(r"CNTS-\d+", p.name)]
@@ -94,6 +96,137 @@ def _focus(pop):
     pop.set_focus(); time.sleep(0.3)
 
 
+def open_popup(receipt: str, log=None):
+    """어느 화면에서든: 납본자료접수 이동 → 접수번호 찾기 → 목록 전체 선택(픽셀로 확인) → '원문일괄등록(폴더)' → 팝업. 이미 열려 있으면 그대로 쓴다."""
+    from pywinauto import mouse
+    from .kolis_thumbs import checked
+    from . import ie_dom
+    log = k._aslog(log)
+    ie_dom.recorder(log)
+    pop = k.upload_popup_window()
+    if pop:
+        log("원문일괄등록 팝업이 이미 열려 있음")
+        return pop
+    k.cleanup_stray_dialogs(log)
+    k.close_leftover_popup(log)
+    win = k.edge_window(log)
+    k.goto_recet(win, log)
+    k.search_receipt(win, receipt, log)
+    k.ensure_visible(win, k._button(k.ie_content(win), "원문일괄등록(폴더)"), log)
+    hdr = [c for c in k.ie_content(win).descendants(control_type="CheckBox") if c.rectangle().width() > 0]
+    if not hdr:
+        raise Stop("목록 헤더 체크박스를 찾지 못함")
+    cb = min(hdr, key=lambda c: (c.rectangle().top, c.rectangle().left))   # 목록 맨 위·왼쪽 = 전체 선택
+    r = cb.rectangle(); cx, cy = (r.left + r.right) // 2, (r.top + r.bottom) // 2
+    win.set_focus(); time.sleep(0.3)
+    for _ in range(3):
+        if checked(cx, cy):
+            break
+        mouse.click(coords=(cx, cy)); time.sleep(0.6)
+    if not checked(cx, cy):
+        raise Stop("전체 선택 체크가 되지 않음")
+    log("목록 전체 선택")
+    pop = k._act(log, "'원문일괄등록(폴더)' 클릭 → 팝업", lambda: k._button(k.ie_content(win), "원문일괄등록(폴더)").click_input(),
+                 lambda: k.upload_popup_window() or (_dialog_text()[0] and "알림"), k.T_PAGE)
+    if pop == "알림":
+        raise Stop(f"'원문일괄등록(폴더)' 클릭 후 알림창: '{_dialog_text()[1][:80]}'")
+    ie_dom.tick("원문일괄등록 팝업 열림")
+    log("원문일괄등록 팝업 열림")
+    return pop
+
+
+def _dialog_frame():
+    """원문일괄등록 팝업의 실제 창(웹 페이지 대화 상자). 놓을 자리에 이 창이 있는지 확인하는 데 쓴다."""
+    from pywinauto import Desktop
+    ws = [w for w in Desktop(backend="win32").windows() if w.class_name() == "Internet Explorer_TridentDlgFrame"]
+    return ws[0] if ws else None
+
+
+def drop_folders(root: Path, log=None) -> dict:
+    """원고 폴더(CNTS-…)들을 탐색기에서 팝업으로 끌어다 놓는다(2026-09-29: 사람이 하던 일을 마우스 조작으로).
+    놓기 전에 확인한다: 탐색기에 CNTS 폴더만 있는가, 전부 선택됐는가, 집을 자리와 놓을 자리에 다른 창이 끼어 있지 않은가.
+    하나라도 어긋나면 놓지 않고 멈춘다(다른 창에 떨어뜨리면 그 프로그램에 경로가 입력된다)."""
+    import ctypes, subprocess
+    from ctypes import wintypes
+    from pywinauto import Desktop, mouse, keyboard
+    log = k._aslog(log)
+    root = Path(root)
+    local = check_local(root)
+    if local["problems"]:
+        raise Stop("원고 폴더 문제: " + "; ".join(local["problems"]))
+    dlg = _dialog_frame()
+    if not dlg or not k.upload_popup_window():
+        raise Stop("원문일괄등록 팝업이 없습니다")
+    user32 = ctypes.windll.user32
+    def top_of(x, y):
+        return user32.GetAncestor(user32.WindowFromPoint(wintypes.POINT(x, y)), 2)
+    def explorer():
+        ws = [w for w in Desktop(backend="uia").windows() if w.class_name() == "CabinetWClass" and root.name in w.window_text()]
+        return ws[0] if ws else None
+    ex = explorer()
+    if not ex:
+        subprocess.Popen(["explorer.exe", str(root)])
+        t0 = time.time()
+        while time.time() - t0 < 15 and not explorer():
+            time.sleep(0.5)
+        ex = explorer()
+        if not ex:
+            raise Stop("탐색기 창을 열지 못했습니다")
+        time.sleep(1.5)
+    # 팝업의 놓을 자리(왼쪽 위 파일 목록 영역)와 겹치지 않게 탐색기를 팝업의 오른쪽 아래에 둔다
+    d = dlg.rectangle()
+    user32.MoveWindow(ex.handle, d.left + 1060, d.top + 400, 575, 440, True); time.sleep(1.2)
+    tx, ty = d.left + 320, d.top + 230
+    try:
+        ex.set_focus(); time.sleep(0.6)
+        items = [e for e in ex.descendants(control_type="ListItem")]
+        names = sorted(e.window_text() for e in items)
+        if names != local["names"]:
+            raise Stop(f"탐색기에 보이는 항목이 원고 폴더와 다릅니다: {names[:5]}")
+        r0 = items[0].rectangle()
+        sx, sy = r0.left + 40, (r0.top + r0.bottom) // 2
+        mouse.click(coords=(sx, sy)); time.sleep(0.4)
+        keyboard.send_keys("^a"); time.sleep(0.6)
+        if not all(e.is_selected() for e in items):
+            raise Stop("탐색기에서 폴더를 전부 선택하지 못했습니다")
+        if top_of(sx, sy) != ex.handle or top_of(tx, ty) != dlg.handle:
+            raise Stop("집을 자리나 놓을 자리를 다른 창이 가리고 있어 끌어다 놓지 않았습니다. 팝업을 가리는 창을 치운 뒤 다시 실행하세요")
+        mouse.press(coords=(sx, sy)); time.sleep(0.4)
+        for i in range(1, 41):
+            mouse.move(coords=(int(sx + (tx - sx) * i / 40), int(sy + (ty - sy) * i / 40))); time.sleep(0.03)
+        time.sleep(0.8)
+        mouse.move(coords=(tx + 3, ty + 3)); time.sleep(0.6)
+        if top_of(tx + 3, ty + 3) != dlg.handle:
+            keyboard.send_keys("{ESC}"); mouse.release(coords=(sx, sy))
+            raise Stop("놓기 직전에 다른 창이 끼어들어 취소했습니다")
+        mouse.release(coords=(tx + 3, ty + 3))
+        n = local["folders"]
+        t0 = time.time()
+        while time.time() - t0 < 120:        # 파일이 많으면 목록에 올라오는 데 시간이 걸린다
+            st = state()
+            if any(re.search(rf"(?<!\d){n}\s*항목", s_) for s_ in st["summary"]):
+                break
+            time.sleep(1)
+        else:
+            raise Stop(f"끌어다 놓았지만 팝업에 {n}개 항목으로 올라오지 않았습니다(표시 {state()['summary']})")
+        log(f"폴더 {n}개를 팝업에 끌어다 놓음")
+        return {"folders": n}
+    finally:
+        try:
+            ex.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _close(pop, log) -> None:
+    """팝업을 닫고 닫혔는지 확인한다. 떠 있으면 뒤의 본화면을 쓸 수 없다."""
+    def do():
+        _focus(pop)
+        [b for b in k.ie_content(pop).descendants(control_type="Button") if k._norm(b.window_text()) == "닫기"][-1].click_input()
+    k._act(log, "원문일괄등록 팝업 '닫기'", do, lambda: not _dialog_frame(), k.T_DIALOG)
+    log("원문일괄등록 팝업 닫음")
+
+
 def state(pop=None) -> dict:
     """팝업을 읽기만 한다(클릭 없음): 버튼, 체크박스, 올라온 폴더, 결과표 값 분포, 진행 글자, 열린 알림창."""
     pop = pop or k.upload_popup_window()
@@ -112,13 +245,15 @@ def state(pop=None) -> dict:
         except Exception:  # noqa: BLE001
             on = None
         checks.append({"name": c.window_text(), "left": r.left, "top": r.top, "on": on})
-    return {"open": True, "buttons": _texts(ie, "Button"), "checkboxes": checks, "cnts": list(dict.fromkeys(cnts)), "cnts_cells": len(cnts),
+    rows = list(dict.fromkeys(t for t in items if re.fullmatch(r"CNTS-\d+", t)))      # 결과표(전송이 끝나야 생기는 표)에 올라온 폴더
+    return {"open": True, "buttons": _texts(ie, "Button"), "checkboxes": checks, "cnts": list(dict.fromkeys(cnts)), "cnts_cells": len(cnts), "rows": rows,
             "results": dict(results), "summary": [t for t in texts if "항목" in t or "추가됨" in t][:3],
             "progress": [t for t in texts if PROGRESS_RE.search(t)][:6], "dialog": _dialog_text()[1]}
 
 
-def run(root: Path, log=None, handle: dict | None = None, yes: str = "") -> dict:
-    """끌어다 놓은 뒤의 전 과정. yes 가 'YES' 일 때만(직원 동의). handle['cancel'] 로 단계 사이에서 중단."""
+def run(root: Path, log=None, handle: dict | None = None, yes: str = "", receipt: str = "") -> dict:
+    """팝업 열기 → 폴더 끌어다 놓기 → 전송 → 일괄정보입력 → 원문등록. yes 가 'YES' 일 때만(직원 동의). handle['cancel'] 로 단계 사이에서 중단.
+    이미 된 단계는 건너뛴다(팝업이 열려 있으면 그대로, 폴더가 올라와 있으면 놓지 않고, 전송이 끝났으면 전송하지 않는다)."""
     log = k._aslog(log)
     handle = handle or {}
     if yes != "YES":
@@ -128,14 +263,22 @@ def run(root: Path, log=None, handle: dict | None = None, yes: str = "") -> dict
         raise Stop("원고 폴더 문제: " + "; ".join(local["problems"]))
     n = local["folders"]
     log(f"=== 원문일괄등록 시작: 폴더 {n}개, 파일 {local['files']}개, {local['mb']} MB")
+    ie_dom.recorder(log)
     pop = k.upload_popup_window()
     if not pop:
-        raise Stop("원문일괄등록(폴더) 팝업이 없습니다. 목록 전체 선택 → '원문일괄등록(폴더)' → 폴더를 끌어다 놓은 뒤 실행하세요")
+        if not receipt:
+            raise Stop("원문일괄등록(폴더) 팝업이 없습니다. 접수번호를 넣으면 프로그램이 팝업을 엽니다")
+        pop = open_popup(receipt, log)
     d, t = _dialog_text()
-    if d:
+    if d and INFO_DONE in t:          # 앞 실행이 일괄정보입력 완료 알림에서 멈춘 경우: 확인하고 이어 간다
+        _confirm(INFO_DONE, 5, log)
+    elif d:
         raise Stop(f"알림창이 열려 있습니다: '{t[:80]}'")
     st = state(pop)
-    log(f"팝업 상태: {st['summary']} 버튼 {st['buttons']}")
+    if not st["rows"] and not any(re.search(r"(?<!\d)[1-9]\d*\s*항목", s_) for s_ in st["summary"]):
+        drop_folders(Path(root), log)
+        st = state(pop)
+    log(f"팝업 상태: {st['summary']}")
     unknown = [c for c in st["cnts"] if c not in local["names"]]
     if unknown:
         raise Stop(f"팝업에 이 작품 것이 아닌 폴더가 있습니다: {unknown[:3]}")
@@ -146,35 +289,35 @@ def run(root: Path, log=None, handle: dict | None = None, yes: str = "") -> dict
 
     ie = lambda: k.ie_content(pop)   # noqa: E731
     done = st["results"]
-    # ② 전송
-    if not done:
-        if not any(str(n) in s for s in st["summary"]):
+    shown = min(n, 11)          # 결과표는 가상 스크롤이라 화면에 보이는 행(약 11행)만 읽힌다
+    # ② 전송. 끝났는지는 결과표에 폴더 행이 생겼는지로 판정한다(2026-09-29: 안내 글자 '추가됨'은 항상 있어 판정에 못 씀)
+    if len(st["rows"]) >= shown:
+        log(f"이미 전송된 상태(결과표에 폴더 {len(st['rows'])}행) — 전송 건너뜀")
+    else:
+        if not any(re.search(rf"(?<!\d){n}\s*항목", s_) for s_ in st["summary"]):
             raise Stop(f"팝업에 올라온 항목 수를 확인하지 못했습니다(기대 {n}개, 표시 {st['summary']}). 끌어다 놓기가 끝났는지 확인하세요")
         limit = max(T_UPLOAD_MIN, local["mb"] * SEC_PER_MB + 120)
         _focus(pop)
+        ie_dom.tick("전송하기 (전)")
         k._button(ie(), "전송하기").click_input()
         log(f"'전송하기' 클릭 — 전송 대기(한도 {int(limit)}초)")
-        t0, last, seen_progress = time.time(), "", False
+        t0, last = time.time(), ""
         while True:
             cancelled()
             s = state(pop)
             if s["dialog"]:
                 raise Stop(f"전송 중 알림창: '{s['dialog'][:80]}'")
-            if s["progress"]:
-                seen_progress = True
-                line = " | ".join(s["progress"])[:120]
-                if line != last and int(time.time() - t0) % 20 < 3:
-                    log(f"  전송 중 {int(time.time() - t0)}초: {line}"); last = line
-            elif (seen_progress or time.time() - t0 > 15) and s["cnts_cells"] >= min(n, 1) and not s["summary"]:
+            if len(s["rows"]) >= shown:
                 break
-            elif time.time() - t0 > 15 and not seen_progress and s["summary"]:
-                raise Stop("'전송하기' 를 눌렀지만 전송이 시작되지 않았습니다")
+            if s["progress"]:
+                line = " | ".join(s["progress"])[:120]
+                if line != last:
+                    log(f"  전송 중 {int(time.time() - t0)}초: {line}"); last = line
             if time.time() - t0 > limit:
-                raise Stop(f"전송이 {int(limit)}초 안에 끝나지 않았습니다. 화면을 확인하세요")
-            time.sleep(3)
-        log(f"전송 끝 ({int(time.time() - t0)}초). 결과표에 폴더 행 표시")
-    else:
-        log(f"이미 전송된 상태로 보임(결과표 {done}) — 전송 건너뜀")
+                raise Stop(f"전송이 {int(limit)}초 안에 끝나지 않았습니다(결과표에 폴더 {len(s['rows'])}행). 화면을 확인하세요")
+            time.sleep(2)
+        ie_dom.tick("전송 끝")
+        log(f"전송 끝 ({int(time.time() - t0)}초). 결과표에 폴더 {len(s['rows'])}행")
     cancelled()
     # ③ 결과표 전체 선택: 표 머리글의 체크박스(UIA CheckBox). 여러 개면 가장 아래쪽(결과표) 것
     if done.get("정보입력", 0) == 0:
@@ -195,27 +338,39 @@ def run(root: Path, log=None, handle: dict | None = None, yes: str = "") -> dict
         log("결과표 전체 선택 확인")
         # ④ 일괄정보입력
         _focus(pop)
+        ie_dom.tick("일괄정보입력 (전)")
         k._button(ie(), "일괄정보입력").click_input()
         _confirm("정보입력을 하시겠습니까", 15, log)
         t0 = time.time(); limit = n * 3 + 60
         while True:
             cancelled()
+            d, t = _dialog_text()
+            if d and INFO_DONE in t:      # 끝나면 알림 "정보입력이 되었습니다."가 뜬다(2026-09-29 실측)
+                _confirm(INFO_DONE, 5, log)
+                s = state(pop)
+                if s["results"].get("정보입력", 0) < shown:
+                    raise Stop(f"완료 알림은 떴지만 정보입력결과가 채워지지 않았습니다(보이는 행 {s['results']})")
+                break
+            if d:
+                raise Stop(f"정보입력 중 알림창: '{t[:80]}'")
             s = state(pop)
-            if s["dialog"]:
-                raise Stop(f"정보입력 중 알림창: '{s['dialog'][:80]}'")
-            shown = min(n, max(1, len(s["cnts"])))
             if s["results"].get("정보입력", 0) >= shown and time.time() - t0 >= n * 0.7:
                 break
             if time.time() - t0 > limit:
                 raise Stop(f"정보입력결과가 {limit}초 안에 채워지지 않았습니다(보이는 행 {s['results']})")
             time.sleep(2)
+        ie_dom.tick("일괄정보입력 끝")
         log(f"일괄정보입력 끝 ({int(time.time() - t0)}초, 보이는 행 {s['results']})")
     cancelled()
     # ⑤ 원문등록
     _focus(pop)
+    ie_dom.tick("원문등록 (전)")
     k._button(ie(), "원문등록").click_input()
     _confirm("원문등록하시겠습니까", 15, log)
     msg = _confirm("원문이 등록되었습니다", n * 6 + 120, log)
-    s = state(pop)
+    ie_dom.tick("원문등록 끝")
+    s_last = state(pop)["results"]
+    _close(pop, log)
+    s = {"results": s_last}
     log(f"=== 원문일괄등록 완료: {msg} (보이는 행 {s['results']})")
     return {"folders": n, "files": local["files"], "mb": local["mb"], "message": msg, "visible": s["results"]}

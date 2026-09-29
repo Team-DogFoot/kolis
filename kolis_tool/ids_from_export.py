@@ -13,8 +13,11 @@ def export_table(path: Path) -> list[dict]:
     rows: list[list[str]] = []
     if raw[:2] == b"PK":
         import openpyxl
-        ws = openpyxl.load_workbook(path, read_only=True).worksheets[0]
-        rows = [["" if v is None else str(v) for v in r] for r in ws.iter_rows(values_only=True)]
+        wb = openpyxl.load_workbook(path, read_only=True)
+        try:
+            rows = [["" if v is None else str(v) for v in r] for r in wb.worksheets[0].iter_rows(values_only=True)]
+        finally:
+            wb.close()      # 읽기 전용으로 열면 파일을 잡고 있다(닫지 않으면 그 파일을 옮기거나 지울 수 없다)
     else:
         text = raw.decode("utf-8-sig", "ignore") if raw.lstrip()[:5] in (b"<?xml", b"\xef\xbb\xbf<") or b"urn:schemas-microsoft-com:office:spreadsheet" in raw[:2000] else ""
         if not text:

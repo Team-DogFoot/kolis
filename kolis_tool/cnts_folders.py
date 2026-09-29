@@ -2,15 +2,15 @@
 
 입력: 전체출력 파일(ExcelDown….xls, 접수번호 811-N ↔ 콘텐츠ID), 원고 상위 폴더(회차 폴더 001, 002 … 또는 EP01 …).
 짝짓기: 접수번호 뒤 숫자 N = 반입용 엑셀 N번째 행 = 회차 폴더를 자연 정렬한 N번째. 폴더 수와 반입 건수가 다르면 중단.
-되돌리기: 상위 폴더에 cnts_manifest.json.
+되돌리기 기록은 프로그램의 work/manifests/ 에 둔다(납품 폴더 안에는 아무것도 만들지 않는다).
 """
 from __future__ import annotations
 import json
 from pathlib import Path
-from .common import natural_key, list_images, manifest_path, find_manifest
+from .common import natural_key, list_images, manifest_path, find_manifest, migrate_legacy, retarget_manifest
 from .ids_from_export import receipt_map
 
-MANIFEST = "cnts_manifest.json"   # 예전 위치(원고 폴더 안) — 호환용. 새 위치: 부모/_kolis_manifests/<원고>.cnts.json
+MANIFEST = "cnts_manifest.json"   # 예전 위치(원고 폴더 안) — 호환용
 KIND = "cnts"
 
 
@@ -20,6 +20,7 @@ def episode_folders(root: Path) -> list[Path]:
 
 def plan(export_file: Path, root: Path) -> dict:
     root = Path(root)
+    migrate_legacy(root)
     if find_manifest(root, KIND, MANIFEST):
         raise SystemExit("이미 CNTS 로 바꾼 폴더입니다. 되돌린 뒤 다시 하세요.")
     stray = [p.name for p in root.iterdir() if p.is_file()]
@@ -48,12 +49,13 @@ def apply(export_file: Path, root: Path) -> dict:
     done = []
     for a, b, no in p["pairs"]:
         (root / a).rename(root / b); done.append([a, b, no])
+        retarget_manifest(root / a, root / b, "rename")      # 그 폴더의 파일명 되돌리기 기록도 새 이름으로
     manifest_path(root, KIND).write_text(json.dumps({"receipt": p["receipt"], "done": done}, ensure_ascii=False, indent=1), encoding="utf-8")
     return p
 
 
 def undo(root: Path) -> int:
-    root = Path(root); mf = find_manifest(root, KIND, MANIFEST)
+    root = Path(root); migrate_legacy(root); mf = find_manifest(root, KIND, MANIFEST)
     if not mf:
         raise SystemExit("되돌리기 기록 없음")
     data = json.loads(mf.read_text(encoding="utf-8"))
@@ -61,5 +63,6 @@ def undo(root: Path) -> int:
     for a, b, _ in reversed(data["done"]):
         if (root / b).exists():
             (root / b).rename(root / a); n += 1
+            retarget_manifest(root / b, root / a, "rename")
     mf.unlink()
     return n

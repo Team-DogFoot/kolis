@@ -14,7 +14,7 @@ import os
 
 HERE = Path(__file__).parent
 MAX_AGENTS = max(1, int(os.environ.get("KOLIS_MAX_AGENTS", "3")))      # 에이전트 동시 실행 한도
-KOLIS_KINDS = ("kolis", "kolis_submit", "export", "upload", "thumbs_register")
+KOLIS_KINDS = ("kolis", "kolis_submit", "export", "upload_open", "upload", "thumbs_register", "register", "register_export")
 
 
 class Api:
@@ -61,10 +61,12 @@ class Api:
         if self._window:
             self._window.evaluate_js(f"onDone({json.dumps(kind)}, {json.dumps(payload, ensure_ascii=False, default=str)}, {json.dumps(tab)})")
 
-    def _run(self, kind: str, fn, capture: bool = False, tab: str = "") -> dict:
+    def _run(self, kind: str, fn, capture: bool = False, tab: str = "", screen: bool | None = None) -> dict:
         """스레드 작업 공통 틀: 시작·종료·소요시간·예외 스택을 파일에 남기고 onDone(kind, 결과, 탭)으로 알린다.
         fn() 은 결과 dict 를 돌려준다. Cancelled → {'cancelled': True}, 그 밖의 예외 → {'error': 문구}.
-        capture=True(KOLIS 조작)면 실패 시 화면 캡처·창 목록을 저장한다. KOLIS 작업은 한 번에 하나만 받는다."""
+        capture=True(KOLIS 조작)면 실패 시 화면 캡처·창 목록을 저장한다. KOLIS 작업은 한 번에 하나만 받는다.
+        screen=False(요청 방식)면 KOLIS 창을 조작하지 않으므로 잠그지 않고 프로그램 창도 내리지 않는다. 다만 화면 방식 작업이 도는 동안에는
+        그 작업이 화면을 옮길 수 있어(요청이 끊김) 받지 않는다."""
         import datetime, time
         from .agent import Cancelled
         log = self._tab_log(tab)
@@ -72,7 +74,11 @@ class Api:
         with self._lock:
             if key in self._running:
                 return {"error": f"이 작품의 '{kind}' 작업이 이미 진행 중입니다({self._running[key]} 시작)"}
-            if kind in KOLIS_KINDS:
+            kolis = (kind in KOLIS_KINDS) if screen is None else screen
+            if not kolis and screen is False and self._kolis_owner:
+                who = self._names.get(self._kolis_owner[0]) or "다른 작품"
+                return {"error": f"지금 '{who}' 작업({self._kolis_owner[1]})이 KOLIS 화면을 조작하고 있습니다. 끝난 뒤에 실행하세요"}
+            if kolis:
                 if self._kolis_owner:
                     who = self._names.get(self._kolis_owner[0]) or "다른 작품"
                     return {"error": f"KOLIS 창은 지금 '{who}' 작업({self._kolis_owner[1]})이 쓰고 있습니다. 끝난 뒤에 실행하세요(KOLIS 창은 하나라 한 번에 한 작품만)"}
@@ -81,6 +87,11 @@ class Api:
         def job():
             t0 = time.time()
             log.debug(f"[{kind}] 시작")
+            if kolis:      # 프로그램 창이 KOLIS 버튼·팝업을 덮으면 클릭이 프로그램 창에 떨어진다 → KOLIS 를 조작하는 동안 최소화(모든 KOLIS 단계)
+                try:
+                    self._window.minimize(); time.sleep(0.6)
+                except Exception:  # noqa: BLE001
+                    pass
             try:
                 r = fn()
                 log.debug(f"[{kind}] 완료 {time.time() - t0:.1f}초: {json.dumps(r, ensure_ascii=False, default=str)[:300]}")
@@ -102,6 +113,11 @@ class Api:
                         pass
                 self._done(kind, {"error": msg}, tab)
             finally:
+                if kolis:
+                    try:
+                        self._window.restore()
+                    except Exception:  # noqa: BLE001
+                        pass
                 with self._lock:
                     self._running.pop(key, None)
                     if self._kolis_owner == (tab, kind):
@@ -170,6 +186,8 @@ class Api:
         add("cnts", "폴더명 CNTS", ms and find_manifest(ms, "cnts", "cnts_manifest.json") is not None and eps and all(p.name.startswith("CNTS-") for p in eps),
             f"{sum(1 for p in eps if p.name.startswith('CNTS-'))}/{len(eps)} 폴더")
         add("upload", "원문일괄등록", bool(st.get("upload")), (st.get("upload") or {}).get("message", ""))
+        rg = st.get("register") or {}
+        add("register", "가원부번호", bool(rg.get("record_no")), f"{rg.get('record_no', '')} · {Path(rg.get('file', '')).name}" if rg else "")
         warns = []
         if ex.get("count") and w.get("rows") and int(ex["count"]) != int(w["rows"]):
             warns.append(f"반입 건수 {ex['count']} ≠ 반입용 행 수 {w['rows']}")
@@ -446,9 +464,21 @@ class Api:
         return self._run("kolis_submit", lambda: kolis_ui.submit(pop, yes, self._kolis_log(tab)), capture=True, tab=tab)
 
     # ---------- 6. 반입 결과 → 폴더명 CNTS ----------
-    def export_download(self, tab: str, receipt: str = "") -> dict:
-        """KOLIS 로 이동 → (접수번호 찾기) → '전체출력' → 알림 막대 '저장' → work/접수번호 N.xls. 스레드, 끝나면 onDone('export')."""
+    def export_download(self, tab: str, receipt: str = "", mode: str = "screen") -> dict:
+        """KOLIS 로 이동 → (접수번호 찾기) → '전체출력' → 알림 막대 '저장' → work/접수번호 N.xls. 스레드, 끝나면 onDone('export').
+        mode=request: 화면을 누르지 않고 목록 요청으로 같은 표를 받는다(읽기만 함, 접수번호 필수)."""
         from . import kolis_ui
+        if mode == "request":
+            from . import kolis_request
+            import datetime
+            def job():
+                try:
+                    return kolis_request.export_receipt(kolis_request.Page(), str(datetime.date.today().year), receipt.strip(), self._work_dir, self._kolis_log(tab))
+                except kolis_request.Stop as e:
+                    raise SystemExit(str(e)) from e
+            if not receipt.strip():
+                return {"error": "요청 방식은 접수번호가 필요합니다"}
+            return self._run("export", job, tab=tab, screen=False)
         return self._run("export", lambda: kolis_ui.download_export(self._kolis_log(tab), self._work_dir, receipt), capture=True, tab=tab)
 
     def cnts_preview(self, export_file: str, root: str) -> dict:
@@ -483,27 +513,64 @@ class Api:
         except Exception as e:  # noqa: BLE001
             return {"error": "".join(traceback.format_exception_only(type(e), e)).strip()}
 
-    def upload_run(self, tab: str, root: str, yes: str) -> dict:
+    def upload_open(self, tab: str, receipt: str) -> dict:
+        """원문일괄등록(폴더) 팝업 열기: 접수번호 찾기 → 목록 전체 선택 → 버튼 클릭."""
+        from . import kolis_upload
+        def job():
+            try:
+                kolis_upload.open_popup(receipt, self._kolis_log(tab))
+                return {"opened": True, "popup": kolis_upload.state()}
+            except kolis_upload.Stop as e:
+                raise SystemExit(str(e)) from e
+        return self._run("upload_open", job, capture=True, tab=tab)
+
+    def upload_run(self, tab: str, root: str, yes: str, receipt: str = "") -> dict:
         from . import kolis_upload
         handle = self._jobs[tab] = {"cancel": False}
         def job():
             try:
-                self._window.minimize()      # 프로그램 창이 팝업 버튼을 덮으면 클릭이 새 버린다(7단계와 같은 이유)
-            except Exception:  # noqa: BLE001
-                pass
-            try:
-                return kolis_upload.run(Path(root), self._kolis_log(tab), handle, yes)
+                return kolis_upload.run(Path(root), self._kolis_log(tab), handle, yes, receipt)
             except kolis_upload.Stop as e:
                 raise SystemExit(str(e)) from e
             finally:
                 self._jobs.pop(tab, None)
-                try:
-                    self._window.restore()
-                except Exception:  # noqa: BLE001
-                    pass
         return self._run("upload", job, capture=True, tab=tab)
 
-    # ---------- 7. 썸네일 등록 반복 ----------
+    # ---------- 5. 등록대상처리 → 가원부번호 → 등록원부관리 전체출력 ----------
+    def register_run(self, tab: str, receipt: str, yes: str, mode: str = "screen") -> dict:
+        """mode: screen(화면을 눌러서) / request(로그인된 KOLIS 화면 안에서 요청만 보냄 — 여러 작품을 동시에 할 수 있다)."""
+        from . import kolis_register, kolis_request
+        import datetime
+        handle = self._jobs[tab] = {"cancel": False}
+        request = mode == "request"
+        def job():
+            try:
+                if request:
+                    return kolis_request.run(receipt, str(datetime.date.today().year), self._work_dir, self._kolis_log(tab), handle, yes)
+                return kolis_register.run(receipt, self._work_dir, self._kolis_log(tab), handle, yes)
+            except (kolis_register.Stop, kolis_request.Stop) as e:
+                raise SystemExit(str(e)) from e
+            finally:
+                self._jobs.pop(tab, None)
+        return self._run("register", job, capture=not request, tab=tab, screen=not request)
+
+    def register_export(self, tab: str, no: str, receipt: str, mode: str = "screen") -> dict:
+        """가원부번호가 이미 있을 때: 가원부 파일만 다시 받는다(KOLIS 의 자료를 바꾸지 않음)."""
+        from . import kolis_register, kolis_request
+        import datetime
+        request = mode == "request"
+        num = no.split("-")[-1].strip()
+        year = no.split("-")[0].strip() if "-" in no else str(datetime.date.today().year)
+        def job():
+            try:
+                if request:
+                    return kolis_request.export_record(kolis_request.Page(), year, num, receipt, self._work_dir, self._kolis_log(tab))
+                return kolis_register.export_record(num, receipt, "", self._work_dir, self._kolis_log(tab))
+            except (kolis_register.Stop, kolis_request.Stop) as e:
+                raise SystemExit(str(e)) from e
+        return self._run("register_export", job, capture=not request, tab=tab, screen=not request)
+
+    # ---------- 4. 썸네일 등록 반복 ----------
     def thumbs_register(self, tab: str, import_xlsx: str, thumb_dir: str, count: int = 0, receipt: str = "") -> dict:
         from . import kolis_thumbs
         handle = self._jobs[tab] = {"cancel": False}
@@ -511,19 +578,10 @@ class Api:
             if self._window:
                 self._window.evaluate_js(f"onThumbProgress({json.dumps({'i': i, **r}, ensure_ascii=False)}, {json.dumps(tab)})")
         def job():
-            # KOLIS 조작 중 프로그램 창이 팝업 버튼을 덮으면 클릭이 프로그램 창에 떨어진다 → 실행 중 최소화, 끝나면 복원
-            try:
-                self._window.minimize()
-            except Exception:  # noqa: BLE001
-                pass
             try:
                 return kolis_thumbs.run(Path(import_xlsx), Path(thumb_dir), int(count or 0), self._kolis_log(tab), handle, prog, receipt)
             finally:
                 self._jobs.pop(tab, None)
-                try:
-                    self._window.restore()
-                except Exception:  # noqa: BLE001
-                    pass
         return self._run("thumbs_register", job, capture=True, tab=tab)
 
     def open_path(self, path: str) -> bool:

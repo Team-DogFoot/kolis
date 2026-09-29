@@ -1,7 +1,7 @@
 # Memory Index
 
-- [kolis-webtoon-project](kolis-webtoon-project.md) — 웹툰 납본 KOLIS 자동화: 합의, 프로그램 구조(에이전트 1단계·작품 탭·4단계), 시험 재료, 다음 할 일. 세션 시작은 docs/HANDOFF.md
-- [kolis-automation-strategy](kolis-automation-strategy.md) — 반자동(UI) 먼저, HAR 관찰 후 HTTP 완전 자동화; KOLIS·IE 모드 자동화 함정 목록; 탭과 KOLIS 잠금
+- [kolis-webtoon-project](kolis-webtoon-project.md) — 웹툰 납본 KOLIS 자동화: 합의, 프로그램 구조(에이전트 1단계·작품 탭·5단계·요청 방식), 시험 재료 상태, 다음 할 일. 세션 시작은 docs/HANDOFF.md
+- [kolis-automation-strategy](kolis-automation-strategy.md) — 화면 방식 → 요청 기록 → 요청 방식; IE 모드 함정, 화면 안 기록, 로그인된 화면 안에서 요청, Edge 최대화 금지
 - [agent-first-fixed-output](agent-first-fixed-output.md) — 에이전트를 제대로 쓴다(스스로 도는 루프·스킬·검수·지식), 고정 코드는 양식 쓰기·검사만
 - [test-through-the-program](test-through-the-program.md) — 시험은 실제 프로그램 창으로, 두 번 돌려 같은지 확인; 에이전트 결과가 흔들리면 보고 전에 원인을 고친다
 - [user-profile](user-profile.md) — 웹백엔드/데브옵스 개발자, 도커+FastAPI 운영 선호, 비개발자용 포장 필요

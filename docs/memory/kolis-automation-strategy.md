@@ -1,6 +1,6 @@
 ---
 name: kolis-automation-strategy
-description: "KOLIS 자동화 전략(반자동 UI → HAR 관찰 → HTTP)과 실측으로 확인한 KOLIS·IE 모드 자동화 함정 목록(포커스, 체크박스 픽셀, select 방향키, 확인창 연속, 자리표시자 행 등)"
+description: "KOLIS 자동화 전략(화면 방식 → 요청 기록 → 요청 방식)과 실측 규칙: IE 모드 함정, 요청 기록 방법(화면 안 기록), 요청 방식은 로그인된 화면 안에서 보냄, 파일 전송 단계는 화면 방식으로 남음"
 metadata:
   node_type: memory
   type: project
@@ -24,4 +24,13 @@ metadata:
 
 **2026-09-29 추가:** 작품 탭으로 여러 작품을 동시에 다룬다. 1단계(에이전트)는 동시 실행, KOLIS 단계는 화면 조작인 동안 한 번에 한 작품(`app.py` 의 `_kolis_owner` 잠금). 요청 방식으로 옮긴 단계부터 잠금을 푼다(유저가 확인한 방향). 그때 확인할 것: 같은 계정의 동시 요청 허용 여부, 업로드 회선. 구축·점검 화면은 크롬 엔진이라 F12 로 기록을 받을 수 있다. 원문일괄등록의 끌어다 놓은 뒤 과정은 `kolis_upload.py` 로 코드화했지만 실제 화면에서 돌려 보지 않았다.
 
-**How to apply:** 새 KOLIS 단계는 먼저 UIA 로 요소 이름을 읽고 `kolis_ui._act`(누름→확인→재시도) 패턴으로 만들고, 실패 시 캡처(`work/logs/fail-*.png`). 유저 지적: **클릭 자동화는 반드시 클릭 후 상태를 검증**할 것. 관련: [[kolis-webtoon-project]]
+**2026-09-29 밤 추가(요청 기록·요청 방식):**
+- IEChooser 네트워크 탭은 이 PC 에서 시작되지 않는다. 대신 `ie_dom.py`: 창 핸들에서 IE 문서를 얻어(WM_HTML_GETOBJECT, win32com) 기록용 스크립트를 넣는다. comtypes 는 안 됨. 알림창·대화 상자 뒤의 창은 스크립트가 멈춰 있어 건드리면 돌아오지 않는다 → 비활성 창 제외, 스레드+제한 시간.
+- 세션 쿠키는 스크립트에서 안 보인다 → 요청 방식은 **로그인된 KOLIS 화면 안에서 XMLHttpRequest 를 보내는 방식**(`kolis_request.Page`). 계정·쿠키를 다루지 않는다. 파일을 보내는 단계(일괄반입, 원문일괄등록)는 옮길 수 없다.
+- 접수번호는 팝업을 열 때가 아니라 반입 응답에서 생긴다. 목록 응답에 콘텐츠ID·원문 수·MODS 전문이 있다. 전체출력은 화면이 만든 XML 을 되받는 것.
+- 대화 상자의 실제 창은 `Internet Explorer_TridentDlgFrame`. `Alternate Modal Top Most` 는 Edge 보조 창(옮기면 안 됨). 끌어다 놓기는 집을 자리·놓을 자리의 창을 WindowFromPoint 로 확인한 뒤에만.
+- **Edge 를 최대화하지 않는다**(유저가 터미널로 진행 여부를 본다). `place_edge` 가 왼쪽 480px 를 비운다.
+- 원문일괄등록 완료 판정은 안내 글자가 아니라 결과표의 폴더 행. "정보입력이 되었습니다."는 정상 완료 알림.
+- 되돌리기 기록은 납품 폴더가 아니라 `work/manifests/`(납품 폴더 안에 두면 원고 폴더와 같이 끌려간다).
+
+**How to apply:** 새 KOLIS 단계는 먼저 UIA 로 요소 이름을 읽고 `kolis_ui._act`(누름→확인→재시도) 패턴으로 만들고, 실패 시 캡처(`work/logs/fail-*.png`). 유저 지적: **클릭 자동화는 반드시 클릭 후 상태를 검증**할 것. 요청 방식 코드는 `kolis_request.check_saved()` 로 기록과 대조한 뒤, 첫 실제 실행은 직원 입회 아래 실제 작품으로. 관련: [[kolis-webtoon-project]]

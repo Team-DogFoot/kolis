@@ -84,15 +84,15 @@
 
   <section class="card"><h2><span class="step">3</span> 반입 결과 → 원고 폴더명을 콘텐츠ID로</h2>
     <p class="muted" style="margin:0 0 6px">가이드 3.4-가. KOLIS 화면에서 "전체출력"을 눌러 내려받은 파일(접수번호 ↔ 콘텐츠ID)로 회차 폴더 이름을 CNTS-… 로 바꿉니다. 원문일괄등록(폴더)은 이 이름을 기준으로 합니다.</p>
-    <div class="row"><label>접수번호 <input type="text" id="x-receipt" placeholder="예: 811" style="max-width:120px"></label><button class="secondary" onclick="exportDownload()">KOLIS 에서 전체출력 받기</button><span id="x-out" class="muted"></span></div>
+    <div class="row"><label>접수번호 <input type="text" id="x-receipt" placeholder="예: 811" style="max-width:120px"></label><button class="secondary" onclick="exportDownload()">KOLIS 에서 전체출력 받기</button><button class="secondary" onclick="exportDownload('request')" title="화면을 누르지 않고 목록을 요청으로 받습니다(읽기만 함). 실제 실행 전">요청 방식으로 받기</button><span id="x-out" class="muted"></span></div>
     <p class="muted" style="margin:0 0 6px;font-size:12px">홈 등 다른 화면이어도 납본자료접수로 이동해 접수번호로 찾은 뒤 전체출력합니다. 접수번호를 비우면 지금 화면의 목록을 그대로 출력합니다.</p>
     <div class="row"><input type="text" id="x-file" placeholder="전체출력 파일 (ExcelDown….xls / 접수번호 N.xls)"><button class="secondary" onclick="pickInto('x-file', 'Excel (*.xls;*.xlsx)')">찾아보기</button></div>
     <div class="row"><input type="text" id="x-root" placeholder="원고 상위 폴더 (1단계에서 자동으로 들어감)"><button class="secondary" onclick="pickFolderInto('x-root')">찾아보기</button></div>
     <div class="row"><button class="secondary" onclick="cntsPreview()">미리보기</button><button onclick="cntsApply()">폴더명 변경</button><button class="secondary" onclick="cntsUndo()">되돌리기</button><span id="c-out" class="muted"></span></div>
     <div id="c-list" class="muted" style="font-size:12px"></div>
     <p style="margin:14px 0 4px"><b>원문일괄등록(폴더)</b> <span class="warn" style="font-size:12px">직원 입회 아래에서만</span></p>
-    <p class="muted" style="margin:0 0 6px;font-size:12px">사람이 할 일: KOLIS 목록 전체 선택 → '원문일괄등록(폴더)' → CNTS 폴더들을 팝업에 끌어다 놓기. 그 뒤 '상태 확인'으로 올라온 폴더를 확인하고, YES 를 넣고 실행하면 전송하기 → 결과표 전체 선택 → 일괄정보입력 → 원문등록까지 단계마다 확인하며 진행합니다.</p>
-    <div class="row"><button class="secondary" onclick="uploadCheck()">상태 확인</button><input type="text" id="u-yes" placeholder="직원 동의 후 YES 입력" style="max-width:200px"><button id="btn-upl" class="danger" onclick="uploadRun()">전송·정보입력·원문등록 실행</button><button id="btn-ucancel" class="danger" onclick="cancelJob()" hidden>중단</button><span id="u-out" class="muted"></span></div>
+    <p class="muted" style="margin:0 0 6px;font-size:12px">접수번호로 찾아 목록 전체 선택 → '원문일괄등록(폴더)' 팝업 → CNTS 폴더들을 팝업에 끌어다 놓기 → 전송하기 → 결과표 전체 선택 → 일괄정보입력 → 원문등록 → 팝업 닫기까지 합니다. 단계마다 상태를 확인하고, 이미 된 단계는 건너뜁니다. 실행 중에는 마우스를 움직이지 마세요.</p>
+    <div class="row"><input type="text" id="u-yes" placeholder="직원 동의 후 YES 입력" style="max-width:200px"><button id="btn-upl" class="danger" onclick="uploadRun()">원문일괄등록 실행</button><button id="btn-ucancel" class="danger" onclick="cancelJob()" hidden>중단</button><button class="secondary" onclick="uploadCheck()">상태 확인</button><button id="btn-uopen" class="secondary" onclick="uploadOpen()">팝업만 열기</button><span id="u-out" class="muted"></span></div>
     <div id="u-list" class="muted" style="font-size:12px"></div>
   </section>
 
@@ -105,14 +105,22 @@
       <button id="btn-treg" onclick="thumbsRegister()">등록 시작</button><button id="btn-tcancel" class="danger" onclick="cancelJob()" hidden>중단</button><span id="t-out" class="muted"></span></div>
     <div id="t-list" class="muted" style="font-size:12px;max-height:160px;overflow:auto"></div>
   </section>
+
+  <section class="card"><h2><span class="step">5</span> 등록대상처리 → 가원부번호 <span class="warn" style="font-size:12px">직원 입회 아래에서만</span></h2>
+    <p class="muted" style="margin:0 0 6px">원문과 썸네일 등록이 끝난 뒤. ① 납본자료접수에서 접수번호 전체를 <b>등록대상처리</b> → ② 등록원부작성에서 원문서비스구분 "07 | 납본뷰어"로 <b>가원부번호 발급</b> → ③ 등록원부관리에서 전체출력을 받아 <b>"가원부번호 연도-번호(접수번호 N).xlsx"</b> 로 저장합니다(주무관에게 보내는 파일). 이용대상·서비스범위가 섞여 있으면 멈춥니다.</p>
+    <div class="row"><label>방식 <select id="g-mode" style="max-width:420px"><option value="screen">화면 방식 — Edge 화면을 눌러서 진행(한 번에 한 작품)</option><option value="request">요청 방식 — 화면을 누르지 않음(여러 작품 동시 가능, 실제 실행 전)</option></select></label></div>
+    <div class="row"><label>접수번호 <input type="text" id="g-receipt" placeholder="예: 939" style="max-width:120px"></label><input type="text" id="g-yes" placeholder="직원 동의 후 YES 입력" style="max-width:200px"><button id="btn-reg" class="danger" onclick="registerRun()">실행</button><span id="g-out" class="muted"></span></div>
+    <div class="row"><label>가원부번호 <input type="text" id="g-no" placeholder="예: 2026-1615" style="max-width:160px"></label><button id="btn-regx" class="secondary" onclick="registerExport()">가원부 파일만 다시 받기</button></div>
+    <div id="g-list" class="muted" style="font-size:12px"></div>
+  </section>
 </div>
 <div id="right"><div id="log-title">로그</div><div id="log"></div></div>
 </main>
 <script>
 // 작품 탭: 탭마다 입력값·결과·로그·진행 상태를 따로 가진다. 화면(DOM)은 하나이고, 탭을 바꿀 때 값을 넣고 뺀다.
 const BATCH_DEFAULT = '2026-납본-웹툰대행(차)()';
-const INPUTS = ['folder','batch','instr','out-name','k-note','k-xlsx','x-receipt','x-file','x-root','t-xlsx','t-dir','t-receipt','t-count'];
-const OUTS = ['out-hint','run-out','s-state','k-out','k-fields','k-sub','x-out','c-out','c-list','u-out','u-list','t-out','t-list'];
+const INPUTS = ['folder','batch','instr','out-name','k-note','k-xlsx','x-receipt','x-file','x-root','t-xlsx','t-dir','t-receipt','t-count','g-receipt','g-no','g-mode'];
+const OUTS = ['out-hint','run-out','s-state','k-out','k-fields','k-sub','x-out','c-out','c-list','u-out','u-list','t-out','t-list','g-out','g-list'];
 const KOLIS_KINDS = ['kolis','kolis_submit','export','upload','thumbs_register'];
 const T = [];           // 탭 목록
 let CUR = null;         // 지금 보이는 탭
@@ -140,8 +148,9 @@ function setVal(t, id, val){ t.v[id] = val; if(t === CUR) $(id).value = val; }
 function show(){
   const t = CUR;
   INPUTS.forEach(id => { $(id).value = t.v[id] == null ? '' : t.v[id]; });
+  if(!$('g-mode').value) $('g-mode').value = 'screen';
   OUTS.forEach(id => { $(id).innerHTML = t.html[id] || ''; });
-  $('k-yes').value = ''; $('u-yes').value = '';
+  $('k-yes').value = ''; $('u-yes').value = ''; $('g-yes').value = '';
   if(t.work) showResult(t); else $('result').hidden = true;
   buttons(t); outHint(t);
   $('log').textContent = GLOBAL_LOG.concat(t.log).sort((a,b)=>a[0]-b[0]).map(x=>x[1]).join('\n') + '\n';
@@ -167,8 +176,9 @@ function buttons(t){
   $('btn-run').disabled = !t.v.folder || !!r.prepare; $('btn-run').textContent = t.work ? '다시 실행' : '실행';
   $('btn-cancel').hidden = !r.prepare; $('btn-cancel').disabled = false;
   $('btn-kprep').disabled = !!r.kolis; $('btn-ksub').disabled = !!r.kolis_submit;
-  $('btn-upl').disabled = !!r.upload; $('btn-ucancel').hidden = !r.upload;
+  $('btn-upl').disabled = !!r.upload; $('btn-ucancel').hidden = !r.upload; $('btn-uopen').disabled = !!r.upload_open;
   $('btn-treg').disabled = !!r.thumbs_register; $('btn-tcancel').hidden = !r.thumbs_register;
+  $('btn-reg').disabled = !!r.register; $('btn-regx').disabled = !!r.register_export || !!r.register;
 }
 function saveTabs(){ capture(); pywebview.api.tabs_save(T.map(t => ({id:t.id, folder:t.v.folder||'', title:t.title, batch:t.v.batch||'', instr:t.v.instr||''})), CUR ? CUR.id : ''); }
 function switchTab(id){ capture(); CUR = tabOf(id) || CUR; show(); saveTabs(); }
@@ -310,7 +320,9 @@ function showResult(t){
 function restoreKolis(t){
   const st = t.state || {};
   if(st.kolis_prepare){ t.v['k-note'] = st.kolis_prepare.note || ''; t.html['k-out'] = `<span class="muted">마지막 기록 ${st.kolis_prepare.done_at}: 반입 전 준비까지 함${st.kolis_submit?` · 반입 클릭 ${st.kolis_submit.done_at}`:''} — 실제 KOLIS 화면을 확인하고 진행</span>`; }
-  if(st.export && st.export.file){ t.v['x-file'] = st.export.file; t.v['x-receipt'] = st.export.receipt || ''; t.v['t-receipt'] = st.export.receipt || ''; t.html['x-out'] = `<span class="muted">지난 기록 ${st.export.done_at}: 접수번호 ${st.export.receipt}, ${st.export.count}건</span>`; }
+  if(st.export && st.export.file){ t.v['x-file'] = st.export.file; t.v['x-receipt'] = st.export.receipt || ''; t.v['t-receipt'] = st.export.receipt || ''; t.v['g-receipt'] = st.export.receipt || ''; t.html['x-out'] = `<span class="muted">지난 기록 ${st.export.done_at}: 접수번호 ${st.export.receipt}, ${st.export.count}건</span>`; }
+  if(st.register){ t.v['g-no'] = st.register.record_no || ''; t.html['g-out'] = `<span class="muted">지난 기록 ${st.register.done_at}: 가원부번호 ${esc(st.register.record_no)}, ${st.register.count}건 → ${esc(st.register.file)}</span>`; }
+  if(st.upload){ t.html['u-out'] = `<span class="muted">지난 기록 ${st.upload.done_at}: 폴더 ${st.upload.folders}개, 파일 ${st.upload.files}개 — ${esc(st.upload.message)}</span>`; }
   if(st.cnts){ t.html['c-out'] = `<span class="muted">지난 기록 ${st.cnts.done_at}: ${st.cnts.count}개 폴더 → CNTS</span>`; }
 }
 
@@ -330,8 +342,9 @@ function kolisSubmit(){
   const y = $('k-yes').value.trim();
   kolisCall('kolis_submit', 'k-sub', t => pywebview.api.kolis_submit(t.id, y), '<span class="spin"></span> 반입 처리 중… KOLIS 가 끝낼 때까지 기다립니다(수 분). Edge 창을 건드리지 마세요.');
 }
-function exportDownload(){
+function exportDownload(mode){
   const rc = $('x-receipt').value.trim();
+  if(mode==='request'){ kolisCall('export', 'x-out', t => pywebview.api.export_download(t.id, rc, 'request'), '<span class="spin"></span> 목록 요청 중…'); return; }
   kolisCall('export', 'x-out', t => pywebview.api.export_download(t.id, rc), '<span class="spin"></span> KOLIS 이동 → 찾기 → 전체출력 → 저장 중… (Edge 창을 건드리지 마세요)');
 }
 async function cntsPreview(){
@@ -356,9 +369,26 @@ async function uploadCheck(){
   setOut(t, 'u-list', `원고 폴더: ${l.folders}개, 파일 ${l.files}개, ${l.mb} MB` + (l.problems.length ? '<div class="warnbox">'+l.problems.map(w=>`⚠ ${esc(w)}`).join('<br>')+'</div>' : ' <span class="ok">문제 없음</span>')
     + '<br>팝업: ' + (p.open ? `${esc((p.summary||[]).join(' / ')||'항목 표시 없음')} · 보이는 CNTS ${p.cnts.length}개 · 결과 ${esc(JSON.stringify(p.results))}` + (p.dialog?` · <span class="warn">알림창: ${esc(p.dialog)}</span>`:'') : '<span class="bad">열려 있지 않음</span>'));
 }
+function uploadOpen(){
+  const rc = $('x-receipt').value.trim();
+  if(!rc){ setOut(CUR, 'u-out', '<span class="bad">접수번호가 필요합니다</span>'); return; }
+  kolisCall('upload_open', 'u-out', t => pywebview.api.upload_open(t.id, rc), '<span class="spin"></span> 팝업 여는 중… (Edge 창을 건드리지 마세요)');
+}
+function registerRun(){
+  const rc = $('g-receipt').value.trim(), y = $('g-yes').value.trim();
+  if(!rc){ setOut(CUR, 'g-out', '<span class="bad">접수번호가 필요합니다</span>'); return; }
+  const m = $('g-mode').value;
+  kolisCall('register', 'g-out', t => pywebview.api.register_run(t.id, rc, y, m), '<span class="spin"></span> 진행 중… ' + (m==='request' ? '(요청 방식: Edge 의 KOLIS 화면은 로그인된 채로 열려 있어야 합니다)' : '(Edge 창을 건드리지 마세요)'));
+}
+function registerExport(){
+  const no = $('g-no').value.trim(), rc = $('g-receipt').value.trim();
+  if(!no || !rc){ setOut(CUR, 'g-out', '<span class="bad">가원부번호와 접수번호가 필요합니다</span>'); return; }
+  const m = $('g-mode').value;
+  kolisCall('register_export', 'g-out', t => pywebview.api.register_export(t.id, no, rc, m), '<span class="spin"></span> 진행 중… ' + (m==='request' ? '(요청 방식)' : '(Edge 창을 건드리지 마세요)'));
+}
 function uploadRun(){
-  const root = $('x-root').value, y = $('u-yes').value.trim();
-  kolisCall('upload', 'u-out', t => pywebview.api.upload_run(t.id, root, y), '<span class="spin"></span> 진행 중… (Edge 창을 건드리지 마세요)');
+  const root = $('x-root').value, y = $('u-yes').value.trim(), rc = $('x-receipt').value.trim();
+  kolisCall('upload', 'u-out', t => pywebview.api.upload_run(t.id, root, y, rc), '<span class="spin"></span> 진행 중… (Edge 창을 건드리지 마세요)');
 }
 function thumbsRegister(){
   const x=$('t-xlsx').value.trim(), d=$('t-dir').value.trim(), n=parseInt($('t-count').value||'0'), rc=$('t-receipt').value.trim();
@@ -376,7 +406,7 @@ function onDone(kind, p, tab){
   const t = tabOf(tab); if(!t) return;
   finish(t, kind);
   if(t.v.folder) pywebview.api.log_save(t.v.folder, t.log.slice(-3000));
-  const out = {prepare:'run-out', kolis:'k-out', kolis_submit:'k-sub', export:'x-out', upload:'u-out', thumbs_register:'t-out'}[kind];
+  const out = {prepare:'run-out', kolis:'k-out', kolis_submit:'k-sub', export:'x-out', upload_open:'u-out', upload:'u-out', thumbs_register:'t-out', register:'g-out', register_export:'g-out'}[kind];
   if(p.cancelled){ setOut(t, out, '<span class="warn">중단됨</span>'); return; }
   if(p.error){ t.error = true; setOut(t, out, `<span class="bad">${esc(p.error)}</span>`); renderTabs(); return; }
   if(kind==='prepare'){
@@ -385,9 +415,19 @@ function onDone(kind, p, tab){
     fillNext(t); t.v['out-name'] = p.output_xlsx.split(/[\\/]/).pop(); if(t === CUR) show();
     renderState(t); renderTabs(); loadRecent(); saveTabs();
   } else if(kind==='export'){
-    setVal(t, 'x-file', p.file); setVal(t, 'x-receipt', p.receipt); setVal(t, 't-receipt', p.receipt);
+    setVal(t, 'x-file', p.file); setVal(t, 'x-receipt', p.receipt); setVal(t, 't-receipt', p.receipt); setVal(t, 'g-receipt', p.receipt);
     setOut(t, 'x-out', `<span class="ok">접수번호 ${p.receipt}, ${p.count}건</span> (${p.first} … ${p.last}) → ${esc(p.file)}`);
     saveState(t, {export:{file:p.file, receipt:p.receipt, count:p.count}});
+  } else if(kind==='register'){
+    setVal(t, 'g-no', p.record_no);
+    setOut(t, 'g-out', `<span class="ok">가원부번호 ${esc(p.record_no)}</span> · ${p.count}건 → ${link(p.file)}`);
+    setOut(t, 'g-list', '다음: 이 파일을 웹하드에 올리고 가원부번호를 주무관에게 전달(사람이 함)');
+    saveState(t, {register:{record_no:p.record_no, file:p.file, count:p.count, receipt:p.receipt}});
+  } else if(kind==='register_export'){
+    setOut(t, 'g-out', `<span class="ok">받음</span> ${p.count}건 → ${link(p.file)}`);
+    saveState(t, {register:{record_no:`${p.year}-${p.no}`, file:p.file, count:p.count, receipt:p.receipt}});
+  } else if(kind==='upload_open'){
+    setOut(t, 'u-out', '<span class="ok">팝업 열림</span> — 원고 폴더(CNTS-…)들을 팝업에 끌어다 놓은 뒤 "상태 확인"을 누르세요');
   } else if(kind==='upload'){
     setOut(t, 'u-out', `<span class="ok">완료</span> 폴더 ${p.folders}개, 파일 ${p.files}개 — ${esc(p.message)}`);
     saveState(t, {upload:{folders:p.folders, files:p.files, message:p.message}});

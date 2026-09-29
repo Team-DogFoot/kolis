@@ -13,7 +13,7 @@ IE 모드 화면(Internet Explorer_Server)의 버튼·입력칸은 UIA 로 이�
   - 단계마다 파일 로그(work/logs/kolis-YYYYMMDD.log). 실패 시 화면 캡처 + 열린 창 목록 저장(capture_failure).
 """
 from __future__ import annotations
-import datetime, re, time, traceback
+import datetime, os, re, time, traceback
 from pathlib import Path
 
 RECET_URL = "http://kolis.nl.go.kr/online/acq/bodepst/depstrecet/onlineDepstRecet.do"
@@ -70,6 +70,8 @@ def _wait(fn, timeout: float = T_FIND, step: float = STEP, what: str = ""):
 
 def _act(log: Log, what: str, do, check, timeout: float = T_FIND, retries: int = RETRIES, recover=None):
     """do() 실행 → check() 가 참이 될 때까지 timeout 대기 → 실패하면 recover() 후 재시도. 마지막까지 실패하면 예외."""
+    from . import ie_dom
+    ie_dom.tick(f"{what} (전)")      # 누르기 전에 기록용 스크립트를 넣어 둔다(이미 있으면 건너뜀)
     for i in range(1, retries + 1):
         try:
             do()
@@ -79,6 +81,7 @@ def _act(log: Log, what: str, do, check, timeout: float = T_FIND, retries: int =
             r = _wait(check, timeout, what=what)
             if i > 1:
                 log(f"{what}: {i}번째 시도에 성공")
+            ie_dom.tick(f"{what} (후)")
             return r
         except TimeoutError as e:
             log.warn(f"{what}: 확인 실패 — {i}/{retries} ({str(e)[:120]})")
@@ -124,12 +127,61 @@ def edge_window(log=None):
     log = _aslog(log)
     def find():
         for w in _desktop().windows():
-            if w.class_name() == "Chrome_WidgetWin_1" and ("납본" in w.window_text() or "통합자료관리" in w.window_text() or "kolis" in w.window_text().lower()):
+            t = w.window_text()      # KOLIS 화면 제목은 '[수집 > 납본 > …]' 처럼 메뉴 경로이거나 '…통합자료관리시스템'
+            if w.class_name() == "Chrome_WidgetWin_1" and (re.match(r"\[[^\]]+ > [^\]]+", t) or "통합자료관리" in t or "kolis" in t.lower()):
                 return w
         return None
     w = _wait(find, 10, what="KOLIS 가 열린 Edge 창(로그인 후 KOLIS 탭을 띄워 두세요)")
     log(f"Edge 창: {w.window_text()[:60]}")
     return w
+
+
+EDGE_LEFT = int(os.environ.get("KOLIS_EDGE_LEFT", "480"))      # Edge 창을 넓혀야 할 때 왼쪽에 남겨 둘 폭(터미널·로그를 볼 자리)
+
+
+def place_edge(win, log=None) -> None:
+    """Edge 창을 화면 오른쪽에 둔다(최대화하지 않는다). 왼쪽 EDGE_LEFT 만큼은 비워 둬서 사용자가 터미널을 볼 수 있게 한다
+    (2026-09-29 유저 요청: 전체 화면으로 덮으면 진행 중인지 멈췄는지 알 수 없다)."""
+    import ctypes
+    user32 = ctypes.windll.user32
+    sw, sh = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+    try:
+        if win.is_maximized():
+            win.restore(); time.sleep(0.6)
+    except Exception:  # noqa: BLE001
+        pass
+    user32.MoveWindow(win.handle, EDGE_LEFT, 0, sw - EDGE_LEFT, sh - 48, True)
+    time.sleep(1.0)
+    if log:
+        _aslog(log)(f"Edge 창을 화면 오른쪽에 둠(왼쪽 {EDGE_LEFT}px 은 비워 둠)")
+
+
+def _inside(win, el) -> bool:
+    w, r = win.rectangle(), el.rectangle()
+    return r.width() > 0 and r.left >= w.left and r.right <= w.right - 4 and r.top >= w.top and r.bottom <= w.bottom - 4
+
+
+def ensure_visible(win, el, log=None) -> None:
+    """누를 요소가 창 밖에 있으면 보이게 한다. 화면 밖 요소는 클릭이 먹지 않는다(2026-09-29 전체출력).
+    순서: 화면을 그 요소까지 스크롤 → 그래도 안 보이면 Edge 창을 화면 오른쪽 영역으로 넓힘(최대화는 하지 않는다)."""
+    try:
+        if _inside(win, el):
+            return
+        try:
+            el.iface_scroll_item.ScrollIntoView(); time.sleep(0.8)
+        except Exception:  # noqa: BLE001
+            pass
+        if _inside(win, el):
+            if log:
+                _aslog(log)("누를 버튼이 창 밖에 있어 화면을 스크롤함")
+            return
+        place_edge(win, log)
+        try:
+            el.iface_scroll_item.ScrollIntoView(); time.sleep(0.8)
+        except Exception:  # noqa: BLE001
+            pass
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def ie_content(win):
@@ -389,6 +441,7 @@ def submit(pop, yes: str, log=None, wait: bool = True) -> dict:
         raise RuntimeError(f"예상과 다른 확인창(취소함): {txt[:80]}")
     dlg.child_window(title="확인", class_name="Button").click()
     log("'확인' 클릭 — KOLIS 가 반입 처리 중(수 분 걸릴 수 있음)")
+    from . import ie_dom
     if not wait:
         return {"submitted": True, "message": ""}
     t0 = time.time()
@@ -399,7 +452,12 @@ def submit(pop, yes: str, log=None, wait: bool = True) -> dict:
             log(f"결과 메시지: {msg[:120]} ({int(time.time() - t0)}초)")
             d.child_window(title="확인", class_name="Button").click()
             time.sleep(1.5)
-            return {"submitted": True, "message": msg, "ok": "완료" in msg, "popup_open": bool(popup_window())}
+            ie_dom.tick("반입 결과 확인 뒤")
+            ok = "완료" in msg
+            if ok and popup_window():      # 반입이 끝나도 팝업은 저절로 닫히지 않는다. 닫아야 본화면을 쓸 수 있다(2026-09-29)
+                close_popup(popup_window(), log)
+                ie_dom.tick("반입 뒤 팝업 닫음")
+            return {"submitted": True, "message": msg, "ok": ok, "popup_open": bool(popup_window())}
         if not popup_window():
             log("팝업이 닫힘(결과 메시지 없이)"); return {"submitted": True, "message": "", "ok": None, "popup_open": False}
         if int(time.time() - t0) % 30 == 0:
@@ -408,11 +466,35 @@ def submit(pop, yes: str, log=None, wait: bool = True) -> dict:
     raise TimeoutError(f"반입 결과 메시지가 {T_IMPORT}초 안에 뜨지 않음")
 
 
-def close_popup(pop, log=None) -> None:
+def close_popup(pop, log=None) -> bool:
+    """일괄반입 팝업의 '닫기'를 누르고 닫혔는지 확인한다. 이 팝업이 떠 있으면 뒤의 본화면 버튼이 눌리지 않는다."""
     log = _aslog(log)
-    b = _button(ie_content(pop), "닫기")
-    if b:
-        b.click_input(); log("팝업 닫음")
+    def do():
+        pop.set_focus(); time.sleep(0.3)
+        b = _button(ie_content(pop), "닫기")
+        if not b:
+            raise RuntimeError("'닫기' 버튼이 없습니다")
+        b.click_input()
+    _act(log, "일괄반입 팝업 '닫기'", do, lambda: not popup_window(), T_DIALOG)
+    log("일괄반입 팝업 닫음")
+    return True
+
+
+def close_leftover_popup(log=None) -> bool:
+    """반입이 끝난 일괄반입 팝업이 남아 있으면 닫는다. 반입 전('반입' 버튼을 누를 수 있는 상태)의 팝업은 닫지 않는다."""
+    log = _aslog(log)
+    pop = popup_window()
+    if not pop:
+        return False
+    b = _button(ie_content(pop), "반입")
+    try:
+        enabled = bool(b and b.is_enabled())
+    except Exception:  # noqa: BLE001
+        enabled = True
+    if enabled:
+        raise RuntimeError("일괄반입 팝업이 반입 전 상태로 열려 있습니다. 반입하거나 닫은 뒤 다시 실행하세요")
+    log("반입이 끝난 일괄반입 팝업이 남아 있어 닫습니다")
+    return close_popup(pop, log)
 
 
 def search_receipt(win, receipt: str, log=None) -> int:
@@ -450,7 +532,10 @@ def download_export(log=None, work_dir: Path = Path("work"), receipt: str = "") 
     import glob, os, shutil
     log = _aslog(log)
     from .ids_from_export import receipt_map
+    from . import ie_dom
+    ie_dom.recorder(log)
     cleanup_stray_dialogs(log)
+    close_leftover_popup(log)
     win = edge_window(log)
     goto_recet(win, log)
     if receipt:
@@ -462,7 +547,9 @@ def download_export(log=None, work_dir: Path = Path("work"), receipt: str = "") 
     dl = Path(os.path.expanduser("~/Downloads"))
     before = set(glob.glob(str(dl / "ExcelDown*")))
     def click_export():
-        win.set_focus(); time.sleep(0.3); _button(ie_content(win), "전체출력").click_input()
+        win.set_focus(); time.sleep(0.3)
+        ensure_visible(win, _button(ie_content(win), "전체출력"), log)
+        _button(ie_content(win), "전체출력").click_input()
     def bar():
         bars = win.descendants(class_name="Frame Notification Bar")
         return bars[0] if bars else None
@@ -492,6 +579,8 @@ def prepare_batch_import(note: str, xlsx: Path, log=None) -> dict:
     """전체 준비 시퀀스(반입 전까지). 실패하면 화면 캡처·창 목록을 남기고 예외."""
     log = _aslog(log)
     log(f"=== 일괄반입 준비 시작: 비고='{note}', 파일='{Path(xlsx).name}' (로그 {log.path})")
+    from . import ie_dom
+    ie_dom.recorder(log)
     try:
         cleanup_stray_dialogs(log)
         win = edge_window(log)
@@ -502,6 +591,7 @@ def prepare_batch_import(note: str, xlsx: Path, log=None) -> dict:
         else:
             pop = open_batch_import(win, log)
         r = fill_popup(pop, note, Path(xlsx), log)
+        ie_dom.tick("일괄반입 준비 끝")
         log("=== 준비 완료(반입 버튼은 누르지 않음)")
         return r
     except Exception as e:  # noqa: BLE001

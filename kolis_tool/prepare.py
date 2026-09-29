@@ -12,7 +12,7 @@ import json, os, re, time, zipfile
 from pathlib import Path
 import openpyxl
 from . import agent, checks, import_writer
-from .common import IMAGE_EXT_ACCEPTED, natural_key, manifest_path, find_manifest
+from .common import IMAGE_EXT_ACCEPTED, natural_key, manifest_path, find_manifest, migrate_legacy
 
 SKILL = "prepare-import"
 MAX_CELLS = 6000
@@ -184,6 +184,7 @@ def finalize(folder: Path, data: dict, log=None) -> dict:
     from . import rename_files
     log = log or (lambda m: None)
     ms = folder / data["manuscripts_root"]
+    migrate_legacy(ms)
     nfiles = nfolders = 0
     for r in data["rows"]:
         d = ms / str(r["folder"])
