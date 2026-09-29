@@ -206,6 +206,44 @@ class Api:
                                             file_types=("Excel (*.xlsx)",))
         return (r[0] if isinstance(r, (list, tuple)) else r) or ""
 
+    # ---------- KOLIS 계정: 프로그램 창에서 로그인하면 이 프로그램의 환경변수에만 둔다(파일에 쓰지 않음, 프로그램을 닫으면 사라짐) ----------
+    def kolis_account(self) -> dict:
+        from . import kolis_http
+        src = kolis_http.source()
+        return {"source": src, "id": (os.environ.get("KOLIS_ID") or "") if src in ("login", "env") else "", "checked": bool(getattr(self, "_account_ok", False))}
+
+    def kolis_login(self, uid: str, pw: str) -> dict:
+        """아이디·비밀번호로 KOLIS 에 실제로 로그인해 보고, 되면 환경변수에 둔다. 한 번만 시도한다(5회 틀리면 계정이 잠긴다)."""
+        from . import kolis_http, kolis_request
+        uid, pw = (uid or "").strip(), pw or ""
+        if not uid or not pw:
+            return {"error": "아이디와 비밀번호를 넣으세요"}
+        old = {k: os.environ.get(k) for k in ("KOLIS_ID", "KOLIS_PW", "KOLIS_ACCOUNT_FROM")}
+        os.environ.update({"KOLIS_ID": uid, "KOLIS_PW": pw, "KOLIS_ACCOUNT_FROM": "login"})
+        c = kolis_http.Client()
+        try:
+            c.login()
+        except kolis_request.Stop as e:
+            for k, v in old.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+            self._account_ok = False
+            self._tab_log("")(f"KOLIS 로그인 실패: {e}")
+            return {"error": str(e)}
+        finally:
+            c.close()
+        self._account_ok = True
+        self._tab_log("")(f"KOLIS 로그인 확인됨: {uid} (프로그램을 닫을 때까지 이 계정을 씁니다)")
+        return {"ok": True, **self.kolis_account()}
+
+    def kolis_logout(self) -> dict:
+        for k in ("KOLIS_ID", "KOLIS_PW", "KOLIS_ACCOUNT_FROM"):
+            os.environ.pop(k, None)
+        self._account_ok = False
+        return self.kolis_account()
+
     def check_env(self) -> dict:
         """시작 시 전제 조건: 클로드코드 설치·로그인 흔적, Edge, Playwright."""
         from .agent import claude_exe
@@ -453,6 +491,9 @@ class Api:
         w = prepare.load(Path(folder), self._work_dir) or {}
         if not w.get("output_xlsx"):
             return {"error": "반입용 엑셀이 없습니다. 1단계를 먼저 실행하세요"}
+        from . import kolis_http
+        if not kolis_http.source():
+            return {"error": "KOLIS 계정이 없습니다. 창 위쪽에서 KOLIS 아이디와 비밀번호로 로그인하세요"}
         handle = self._jobs[tab] = {"cancel": False}
         def send(fn, *args):
             if self._window:

@@ -17,7 +17,7 @@
 ```
 .\.venv\Scripts\python.exe -m kolis_tool.app
 ```
-전제: 클로드코드 로그인(①), `.env` 의 KOLIS 계정(②), Playwright(이 PC 의 Edge 사용). Edge 에서 KOLIS 로그인은 단계별 버튼과 썸네일 등록에만 필요.
+전제: 클로드코드 로그인(①), KOLIS 계정(②: 창 위쪽에서 로그인하거나 `.env` 에 KOLIS_ID·KOLIS_PW), Playwright(이 PC 의 Edge 사용). Edge 에서 KOLIS 로그인은 단계별 버튼과 썸네일 등록에만 필요.
 결과·로그: `work\`(git 제외). 파일 로그 `work\logs\app-YYYYMMDD.log`, 실패 캡처 `work\logs\fail-*.png`,
 작품별 `work\<폴더>.상태.json`(진행 상태), `.작업.json`(에이전트 결과), `.로그.json`(탭 로그), 열어 둔 탭 `work\tabs.json`.
 

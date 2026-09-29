@@ -17,7 +17,20 @@ LOGIN_MESSAGES = {"useNUser": "계정이 미사용 상태", "nonExistsId": "등�
                   "notUseDate": "아직 이용할 수 없는 계정", "notAccessIp": "이 PC 의 IP 는 계정에 신청된 IP 가 아님", "parseError": "접속 시도 중 오류"}
 
 
+def source() -> str:
+    """계정을 어디서 읽게 되는지: 'login'(프로그램 창에서 로그인), 'env'(환경변수), 'file'(.env), ''(없음). 값은 돌려주지 않는다."""
+    if os.environ.get("KOLIS_ID") and os.environ.get("KOLIS_PW"):
+        return "login" if os.environ.get("KOLIS_ACCOUNT_FROM") == "login" else "env"
+    env = Path(__file__).resolve().parent.parent / ".env"
+    if env.exists():
+        t = env.read_text(encoding="utf-8-sig")
+        if re.search(r"(?m)^\s*KOLIS_ID\s*=\s*\S", t) and re.search(r"(?m)^\s*KOLIS_PW\s*=\s*\S", t):
+            return "file"
+    return ""
+
+
 def credentials() -> tuple[str, str]:
+    """프로그램 창에서 로그인한 계정(이 프로그램의 환경변수)이 먼저, 없으면 .env."""
     uid, pw = os.environ.get("KOLIS_ID"), os.environ.get("KOLIS_PW")
     if not (uid and pw):
         env = Path(__file__).resolve().parent.parent / ".env"
@@ -28,7 +41,7 @@ def credentials() -> tuple[str, str]:
                     v = m.group(2).strip().strip('"').strip("'")
                     uid, pw = (v, pw) if m.group(1) == "KOLIS_ID" else (uid, v)
     if not (uid and pw):
-        raise NotSent("KOLIS 계정이 없습니다. 저장소의 .env 에 KOLIS_ID, KOLIS_PW 를 넣으세요")
+        raise NotSent("KOLIS 계정이 없습니다. 프로그램 창 위쪽에서 KOLIS 아이디와 비밀번호로 로그인하세요")
     return uid, pw
 
 
