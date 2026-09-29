@@ -22,7 +22,7 @@
 | 원문일괄등록 | 21.6초 | 파일마다 `POST /dext5upload/handler/dext5handler.jsp` → `setFileList.do` → 건마다 `getfileList.do`·`getTocFile.do`·`searchTextCheck.do`·`updateTextCheck.do` → 건마다 `insertContentsText.do` |
 | 등록대상처리 → 가원부번호 → 가원부 파일 | 4초 | `updateTargetProcessing.do` → `insertTempAccessionRecNo.do` → `selectAccRecMngListWithParam.do` |
 
-만든 가원부 파일은 화면 방식으로 받은 파일(2026-1615)과 콘텐츠ID·관리번호만 다르고 나머지 칸이 전부 같다. 열 구성은 직원이 준 가원부 파일과 같다.
+가원부 파일은 KOLIS 에서 받는다: 화면의 '전체출력'과 같은 요청(`POST /main/save.do`)을 보내 KOLIS 가 주는 `.xls` 를 그대로 저장한다. 값을 가져다 새 파일을 만들지 않는다(09-30 직원 검수: 새로 만든 xlsx 는 형식이 맞지 않음).
 
 시험 방법(2026-09-30 직원 안내): 같은 작품으로 가원부번호까지 여러 번 실행해도 된다. 실행한 접수번호는 `work/취소요청_목록.csv` 에 남고, 마지막에 성공한 것만 두고 나머지는 주무관에게 취소를 요청한다.
 

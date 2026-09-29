@@ -142,6 +142,31 @@ class Client:
                 raise Stop(f"파일 전송 응답 상태 {r.status_code}({name})")
             return r.text
 
+    def download(self, path: str, fields: dict, wait: float = 120.0) -> tuple[bytes, str]:
+        """화면의 내려받기 버튼과 같은 폼 전송. (받은 파일의 바이트, KOLIS 가 알려 준 파일 이름)"""
+        import urllib.parse
+        with self._lock:
+            self.login()
+            self.count += 1
+            n = self.count
+            self._note(n=n, phase="send", method="POST", path=path, body={k: (v if len(str(v)) < 200 else f"({len(str(v)):,}자)") for k, v in fields.items()})
+            try:
+                r = self.s.post(BASE + path, data={k: str(v).encode("utf-8") for k, v in fields.items()}, timeout=(30, wait),
+                                headers={"Referer": BASE + "/main/gohome.do", "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"})
+            except Exception as e:  # noqa: BLE001
+                self._note(n=n, phase="fail", error=f"{type(e).__name__}: {e}")
+                raise Stop(f"파일을 받지 못했습니다({path}): {type(e).__name__}") from e
+            cd = r.headers.get("Content-Disposition", "")
+            m = re.search(r"filename\*?=(?:UTF-8'')?\"?([^\";]+)", cd)
+            name = urllib.parse.unquote(m.group(1)) if m else ""
+            self._note(n=n, phase="response", status=r.status_code, bytes=len(r.content), content_type=r.headers.get("Content-Type", ""), disposition=cd)
+            if r.status_code != 200 or not r.content:
+                raise Stop(f"파일 받기 응답 상태 {r.status_code}, {len(r.content)}바이트({path})")
+            if b'name="pwd"' in r.content[:20000]:
+                self.logged_in = False
+                raise Stop("파일을 받으려는데 로그인 화면이 왔습니다(로그인이 풀림)")
+            return r.content, name
+
     def get(self, path: str, wait: float = 60.0):
         """화면(HTML)이나 파일을 받는다. 자료를 바꾸지 않는 요청에만 쓴다."""
         with self._lock:

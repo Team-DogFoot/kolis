@@ -514,6 +514,58 @@ def record_items(page: Page, year: str, no: str) -> list[dict]:
     return sorted(items, key=lambda i: int(i.get("ACCESSION_SERIAL_NO") or 0))
 
 
+U_SAVE = "/main/save.do"          # 화면의 '전체출력'이 목록을 보내고 파일로 되받는 주소
+XML_HEAD = ('<?xml version="1.0"?>\r\n\t<?mso-application progid="Excel.Sheet"?> \r\n\t<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" \r\n'
+            '\txmlns:o="urn:schemas-microsoft-com:office:office" \r\n\txmlns:x="urn:schemas-microsoft-com:office:excel" \r\n'
+            '\txmlns:ss="urn:schemas-microsoft-com:office:spreadsheet" \r\n\txmlns:html="http://www.w3.org/TR/REC-html40"> \r\n'
+            '\t<DocumentProperties xmlns="urn:schemas-microsoft-com:office:office"> \r\n\t<Version>12.00</Version> \r\n\t</DocumentProperties> \r\n'
+            '\t<ExcelWorkbook xmlns="urn:schemas-microsoft-com:office:excel"> \r\n\t<WindowHeight>8130</WindowHeight> \r\n\t<WindowWidth>15135</WindowWidth> \r\n'
+            '\t<WindowTopX>120</WindowTopX> \r\n\t<WindowTopY>45</WindowTopY> \r\n\t<ProtectStructure>False</ProtectStructure> \r\n'
+            '\t<ProtectWindows>False</ProtectWindows> \r\n\t</ExcelWorkbook> \r\n\t<ss:Styles>')
+XML_STYLES = [("Center", "#E8E8E8"), ("Center", "#FFFFFF"), ("Center", "#FFFFFF"), ("Right", "#FFFFFF"), ("Center", "#FFFFFF"), ("Left", "#FFFFFF"),
+              ("Center", "#F9F9F9"), ("Center", "#F9F9F9"), ("Right", "#F9F9F9"), ("Center", "#F9F9F9"), ("Left", "#F9F9F9")]
+# 등록원부관리 목록의 열(화면 순서): 이름, 응답 항목, 너비, 홀수 행 서식, 짝수 행 서식 — 화면의 '전체출력'이 만드는 내용 그대로
+RECORD_GRID = [("No", None, 40, 2, 7), ("선정", None, 40, 3, 8), ("일련번호", "ACCESSION_SERIAL_NO", 150, 4, 9), ("콘텐츠ID", "CONTENTS_ID", 100, 5, 10),
+               ("발행자구분", "PUBLISHER_CODE_NAME", 100, 5, 10), ("본표제", "TITLE", 150, 6, 11), ("저작자", "AUTHOR", 150, 6, 11), ("발행자", "PUBLISHER", 150, 6, 11),
+               ("발행일", "PROD_DAY", 100, 5, 10), ("ISBN", "EA_ISBN", 150, 6, 11), ("콘텐츠수", "CNT_CONTENTS", 100, 5, 10), ("등록번호", "ACCESSION_NO", 150, 6, 11),
+               ("관리번호", "MANAGE_NO", 150, 6, 11), ("담당자", "LAST_MOD_ER_ID", 100, 5, 5), ("업무구분", "WORK_CODE", 150, 5, 5), ("서비스범위", "LICENSETYPE", 100, 5, 5),
+               ("원문서비스구분", "WONMUN_SVC", 100, 5, 5), ("이용대상", "USE_OBJ_CODE_NAME", 100, 5, 5)]
+
+
+def record_content(items: list[dict]) -> str:
+    """등록원부관리에서 전체 선택 → '전체출력'을 눌렀을 때 화면이 KOLIS 로 보내는 내용."""
+    n = "\r\n"
+    out = [XML_HEAD]
+    for i, (align, color) in enumerate(XML_STYLES, 1):
+        out.append(f'{n}\t\t<ss:Style ss:ID="xls-style-{i}" ss:Name="xls-style-{i}">{n}\t\t\t<ss:Alignment ss:Vertical="Bottom" ss:Horizontal="{align}"/>{n}\t\t\t<ss:Borders>'
+                   + "".join(f'{n}\t\t\t\t<Border ss:Position="{p}" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#AAAAAA"/>' for p in ("Bottom", "Left", "Right", "Top"))
+                   + f'{n}\t\t\t</ss:Borders>{n}\t\t\t<ss:Font ss:Color="#000000" />{n}\t\t\t<ss:Interior ss:Color="{color}" ss:Pattern="Solid"/>{n}\t\t</ss:Style>')
+    out.append(f'{n}\t</ss:Styles>{n}\t<ss:Worksheet ss:Name="Sheet1">{n}\t\t<ss:Table>')
+    out += [f'{n}\t\t\t<ss:Column ss:Width="{g[2]}"/>' for g in RECORD_GRID]
+
+    def row(cells):
+        return (f"{n}\t\t\t<ss:Row>" + "".join(f'{n}\t\t\t\t<ss:Cell ss:StyleID="xls-style-{sid}"><ss:Data ss:Type="String"><![CDATA[{v}]]></ss:Data></ss:Cell>' for sid, v in cells)
+                + f"{n}\t\t\t</ss:Row>")
+    out.append(row([(1, g[0]) for g in RECORD_GRID]))
+    for k, it in enumerate(items, 1):
+        vals = {"No": str(k), "선정": "true"}
+        out.append(row([(g[3] if k % 2 else g[4], vals.get(g[0]) if g[1] is None else _text(it.get(g[1]))) for g in RECORD_GRID]))
+    out.append(f"{n}\t\t</ss:Table>{n}\t</ss:Worksheet>{n}</ss:Workbook>")
+    return "".join(out)
+
+
+def download_record(client, items: list[dict], year: str, no: str, receipt: str, work_dir: Path) -> Path:
+    """KOLIS 의 '전체출력'과 같은 요청을 보내 KOLIS 가 주는 파일을 그대로 저장한다(내용을 고치지 않는다)."""
+    data, name = client.download(U_SAVE, {"filename": "ExcelDown", "format": "xls", "content": record_content(items)})
+    if b"urn:schemas-microsoft-com:office:spreadsheet" not in data[:600]:
+        raise Stop(f"받은 파일이 KOLIS 전체출력 형식이 아닙니다(앞부분 {data[:80]!r})")
+    ext = Path(name).suffix or ".xls"
+    work_dir = Path(work_dir); work_dir.mkdir(parents=True, exist_ok=True)
+    out = work_dir / f"가원부번호 {year}-{no}(접수번호 {receipt}){ext}"
+    out.write_bytes(data)
+    return out
+
+
 def write_record(items: list[dict], year: str, no: str, receipt: str, work_dir: Path) -> Path:
     """직원이 주고받는 가원부 파일과 같은 형태(시트 이름, 열 17개)."""
     import openpyxl
@@ -535,9 +587,16 @@ def export_record(page: Page, year: str, no: str, receipt: str, work_dir: Path =
     other = sorted({m.group(1).lstrip("0") for i in items if (m := re.fullmatch(r"\d+-\d+-(\d+)-\d+", _text(i.get("MANAGE_NO"))))} - {str(receipt)})
     if other:
         raise Stop(f"가원부번호 {no} 에 다른 접수번호({', '.join(other)})의 자료가 있습니다 → 직원 확인")
-    out = write_record(items, year, no, receipt, work_dir)
+    if hasattr(page, "download"):
+        out = download_record(page, items, year, no, receipt, work_dir)
+        from .ids_from_export import export_table
+        got = [r.get("콘텐츠ID", "") for r in export_table(out)]
+        if got != [i["CONTENTS_ID"] for i in items]:
+            raise Stop(f"받은 파일의 콘텐츠ID 가 목록과 다릅니다: {got[:3]}")
+    else:
+        out = write_record(items, year, no, receipt, work_dir)
     if log:
-        log(f"가원부 파일 저장: {out.name} ({len(items)}건)")
+        log(f"가원부 파일 받음: {out.name} ({len(items)}건, {out.stat().st_size:,}바이트)")
     return {"file": str(out), "count": len(items), "no": no, "year": year, "receipt": receipt, "ids": [i["CONTENTS_ID"] for i in items]}
 
 
