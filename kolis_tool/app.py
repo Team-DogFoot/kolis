@@ -1,81 +1,138 @@
-"""창 하나짜리 실행 프로그램 (pywebview). 기능은 하나씩 붙인다.  실행: bin\\app.vbs (콘솔 없음) 또는 python -m kolis_tool.app
+"""실행 프로그램 (pywebview).  실행: bin\\app.vbs (콘솔 없음) 또는 python -m kolis_tool.app
 
 화면(kolis_tool/ui/index.html)은 아래 Api 의 메서드를 window.pywebview.api.<이름>() 으로 부른다.
-오래 걸리는 작업(웹 리서치·플랫폼 수집)은 스레드로 돌리고 진행 로그를 화면에 밀어 넣는다(evaluate_js). 둘은 서로 독립이라 동시에 돈다.
-KOLIS 에는 접근하지 않는다.
+작품마다 탭이 하나다. 오래 걸리는 작업은 스레드로 돌리고, 로그와 결과를 그 작품의 탭으로 보낸다(tab).
+  - 1단계(에이전트)는 여러 작품을 동시에 돌릴 수 있다(동시 실행 한도 MAX_AGENTS).
+  - KOLIS 단계는 KOLIS 창 하나를 직접 조작하므로 한 번에 한 작품만(_kolis_owner). 요청 방식으로 바뀐 단계는 이 잠금을 풀면 된다.
 """
 from __future__ import annotations
 import json, re, shutil, threading, traceback
 from pathlib import Path
 import webview
 
+import os
+
 HERE = Path(__file__).parent
-TEMPLATE_83 = HERE / "templates" / "import_template_83.xlsx"
+MAX_AGENTS = max(1, int(os.environ.get("KOLIS_MAX_AGENTS", "3")))      # 에이전트 동시 실행 한도
+KOLIS_KINDS = ("kolis", "kolis_submit", "export", "upload", "thumbs_register")
 
 
 class Api:
     def __init__(self):
         self._window: webview.Window | None = None
         self._work_dir = Path("work").resolve()
-        self._job: dict = {}          # {'proc': Popen, 'cancel': bool}
-        self._running: dict = {}      # kind → 시작 시각(진행 중인 스레드 작업)
+        self._jobs: dict = {}         # 탭 → {'proc': Popen, 'cancel': bool}
+        self._running: dict = {}      # "탭 이름 · 작업" → 시작 시각(진행 중인 스레드 작업)
+        self._names: dict = {}        # 탭 → 작품 이름(안내 문구용)
+        self._kolis_owner: tuple | None = None      # KOLIS 창을 쓰고 있는 (탭, 작업)
+        self._agents = threading.Semaphore(MAX_AGENTS)
+        self._lock = threading.Lock()
         from .logutil import UiLog
         self.log = UiLog(self._ui_log, "kolis.app")
 
     # ---------- 공통 ----------
-    def _ui_log(self, msg: str):
+    def _ui_log(self, msg: str, tab: str = ""):
         if self._window:
-            self._window.evaluate_js(f"appendLog({json.dumps(str(msg), ensure_ascii=False)})")
+            self._window.evaluate_js(f"appendLog({json.dumps(str(msg), ensure_ascii=False)}, {json.dumps(tab)})")
 
-    def _log(self, msg: str):
-        """화면 + 파일 로그(work/logs/app-날짜.log)."""
-        self.log(msg)
+    def _tab_log(self, tab: str):
+        """그 작품의 탭으로 가는 로그(화면 + 파일). 파일에는 작품 이름을 앞에 붙인다."""
+        from .logutil import UiLog
+        name = self._names.get(tab, "")
+        lg = UiLog(lambda m: self._ui_log(m, tab), "kolis.app")
+        if not name:
+            return lg
+        class Tagged:
+            path = lg.path
+            def __call__(s, m, level="INFO"):
+                lg.lg.log({"DEBUG": 10, "INFO": 20, "WARN": 30, "WARNING": 30, "ERROR": 40}.get(level, 20), f"<{name}> {m}")
+                self._ui_log(m if level == "INFO" else f"[{level}] {m}", tab)
+            def debug(s, m): lg.lg.debug(f"<{name}> {m}")
+            def warn(s, m): s(m, "WARN")
+            def error(s, m): s(m, "ERROR")
+            def exception(s, m, e): lg.lg.error(f"<{name}> {m}", exc_info=e); self._ui_log(f"[ERROR] {m}: {e}", tab)
+        return Tagged()
 
-    def _done(self, kind: str, payload: dict):
+    def _kolis_log(self, tab: str):
+        from . import kolis_ui
+        return kolis_ui.Log(lambda m: self._ui_log(m, tab))
+
+    def _done(self, kind: str, payload: dict, tab: str = ""):
         if self._window:
-            self._window.evaluate_js(f"onDone({json.dumps(kind)}, {json.dumps(payload, ensure_ascii=False, default=str)})")
+            self._window.evaluate_js(f"onDone({json.dumps(kind)}, {json.dumps(payload, ensure_ascii=False, default=str)}, {json.dumps(tab)})")
 
-    def _run(self, kind: str, fn, capture: bool = False) -> dict:
-        """스레드 작업 공통 틀: 시작·종료·소요시간·예외 스택을 파일에 남기고 onDone(kind, 결과)로 알린다.
+    def _run(self, kind: str, fn, capture: bool = False, tab: str = "") -> dict:
+        """스레드 작업 공통 틀: 시작·종료·소요시간·예외 스택을 파일에 남기고 onDone(kind, 결과, 탭)으로 알린다.
         fn() 은 결과 dict 를 돌려준다. Cancelled → {'cancelled': True}, 그 밖의 예외 → {'error': 문구}.
-        capture=True(KOLIS 조작)면 실패 시 화면 캡처·창 목록을 저장한다."""
+        capture=True(KOLIS 조작)면 실패 시 화면 캡처·창 목록을 저장한다. KOLIS 작업은 한 번에 하나만 받는다."""
         import datetime, time
-        from .enrich import Cancelled
-        if kind in self._running:
-            return {"error": f"'{kind}' 작업이 이미 진행 중입니다({self._running[kind]} 시작)"}
+        from .agent import Cancelled
+        log = self._tab_log(tab)
+        key = f"{self._names.get(tab) or tab} · {kind}"
+        with self._lock:
+            if key in self._running:
+                return {"error": f"이 작품의 '{kind}' 작업이 이미 진행 중입니다({self._running[key]} 시작)"}
+            if kind in KOLIS_KINDS:
+                if self._kolis_owner:
+                    who = self._names.get(self._kolis_owner[0]) or "다른 작품"
+                    return {"error": f"KOLIS 창은 지금 '{who}' 작업({self._kolis_owner[1]})이 쓰고 있습니다. 끝난 뒤에 실행하세요(KOLIS 창은 하나라 한 번에 한 작품만)"}
+                self._kolis_owner = (tab, kind)
+            self._running[key] = datetime.datetime.now().strftime("%H:%M:%S")
         def job():
             t0 = time.time()
-            self._running[kind] = datetime.datetime.now().strftime("%H:%M:%S")
-            self.log.debug(f"[{kind}] 시작")
+            log.debug(f"[{kind}] 시작")
             try:
                 r = fn()
-                self.log.debug(f"[{kind}] 완료 {time.time() - t0:.1f}초: {json.dumps(r, ensure_ascii=False, default=str)[:300]}")
-                self._done(kind, r if isinstance(r, dict) else {"result": r})
+                log.debug(f"[{kind}] 완료 {time.time() - t0:.1f}초: {json.dumps(r, ensure_ascii=False, default=str)[:300]}")
+                self._done(kind, r if isinstance(r, dict) else {"result": r}, tab)
             except Cancelled:
-                self.log(f"[{kind}] 중단됨"); self._done(kind, {"cancelled": True})
+                log(f"[{kind}] 중단됨"); self._done(kind, {"cancelled": True}, tab)
             except SystemExit as e:
-                self.log.error(f"[{kind}] {e}"); self._done(kind, {"error": str(e)})
+                log.error(f"[{kind}] {e}"); self._done(kind, {"error": str(e)}, tab)
             except Exception as e:  # noqa: BLE001
-                self.log.exception(f"[{kind}] 실패 ({time.time() - t0:.1f}초)", e)
+                log.exception(f"[{kind}] 실패 ({time.time() - t0:.1f}초)", e)
                 msg = "".join(traceback.format_exception_only(type(e), e)).strip()
                 if capture:
                     try:
                         from . import kolis_ui
-                        cap = kolis_ui.capture_failure(kolis_ui.Log(self._ui_log), f"{kind}: {msg}")
+                        cap = kolis_ui.capture_failure(self._kolis_log(tab), f"{kind}: {msg}")
                         if cap.get("shot"):
                             msg += f"  [캡처: {Path(cap['shot']).name}]"
                     except Exception:  # noqa: BLE001
                         pass
-                self._done(kind, {"error": msg})
+                self._done(kind, {"error": msg}, tab)
             finally:
-                self._running.pop(kind, None)
+                with self._lock:
+                    self._running.pop(key, None)
+                    if self._kolis_owner == (tab, kind):
+                        self._kolis_owner = None
         threading.Thread(target=job, daemon=True, name=f"job-{kind}").start()
         return {"started": True}
+
+    # ---------- 탭(열어 둔 작품) 저장/복원 ----------
+    def tabs_load(self) -> dict:
+        p = self._work_dir / "tabs.json"
+        if p.exists():
+            try:
+                d = json.loads(p.read_text(encoding="utf-8"))
+                for t in d.get("tabs") or []:
+                    self._names[t.get("id")] = t.get("title") or Path(t.get("folder") or "").name
+                return d
+            except Exception:  # noqa: BLE001
+                pass
+        return {"tabs": [], "active": ""}
+
+    def tabs_save(self, tabs: list, active: str = "") -> bool:
+        self._work_dir.mkdir(parents=True, exist_ok=True)
+        for t in tabs or []:
+            self._names[t.get("id")] = t.get("title") or Path(t.get("folder") or "").name
+        (self._work_dir / "tabs.json").write_text(json.dumps({"tabs": tabs, "active": active}, ensure_ascii=False, indent=1), encoding="utf-8")
+        return True
 
     def diagnose(self) -> dict:
         """진단: 환경, 진행 중 작업, KOLIS 창 상태(Edge·팝업·대화상자), 최근 로그."""
         from .logutil import tail, log_path
-        out = {"env": self.check_env(), "running": dict(self._running), "log_path": str(log_path()), "log_tail": tail(40), "kolis": {}}
+        out = {"env": self.check_env(), "running": dict(self._running), "max_agents": MAX_AGENTS, "log_path": str(log_path()), "log_tail": tail(40), "kolis": {}}
         try:
             from . import kolis_ui
             from pywinauto import Desktop
@@ -88,37 +145,34 @@ class Api:
         return out
 
     def status(self, folder: str) -> dict:
-        """작품별 단계 현황: 파일 증거 + 상태 기록을 합쳐 단계마다 done/evidence/when."""
+        """작품별 현황: 파일 증거 + 상태 기록을 합쳐 단계마다 done/evidence/when."""
         from .rename_files import is_done as _rd
-        from .enrich import thumbs_done
         from .common import find_manifest, list_images
+        from . import prepare
+        import re as _re
         f = Path(folder); st = self.load_state(folder)
         steps = []
         def add(key, label, done, evidence="", when=""):
             steps.append({"key": key, "label": label, "done": bool(done), "evidence": evidence, "when": when or (st.get(key) or {}).get("done_at", "")})
-        ms = next((p for p in f.iterdir() if p.is_dir() and p.name in ("원고", "원문")), None) if f.is_dir() else None
-        th = next((p for p in f.iterdir() if p.is_dir() and "썸네일" in p.name), None) if f.is_dir() else None
-        eps = [p for p in ms.iterdir() if p.is_dir()] if ms else []
-        import re as _re
+        w = prepare.load(f, self._work_dir) or {}
+        out = w.get("output_xlsx", "")
+        add("prepare", "반입용 엑셀", out and Path(out).exists(), f"{w.get('rows')}행, 사람이 확인할 칸 {w.get('confirm_cells')}개 → {Path(out).name}" if w else "")
+        ms = Path(w["manuscripts"]) if w.get("manuscripts") and Path(w["manuscripts"]).is_dir() else None
+        eps = [p for p in ms.iterdir() if p.is_dir() and not p.name.startswith("_kolis")] if ms else []
         def eight(p):   # 도구 기록이 없어도(직원 도구로 바꾼 경우) 파일이 전부 8자리 숫자면 완료로 본다
             imgs = list_images(p)
             return bool(imgs) and all(_re.fullmatch(r"\d{8}", q.stem) for q in imgs)
         n_ok = sum(1 for p in eps if _rd(p) or eight(p))
-        add("manuscript", "원고 파일명", eps and n_ok == len(eps), f"{n_ok}/{len(eps)} 폴더")
-        add("thumbs", "썸네일 파일명", th and thumbs_done(th), th.name if th else "썸네일 폴더 없음")
-        xlsx = [p for p in f.glob("*.xlsx") if "기초메타데이터" in p.name and "반입용" not in p.name] if f.is_dir() else []
-        en = self._paths(xlsx[0]) if xlsx else (None, None)
-        add("enrich", "기초메타데이터 보완", en[0] and en[0].exists(), str(en[0]) if en[0] and en[0].exists() else "")
-        cv = (st.get("convert") or {}).get("out", "")
-        add("convert", "반입용 엑셀", cv and Path(cv).exists(), cv)
+        add("manuscript", "원고 파일명(8자리)", eps and n_ok == len(eps), f"{n_ok}/{len(eps)} 폴더")
         add("kolis_submit", "KOLIS 반입", bool(st.get("kolis_submit")), (st.get("kolis_submit") or {}).get("message", ""))
         ex = (st.get("export") or {})
         add("export", "전체출력", ex.get("file") and Path(ex["file"]).exists(), f"접수번호 {ex.get('receipt', '')} {ex.get('count', '')}건" if ex else "")
         add("cnts", "폴더명 CNTS", ms and find_manifest(ms, "cnts", "cnts_manifest.json") is not None and eps and all(p.name.startswith("CNTS-") for p in eps),
             f"{sum(1 for p in eps if p.name.startswith('CNTS-'))}/{len(eps)} 폴더")
+        add("upload", "원문일괄등록", bool(st.get("upload")), (st.get("upload") or {}).get("message", ""))
         warns = []
-        if ex.get("count") and (st.get("convert") or {}).get("rows") and int(ex["count"]) != int(st["convert"]["rows"]):
-            warns.append(f"반입 건수 {ex['count']} ≠ 반입용 행 수 {st['convert']['rows']}")
+        if ex.get("count") and w.get("rows") and int(ex["count"]) != int(w["rows"]):
+            warns.append(f"반입 건수 {ex['count']} ≠ 반입용 행 수 {w['rows']}")
         return {"steps": steps, "warnings": warns, "memo": st.get("memo", "")}
 
     def pick_folder(self) -> str:
@@ -136,7 +190,7 @@ class Api:
 
     def check_env(self) -> dict:
         """시작 시 전제 조건: 클로드코드 설치·로그인 흔적, Edge, Playwright."""
-        from .enrich import claude_exe
+        from .agent import claude_exe
         out = {"claude": bool(claude_exe()), "claude_login": None, "edge": False, "playwright": False}
         cred = Path.home() / ".claude" / ".credentials.json"
         cfg = Path.home() / ".claude.json"
@@ -201,242 +255,186 @@ class Api:
         except Exception:  # noqa: BLE001
             return []
 
-    # ---------- 1. 작품 폴더 읽기 ----------
-    def scan_folder_async(self, folder: str) -> dict:
-        """폴더 읽기를 스레드로(원고 수백 장 세는 데 몇 초). 끝나면 onDone('scan', 결과)."""
-        return self._run("scan", lambda: self.scan_folder(folder))
-
-    def scan_folder(self, folder: str) -> dict:
-        from .enrich import read_sheet
-        from .common import list_images
+    # ---------- 1. 납품 폴더 → 반입용 엑셀 (에이전트가 한 번에) ----------
+    def open_folder(self, folder: str) -> dict:
+        """폴더를 고르면 지난 작업이 있는지 보고 되살린다. 에이전트는 돌리지 않는다."""
+        from . import prepare
         f = Path(folder)
         if not f.is_dir():
             return {"error": f"폴더 없음: {folder}"}
-        xlsx = [p for p in f.glob("*.xlsx") if "기초메타데이터" in p.name and "반입용" not in p.name and not p.name.startswith("~$")]
-        manuscripts = next((p for p in f.iterdir() if p.is_dir() and p.name in ("원고", "원문")), None)
-        thumbs = next((p for p in f.iterdir() if p.is_dir() and "썸네일" in p.name), None)
-        info = {"folder": str(f), "xlsx": str(xlsx[0]) if xlsx else "", "manuscripts": str(manuscripts) if manuscripts else "",
-                "thumbs": str(thumbs) if thumbs else "", "episodes": 0, "images": 0, "thumb_files": 0, "rows": 0, "title": "",
-                "empty_cols": [], "has_saved": False, "thumbs_done": bool(thumbs and __import__("kolis_tool.enrich", fromlist=["thumbs_done"]).thumbs_done(thumbs))}
-        if manuscripts:
-            eps = [p for p in manuscripts.iterdir() if p.is_dir()]
-            info["episodes"] = len(eps); info["images"] = sum(len(list_images(p)) for p in eps)
-            from .rename_files import is_done as _rd; info["manuscripts_done"] = any(_rd(p) for p in eps)
-        if thumbs:
-            info["thumb_files"] = len(list_images(thumbs))
-        if xlsx:
-            wb, ws, col, rows = read_sheet(xlsx[0])
-            info["rows"] = len(rows)
-            info["title"] = str(ws.cell(row=rows[0], column=col["제목(도서명)"]).value or "") if rows else ""
-            info["empty_cols"] = [k for k, c in col.items() if k != "No" and all(ws.cell(row=r, column=c).value in (None, "") for r in rows)]
-            info["has_saved"] = self._paths(xlsx[0])[1].exists()
-        # 작업 상태 복원(파일로 알 수 없는 것: 완료 시각·결과 경로·비고·메모·KOLIS 진행)
+        w = prepare.load(f, self._work_dir)
         st = self.load_state(str(f))
-        if info["title"] and st.get("title") != info["title"]:
-            st = self.save_state(str(f), {"title": info["title"]})
-        else:
-            self._touch_recent(str(f), info["title"])
-        info["state"] = st
-        return info
-
-    def get_prompt(self) -> dict:
-        """고정 부분(역할·KOLIS 금지·출력 형식)은 보여만 주고, '볼 곳·찾을 것' 부분만 편집."""
-        from .enrich import current_editable, PROMPT_OVERRIDE, build_prompt
-        full = build_prompt("<작품>", "<출판사>", "<ISBN>", "<회차 수>", "<플랫폼 힌트>", "<이용대상 힌트>")
-        return {"text": current_editable(), "is_default": not PROMPT_OVERRIDE.exists(), "full": full}
-
-    def save_prompt(self, text: str) -> dict:
-        from .enrich import save_editable, PROMPT_OVERRIDE
+        self._touch_recent(str(f), (w or {}).get("title") or st.get("title", ""))
+        lp = self._log_path(str(f))
         try:
-            t = save_editable(text)
-            return {"ok": True, "is_default": not PROMPT_OVERRIDE.exists(), "text": t}
-        except ValueError as e:
-            return {"error": str(e)}
-
-    def saved_info(self, xlsx: str) -> dict:
-        """이 엑셀에 대한 지난 조사 결과가 있는지, 있으면 언제 것인지."""
-        import datetime
-        jp = self._paths(Path(xlsx))[1]
-        if not jp.exists():
-            return {"exists": False}
-        ts = datetime.datetime.fromtimestamp(jp.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
-        try:
-            info = json.loads(jp.read_text(encoding="utf-8"))
-            summary = f"{info.get('platform_first') or '?'} · 저자 {len(info.get('authors') or [])}명 · 회차 {len(info.get('episodes') or [])}건"
+            log = json.loads(lp.read_text(encoding="utf-8")) if lp.exists() else []
         except Exception:  # noqa: BLE001
-            summary = ""
-        return {"exists": True, "when": ts, "summary": summary, "path": str(jp)}
+            log = []
+        return {"folder": str(f), "work": self._view(w) if w else None, "state": st, "log": log}
 
-    def _paths(self, xlsx: Path) -> tuple[Path, Path]:
-        out = self._work_dir / f"{re.sub(r'[^\w가-힣]+', '', Path(xlsx).stem)}_보완.xlsx"
-        return out, out.with_suffix(".work.json")
+    def _log_path(self, folder: str) -> Path:
+        return self._work_dir / (re.sub(r'[^\w가-힣]+', '', Path(folder).name) + ".로그.json")
 
-    # ---------- 2. 기초메타데이터 보완 ----------
-    def enrich(self, xlsx: str, reuse: bool = False, extra: str = "", runner: str = "claude") -> dict:
-        from .enrich import research, apply, read_sheet, Cancelled
-        from .platforms import gather, merge_into
-        src = Path(xlsx)
-        out, jpath = self._paths(src)
-        self._job = {"cancel": False}
-        handle = self._job
+    def log_save(self, folder: str, lines: list) -> bool:
+        """그 작품 탭의 로그를 남긴다(프로그램을 다시 띄워도 보이게)."""
+        self._work_dir.mkdir(parents=True, exist_ok=True)
+        self._log_path(folder).write_text(json.dumps(lines, ensure_ascii=False), encoding="utf-8")
+        return True
 
+    def prepare(self, tab: str, folder: str, instructions: str = "", batch_note: str = "", out_name: str = "") -> dict:
+        """실행 버튼: 읽기 → 조사 → 값 결정 → 반입용 엑셀 → 검사 → 검수. 끝나면 onDone('prepare', 결과, 탭).
+        여러 작품을 동시에 돌릴 수 있다. 동시 실행 한도를 넘으면 자리가 날 때까지 기다린다."""
+        import time
+        from . import prepare
+        from .agent import Cancelled
+        f = Path(folder)
+        if not f.is_dir():
+            return {"error": f"폴더 없음: {folder}"}
+        self._names[tab] = self._names.get(tab) or f.name
+        out = None if not out_name else (Path(out_name) if Path(out_name).is_absolute() else self._work_dir / out_name)
+        handle = self._jobs[tab] = {"cancel": False}
+        log = self._tab_log(tab)
         def job():
-            try:
-                self._work_dir.mkdir(parents=True, exist_ok=True)
-                wb, ws, col, rows = read_sheet(src)
-                title = str(ws.cell(row=rows[0], column=col["제목(도서명)"]).value or "")
-                if reuse and jpath.exists():
-                    info = json.loads(jpath.read_text(encoding="utf-8"))
-                    self._log(f"지난 조사 결과 사용: {jpath}")
-                else:
-                    # 리서치(클로드)와 플랫폼 수집(Edge)은 독립 → 동시에
-                    res: dict = {}
-                    def t_research():
-                        try:
-                            res["info"] = research(src, jpath, runner, log=self._log, handle=handle, extra=extra)
-                        except BaseException as e:  # noqa: BLE001
-                            res["err"] = e
-                    def t_platforms():
-                        try:
-                            res["plat"] = gather(title, {}, self._log, handle=handle)
-                        except BaseException as e:  # noqa: BLE001
-                            res["perr"] = e
-                    self._log("① 클로드 웹 리서치 시작(판단: 플랫폼·저자·등급·소재지·근거)  ② 동시에 Edge 로 플랫폼 회차 수집 시작")
-                    a, b = threading.Thread(target=t_research, daemon=True), threading.Thread(target=t_platforms, daemon=True)
-                    a.start(); b.start(); a.join(); b.join()
+            got = self._agents.acquire(blocking=False)
+            if not got:
+                log(f"다른 작품 {MAX_AGENTS}개가 작업 중이라 기다립니다(동시 실행 한도 {MAX_AGENTS}개). 자리가 나면 시작합니다.")
+                while not got:
                     if handle.get("cancel"):
-                        raise Cancelled("중단됨")
-                    if "err" in res:
-                        raise res["err"]
-                    info = res["info"]
-                    if "perr" in res:
-                        self._log(f"플랫폼 수집 실패(리서치 결과만 사용): {res['perr']}")
-                    else:
-                        info = merge_into(info, res["plat"])
-                    info["_platforms_done"] = True
-                    jpath.write_text(json.dumps({k: v for k, v in info.items() if k != "_raw"}, ensure_ascii=False, indent=1), encoding="utf-8")
-                filled = apply(src, info, out)
-                self._log("채운 칸: " + (", ".join(f"{k} {v}" for k, v in filled.items()) or "없음"))
-                return {"out": str(out), "json": str(jpath), "filled": filled,
-                        "info": {k: v for k, v in info.items() if k != "_raw"}, "review": self._review(info, filled)}
+                        raise Cancelled("대기 중 중단")
+                    got = self._agents.acquire(timeout=1)
+                log("자리가 나서 시작합니다.")
+            try:
+                r = prepare.run(f, self._work_dir, out, instructions, batch_note, log, handle)
+                self._names[tab] = r.get("title") or self._names[tab]
+                self.save_state(str(f), {"title": r.get("title") or "", "memo": instructions,
+                                         "prepare": {"out": r["output_xlsx"], "rows": r["rows"], "confirm": r["confirm_cells"],
+                                                     "instructions": instructions, "batch_note": batch_note}})
+                return self._view(r)
             finally:
-                self._job = {}
-        return self._run("enrich", job)
+                self._agents.release()
+                self._jobs.pop(tab, None)
+        return self._run("prepare", job, tab=tab)
 
-    def cancel(self) -> dict:
-        self._job["cancel"] = True
-        p = self._job.get("proc")
-        if p and p.poll() is None:
-            p.kill()
-        self._log("중단 요청…")
-        return {"ok": True}
+    def output_name(self, title: str, batch_note: str) -> str:
+        """작업 번호와 제목으로 만든 반입용 엑셀 파일명(관행)."""
+        from . import prepare
+        return prepare.output_name(title, batch_note)
 
-    @staticmethod
-    def _review(info: dict, filled: dict) -> dict:
-        """화면 검토표: 채운 값·근거, 눈에 띄어야 할 경고."""
-        from .enrich import authors_text, price_number
-        eps = info.get("episodes") or []
-        dated = sum(1 for e in eps if e.get("date"))
-        rows = [
-            ["최초 연재 플랫폼", info.get("platform_first", ""), ", ".join(p.get("name", "") for p in info.get("platforms", []))],
-            ["저자", authors_text(info.get("authors", [])), "역할어: 글/그림/원작/작화/각색만"],
-            ["주제 구분(장르)", info.get("genre", ""), ""],
-            ["1회차 공개일", info.get("first_publish_date", ""), "가장 이른 플랫폼 기준"],
-            ["회차별 공개일", f"{dated}/{len(eps)}건", "없는 회차는 노란 셀"],
-            ["정가", price_number(info.get("price_per_episode")), str(info.get("price_per_episode", ""))],
-            ["이용등급", info.get("rating", ""), ", ".join(f"{k}={v or '?'}" for k, v in (info.get("rating_by_platform") or {}).items())],
-            ["출판사 소재지", info.get("publisher_place", ""), ""],
-        ]
-        warns = []
-        rb = {v for v in (info.get("rating_by_platform") or {}).values() if v}
-        if info.get("rating") and rb and len(rb | {info["rating"]}) > 1:
-            warns.append("플랫폼마다 이용등급이 다릅니다. 직원 확인 필요.")
-        if eps and dated < len(eps):
-            warns.append(f"회차 {len(eps) - dated}건은 공개일을 찾지 못했습니다.")
-        if not eps:
-            warns.append("회차별 공개일을 하나도 찾지 못했습니다(1회차만 채움).")
-        if info.get("notes"):
-            warns.append("리서치 메모: " + str(info["notes"]))
-        return {"rows": rows, "warns": warns, "evidence": info.get("evidence", [])[:8]}
-
-    # ---------- 3-가. 원고 파일명(8자리 일련번호, 다크네이머 대체) ----------
-    def manuscript_preview(self, root: str) -> dict:
-        from .rename_files import plan, is_done
-        from .common import list_images
-        r = Path(root)
-        folders = [p for p in sorted(r.iterdir()) if p.is_dir() and list_images(p)] or ([r] if list_images(r) else [])
-        done = [p.name for p in folders if is_done(p)]
-        sample = []
-        for p in folders[:2]:
-            pairs = plan(p)
-            sample.append({"folder": p.name, "count": len(pairs), "first": [(a.name, b.name) for a, b in pairs[:2]], "last": [(a.name, b.name) for a, b in pairs[-1:]]})
-        return {"folders": len(folders), "files": sum(len(list_images(p)) for p in folders), "already": done, "sample": sample}
-
-    def manuscript_apply(self, root: str) -> dict:
-        """폴더별로 진행 로그를 보내며 스레드에서 실행(파일 수백 장이라 몇 초~수십 초)."""
-        from .rename_files import apply, is_done
-        from .common import list_images
-        r = Path(root)
-        def job():
-                folders = [p for p in sorted(r.iterdir()) if p.is_dir() and list_images(p)] or ([r] if list_images(r) else [])
-                total = len(folders); nfiles = 0; skipped = 0
-                for i, p in enumerate(folders, 1):
-                    if is_done(p):
-                        skipped += 1; self._log(f"  [{i}/{total}] {p.name}: 이미 변경됨, 건너뜀"); continue
-                    done = apply(p)
-                    nfiles += len(done)
-                    if i % 5 == 0 or i == total:
-                        self._log(f"  [{i}/{total}] {p.name}: {len(done)}장 변경 (누계 {nfiles}장)")
-                return {"folders": total - skipped, "files": nfiles, "skipped": skipped}
-        return self._run("manuscript", job)
-
-    def manuscript_undo(self, root: str) -> dict:
-        from .rename_files import undo, is_done
-        r = Path(root)
-        targets = [r] if is_done(r) else [p for p in r.iterdir() if p.is_dir() and is_done(p)]
-        n = 0
-        for t in targets:
-            n += undo(t)
-        return {"folders": len(targets), "files": n}
-
-    # ---------- 3-나. 썸네일 파일명 ----------
-    def thumbs_preview(self, folder: str, title: str) -> list:
-        from .enrich import rename_thumbs
-        return rename_thumbs(Path(folder), title, dry_run=True)
-
-    def thumbs_apply(self, folder: str, title: str) -> dict:
-        from .enrich import rename_thumbs
+    def rename_output(self, folder: str, new_name: str) -> dict:
+        """만들어 둔 반입용 엑셀의 파일명(또는 위치)을 바꾼다."""
+        from . import prepare
+        f = Path(folder)
+        w = prepare.load(f, self._work_dir)
+        if not w or not Path(w.get("output_xlsx", "")).exists():
+            return {"error": "바꿀 반입용 엑셀이 없습니다(먼저 실행하세요)"}
+        new_name = (new_name or "").strip()
+        if not new_name:
+            return {"error": "파일명이 비어 있습니다"}
+        old = Path(w["output_xlsx"])
+        new = Path(new_name) if Path(new_name).is_absolute() else old.parent / new_name
+        if new.suffix.lower() != ".xlsx":
+            new = new.with_name(new.name + ".xlsx")
+        if re.search(r'[\\/:*?"<>|]', new.name):
+            return {"error": "파일명에 쓸 수 없는 글자가 있습니다: \\ / : * ? \" < > |"}
+        if new == old:
+            return {"out": str(old)}
+        if new.exists():
+            return {"error": f"같은 이름의 파일이 이미 있습니다: {new.name}"}
         try:
-            return {"count": len(rename_thumbs(Path(folder), title))}
-        except SystemExit as e:
-            return {"error": str(e)}
+            new.parent.mkdir(parents=True, exist_ok=True)
+            old.rename(new)
+        except OSError as e:
+            return {"error": f"이름을 바꾸지 못했습니다(엑셀에서 열려 있으면 닫으세요): {e}"}
+        w["output_xlsx"] = str(new)
+        prepare.result_path(f, self._work_dir).write_text(json.dumps(w, ensure_ascii=False, indent=1), encoding="utf-8")
+        self.save_state(str(f), {"prepare": {"out": str(new)}})
+        return {"out": str(new)}
 
-    def thumbs_undo(self, folder: str) -> dict:
-        from .enrich import undo_thumbs
-        return {"count": undo_thumbs(Path(folder))}
-
-    # ---------- 4. 반입용 엑셀 ----------
-    def convert(self, pub_xlsx: str, root: str, work_json: str, out_name: str, template: str = "") -> dict:
-        from .convert_import import convert
-        out = Path(out_name) if Path(out_name).is_absolute() else self._work_dir / out_name   # 찾아보기로 고른 전체 경로도 허용
-        out.parent.mkdir(parents=True, exist_ok=True)
+    def undo_files(self, folder: str) -> dict:
+        """마무리에서 바꾼 원고·썸네일 파일명을 되돌린다."""
+        from . import prepare
+        w = prepare.load(Path(folder), self._work_dir)
+        if not w:
+            return {"error": "이 폴더의 작업 기록이 없습니다"}
         try:
-            from .convert_import import verify
-            n, flags = convert(Path(pub_xlsx), Path(template) if template else TEMPLATE_83, out,
-                               Path(root) if root else None, None, Path(work_json) if work_json else None)
-            v = verify(out, n)
-            self.log(f"반입용 생성: {out.name} {n}행, 노란 셀 {flags}" + (" / 경고: " + "; ".join(v["warnings"]) if v["warnings"] else ""))
-            return {"out": str(out), "rows": n, "flags": flags, "verify": v}
+            return prepare.undo(Path(folder), w["import"])
         except Exception as e:  # noqa: BLE001
             return {"error": "".join(traceback.format_exception_only(type(e), e)).strip()}
 
+    def get_prompt(self) -> dict:
+        """모든 작품에 적용할 직원 지시(편집 가능)와 에이전트가 따르는 방법 문서(보기 전용)."""
+        from . import agent
+        p = self._work_dir / "research_prompt.txt"
+        skills = agent.HOME_SRC / ".claude" / "skills"
+        full = "\n\n".join((skills / n / "SKILL.md").read_text(encoding="utf-8") for n in ("prepare-import", "research-work"))
+        return {"text": p.read_text(encoding="utf-8") if p.exists() else "", "is_default": not p.exists(), "full": full}
+
+    def save_prompt(self, text: str) -> dict:
+        p = self._work_dir / "research_prompt.txt"
+        if text and text.strip():
+            p.parent.mkdir(parents=True, exist_ok=True); p.write_text(text, encoding="utf-8")
+        elif p.exists():
+            p.unlink()
+        return {"ok": True, "is_default": not p.exists(), "text": text if p.exists() else ""}
+
+    def cancel(self, tab: str) -> dict:
+        j = self._jobs.get(tab)
+        if not j:
+            return {"ok": False}
+        j["cancel"] = True
+        p = j.get("proc")
+        if p and p.poll() is None:
+            p.kill()
+        self._tab_log(tab)("중단 요청…")
+        return {"ok": True}
+
+    @staticmethod
+    def _view(w: dict) -> dict:
+        """화면에 보여 줄 요약: 값 표, 사람이 확인할 칸, 엇갈림, 찾지 못한 값, 검수."""
+        from . import import_writer
+        imp, res = w.get("import") or {}, w.get("research") or {}
+        rows = imp.get("rows") or []
+        v0 = (rows[0].get("values") or {}) if rows else {}
+        names = "; ".join(f"{n.get('role') or ''}: {n.get('name')}".strip(": ") for n in v0.get("names") or [])
+        dates = [str((r.get("values") or {}).get("dateIssued") or "") for r in rows]
+        summary = [
+            ["작품 / 건수", f"{imp.get('title') or ''} / {len(rows)}{imp.get('unit') or '건'}", ""],
+            ["표제", v0.get("title", ""), ""],
+            ["권차", ", ".join(str((r.get("values") or {}).get("partNumber") or "") for r in rows[:12]) + (" …" if len(rows) > 12 else ""), ""],
+            ["저자", names, ""],
+            ["발행처 / 발행지", f"{v0.get('publisher', '')} / {v0.get('place', '')} {v0.get('place_code', '')}", ""],
+            ["발행일", f"{min(d for d in dates if d)} ~ {max(dates)}" if any(dates) else "", f"{sum(1 for d in dates if d)}/{len(rows)}건"],
+            ["최초 연재 플랫폼", res.get("platform_first", ""), res.get("platform_first_reason", "")],
+            ["이용대상", f"{v0.get('targetAudience', '')} / {v0.get('audience_note', '')}", ""],
+            ["정가 / 보상", f"{v0.get('price', '')} / {v0.get('reward_yn', '')} {v0.get('compensation', '')}", ""],
+            ["원문주소", v0.get("url_work", ""), ""],
+            ["썸네일", "있음" if imp.get("thumbs_dir") else "없음(등록하지 않음)", ""],
+        ]
+        confirm = []
+        for r in rows:
+            for c in r.get("confirm") or []:
+                confirm.append({"no": r.get("no"), "field": import_writer.column_label(str(c.get("field"))), "reason": c.get("reason")})
+        grouped: dict = {}
+        for c in confirm:      # 같은 칸·같은 이유는 행 번호를 모아 한 줄로
+            grouped.setdefault((c["field"], c["reason"]), []).append(c["no"])
+        rv = imp.get("review") or {}
+        return {"folder": w.get("folder"), "title": imp.get("title"), "output_xlsx": w.get("output_xlsx"), "rows": w.get("rows"),
+                "confirm_cells": w.get("confirm_cells"), "manuscripts": w.get("manuscripts"), "thumbs": w.get("thumbs"),
+                "summary": summary,
+                "confirm": [{"field": k[0], "reason": k[1], "rows": v} for k, v in grouped.items()],
+                "conflicts": res.get("conflicts") or [], "not_found": res.get("not_found") or [], "issues": imp.get("issues") or [],
+                "review": {"done": bool(rv.get("done")), "findings": rv.get("findings") or [], "resolved": rv.get("resolved") or []},
+                "remaining": w.get("remaining") or [], "finalize": w.get("finalize") or {}, "run": w.get("run") or {},
+                "platforms": [{"name": p.get("name"), "status": p.get("status"), "start_date": p.get("start_date"), "url": p.get("url_work")} for p in res.get("platforms") or []],
+                "searched": len(res.get("searched") or [])}
+
     # ---------- 5. KOLIS 일괄반입 준비 (직원 입회) ----------
-    def kolis_prepare(self, xlsx: str, note: str) -> dict:
+    def kolis_prepare(self, tab: str, xlsx: str, note: str) -> dict:
         """로그인된 Edge(IE 모드)에서 납본자료접수 → 일괄반입 → 확인 → 비고·첨부까지. '반입'은 누르지 않는다."""
         from . import kolis_ui
-        return self._run("kolis", lambda: kolis_ui.prepare_batch_import(note, Path(xlsx), kolis_ui.Log(self._ui_log)), capture=True)
+        return self._run("kolis", lambda: kolis_ui.prepare_batch_import(note, Path(xlsx), self._kolis_log(tab)), capture=True, tab=tab)
 
-    def kolis_submit(self, yes: str) -> dict:
+    def kolis_submit(self, tab: str, yes: str) -> dict:
         """'반입' 클릭. 화면에서 YES 를 입력받아 넘긴다(직원 동의)."""
         from . import kolis_ui
         try:
@@ -445,13 +443,13 @@ class Api:
                 return {"error": "일괄반입 팝업이 열려 있지 않습니다"}
         except Exception as e:  # noqa: BLE001
             return {"error": str(e)}
-        return self._run("kolis_submit", lambda: kolis_ui.submit(pop, yes, kolis_ui.Log(self._ui_log)), capture=True)
+        return self._run("kolis_submit", lambda: kolis_ui.submit(pop, yes, self._kolis_log(tab)), capture=True, tab=tab)
 
     # ---------- 6. 반입 결과 → 폴더명 CNTS ----------
-    def export_download(self, receipt: str = "") -> dict:
+    def export_download(self, tab: str, receipt: str = "") -> dict:
         """KOLIS 로 이동 → (접수번호 찾기) → '전체출력' → 알림 막대 '저장' → work/접수번호 N.xls. 스레드, 끝나면 onDone('export')."""
         from . import kolis_ui
-        return self._run("export", lambda: kolis_ui.download_export(kolis_ui.Log(self._ui_log), self._work_dir, receipt), capture=True)
+        return self._run("export", lambda: kolis_ui.download_export(self._kolis_log(tab), self._work_dir, receipt), capture=True, tab=tab)
 
     def cnts_preview(self, export_file: str, root: str) -> dict:
         from .cnts_folders import plan
@@ -476,13 +474,42 @@ class Api:
         except Exception as e:  # noqa: BLE001
             return {"error": str(e)}
 
+    # ---------- 6-나. 원문일괄등록(폴더): 끌어다 놓기는 사람이, 그 뒤는 프로그램이 ----------
+    def upload_check(self, root: str) -> dict:
+        """로컬 원고 폴더 검사 + 팝업 상태 읽기(클릭 없음)."""
+        from . import kolis_upload
+        try:
+            return {"local": kolis_upload.check_local(Path(root)), "popup": kolis_upload.state()}
+        except Exception as e:  # noqa: BLE001
+            return {"error": "".join(traceback.format_exception_only(type(e), e)).strip()}
+
+    def upload_run(self, tab: str, root: str, yes: str) -> dict:
+        from . import kolis_upload
+        handle = self._jobs[tab] = {"cancel": False}
+        def job():
+            try:
+                self._window.minimize()      # 프로그램 창이 팝업 버튼을 덮으면 클릭이 새 버린다(7단계와 같은 이유)
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                return kolis_upload.run(Path(root), self._kolis_log(tab), handle, yes)
+            except kolis_upload.Stop as e:
+                raise SystemExit(str(e)) from e
+            finally:
+                self._jobs.pop(tab, None)
+                try:
+                    self._window.restore()
+                except Exception:  # noqa: BLE001
+                    pass
+        return self._run("upload", job, capture=True, tab=tab)
+
     # ---------- 7. 썸네일 등록 반복 ----------
-    def thumbs_register(self, import_xlsx: str, thumb_dir: str, count: int = 0, receipt: str = "") -> dict:
-        from . import kolis_thumbs, kolis_ui
-        self._job = {"cancel": False}; handle = self._job
+    def thumbs_register(self, tab: str, import_xlsx: str, thumb_dir: str, count: int = 0, receipt: str = "") -> dict:
+        from . import kolis_thumbs
+        handle = self._jobs[tab] = {"cancel": False}
         def prog(i, r):
             if self._window:
-                self._window.evaluate_js(f"onThumbProgress({json.dumps({'i': i, **r}, ensure_ascii=False)})")
+                self._window.evaluate_js(f"onThumbProgress({json.dumps({'i': i, **r}, ensure_ascii=False)}, {json.dumps(tab)})")
         def job():
             # KOLIS 조작 중 프로그램 창이 팝업 버튼을 덮으면 클릭이 프로그램 창에 떨어진다 → 실행 중 최소화, 끝나면 복원
             try:
@@ -490,14 +517,14 @@ class Api:
             except Exception:  # noqa: BLE001
                 pass
             try:
-                return kolis_thumbs.run(Path(import_xlsx), Path(thumb_dir), int(count or 0), kolis_ui.Log(self._ui_log), handle, prog, receipt)
+                return kolis_thumbs.run(Path(import_xlsx), Path(thumb_dir), int(count or 0), self._kolis_log(tab), handle, prog, receipt)
             finally:
-                self._job = {}
+                self._jobs.pop(tab, None)
                 try:
                     self._window.restore()
                 except Exception:  # noqa: BLE001
                     pass
-        return self._run("thumbs_register", job, capture=True)
+        return self._run("thumbs_register", job, capture=True, tab=tab)
 
     def open_path(self, path: str) -> bool:
         import os
@@ -507,7 +534,7 @@ class Api:
 
 def main():
     api = Api()
-    window = webview.create_window("KOLIS 웹툰 납본 도우미", str(HERE / "ui" / "index.html"), js_api=api, width=1150, height=860, text_select=True)
+    window = webview.create_window("KOLIS 웹툰 납본 도우미", str(HERE / "ui" / "index.html"), js_api=api, width=1280, height=900, text_select=True)
     api._window = window
     webview.start(debug=False)
 

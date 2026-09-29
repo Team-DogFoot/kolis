@@ -2,11 +2,13 @@
 <html lang="ko"><head><meta charset="utf-8"><title>KOLIS 웹툰 납본 도우미</title>
 <style>
   :root { --bg:#f6f7f9; --card:#fff; --line:#dfe3e8; --text:#1c2430; --muted:#66707d; --accent:#2b6cb0; --warn:#b7791f; --ok:#2f855a; --bad:#c53030; }
-  * { box-sizing:border-box; } body { margin:0; font:14px/1.5 "Malgun Gothic","Segoe UI",sans-serif; color:var(--text); background:var(--bg); }
-  header { padding:12px 22px; background:#fff; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:14px; }
+  * { box-sizing:border-box; } html, body { height:100%; } body { margin:0; font:14px/1.5 "Malgun Gothic","Segoe UI",sans-serif; color:var(--text); background:var(--bg); display:flex; flex-direction:column; overflow:hidden; }
+  header { flex:none; padding:12px 22px; background:#fff; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:14px; }
   header h1 { font-size:17px; margin:0; } header small { color:var(--muted); }
   #env { margin-left:auto; font-size:12px; }
-  main { display:grid; grid-template-columns: 1fr 400px; gap:16px; padding:16px 22px; }
+  main { flex:1; min-height:0; display:grid; grid-template-columns: 1fr 400px; gap:16px; padding:16px 22px; }
+  #left { min-height:0; overflow-y:auto; padding-right:6px; } #right { min-height:0; display:flex; flex-direction:column; }
+  #diag { flex:none; max-height:40vh; overflow:auto; }
   section.card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:14px 16px; margin-bottom:14px; }
   section.card h2 { font-size:15px; margin:0 0 10px; display:flex; align-items:center; gap:8px; }
   .step { display:inline-block; width:22px; height:22px; border-radius:50%; background:var(--accent); color:#fff; text-align:center; line-height:22px; font-size:12px; }
@@ -19,83 +21,68 @@
   .muted { color:var(--muted); } .warn { color:var(--warn); } .ok { color:var(--ok); } .bad { color:var(--bad); }
   .warnbox { background:#fff7e6; border:1px solid #f0d9a8; border-radius:6px; padding:8px 10px; margin:8px 0; font-size:13px; }
   .warnbox div { margin:2px 0; }
-  #log { background:#0f172a; color:#d6e2f0; font:12px/1.5 Consolas,monospace; padding:10px; border-radius:8px; height:calc(100vh - 120px); overflow:auto; white-space:pre-wrap; }
+  #log { background:#0f172a; color:#d6e2f0; font:12px/1.5 Consolas,monospace; padding:10px; border-radius:8px; flex:1; min-height:0; overflow:auto; white-space:pre-wrap; }
   .chips span { display:inline-block; background:#fff7e6; border:1px solid #f0d9a8; color:#8a5a00; border-radius:4px; padding:1px 6px; margin:2px; font-size:12px; }
   .spin { display:inline-block; width:12px; height:12px; border:2px solid #cbd5e0; border-top-color:var(--accent); border-radius:50%; animation:sp 1s linear infinite; vertical-align:middle; }
   @keyframes sp { to { transform:rotate(360deg); } }
+  #tabs { display:flex; flex-wrap:wrap; gap:4px; margin:0 0 10px; position:sticky; top:0; background:var(--bg); padding:2px 0 8px; z-index:5; border-bottom:1px solid var(--line); }
+  .tab { padding:6px 10px; border:1px solid var(--line); border-radius:6px 6px 0 0; background:#eef1f5; cursor:pointer; font-size:13px; white-space:nowrap; max-width:240px; overflow:hidden; text-overflow:ellipsis; }
+  .tab.on { background:#fff; border-color:var(--accent); border-bottom-color:#fff; font-weight:600; } .tab.add { background:transparent; border-style:dashed; color:var(--accent); }
+  .tab .x { color:var(--muted); margin-left:4px; padding:0 3px; border-radius:3px; } .tab .x:hover { background:#dfe3e8; color:var(--bad); }
+  #log-title { flex:none; font-size:12px; color:var(--muted); margin:0 0 4px; }
   a { color:var(--accent); } ul.ev { margin:4px 0 0 16px; padding:0; font-size:12px; color:var(--muted); }
 </style></head>
 <body>
-<header><h1>KOLIS 웹툰 납본 도우미</h1><small>납품 폴더 → 파일명 정리 → 기초메타데이터 보완 → 반입용 엑셀 → KOLIS 일괄반입 준비</small><span id="env" class="muted">환경 확인 중…</span><select id="recent" style="margin-left:12px;padding:6px;font:inherit" onchange="openRecent()"><option value="">최근 작업…</option></select><button class="secondary" style="margin-left:6px" onclick="diagnose()">진단</button><button class="secondary" style="margin-left:6px" onclick="resetAll()">새로 시작</button></header>
+<header><h1>KOLIS 웹툰 납본 도우미</h1><small>납품 폴더 → 반입용 엑셀 → KOLIS 등록</small><span id="env" class="muted">환경 확인 중…</span><select id="recent" style="margin-left:12px;padding:6px;font:inherit" onchange="openRecent()"><option value="">최근 작업 열기…</option></select><button class="secondary" style="margin-left:6px" onclick="diagnose()">진단</button></header>
 <div id="diag" class="card" hidden style="margin:12px 22px 0;background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px 16px;font-size:13px">
   <div class="row"><b>진단</b><button class="secondary" onclick="$('diag').hidden=true">닫기</button></div>
   <div id="diag-body"></div>
   <pre id="diag-log" class="muted" style="font-size:11px;max-height:220px;overflow:auto;background:#f6f7f9;padding:8px;border-radius:6px"></pre>
 </div>
 <main>
-<div>
-  <section class="card"><h2><span class="step">1</span> 납품 폴더</h2>
-    <div class="row"><input type="text" id="folder" placeholder="예: C:\Users\User\Downloads\케나즈_34. 죽고못사는연애"><button class="secondary" onclick="pickFolder()">찾아보기</button><button id="btn-scan" onclick="scan()">읽기</button><span id="scan-out" class="muted"></span></div>
-    <table id="scan-table" hidden>
-      <tr><th>기초메타데이터</th><td id="s-xlsx"></td></tr>
-      <tr><th>작품 / 행 수</th><td id="s-title"></td></tr>
-      <tr><th>원고</th><td id="s-ms"></td></tr>
-      <tr><th>회차썸네일</th><td id="s-th"></td></tr>
-      <tr><th>비어 있는 열</th><td id="s-empty" class="chips"></td></tr>
-      <tr><th>진행 상태</th><td id="s-state" class="muted"></td></tr>
-      <tr><th>메모</th><td><textarea id="memo" rows="2" style="width:100%;font:inherit;border:1px solid var(--line);border-radius:6px;padding:6px" placeholder="이 작품에 대한 메모(직원 결정 사항 등). 자동 저장" onchange="saveMemo()"></textarea></td></tr>
+<div id="left">
+  <div id="tabs"></div>
+  <section class="card"><h2><span class="step">1</span> 납품 폴더 → 반입용 엑셀</h2>
+    <p class="muted" style="margin:0 0 8px">에이전트(클로드)가 출판사 엑셀과 원고를 읽고, 웹에서 조사하고, 칸마다 값을 정해 반입용 엑셀을 만든 뒤 스스로 검사하고 별도 검수까지 받습니다. 끝나면 원고 파일명을 8자리 일련번호로 정리합니다. 보통 10~15분.</p>
+    <table>
+      <tr><th>① 납품 폴더</th><td><div class="row" style="margin:0"><input type="text" id="folder" placeholder="출판사가 보낸 폴더 (예: C:\Users\User\Downloads\출판사_작품)"><button class="secondary" onclick="pickFolder()">찾아보기</button></div>
+        <div id="s-state" class="muted" style="font-size:12px;margin-top:4px"></div></td></tr>
+      <tr><th>② 작업 번호(비고)</th><td><input type="text" id="batch" value="2026-납본-웹툰대행(차)()" style="width:100%;min-width:0">
+        <div class="muted" style="font-size:12px;margin-top:2px">KOLIS 일괄반입의 비고에 그대로 들어가고, 반입용 엑셀 파일명에도 쓰입니다.</div></td></tr>
+      <tr><th>③ 반입용 엑셀 파일명</th><td><div class="row" style="margin:0"><input type="text" id="out-name" placeholder="비워 두면 자동"><button class="secondary" onclick="pickSave()">저장 위치</button><button id="btn-rename" class="secondary" onclick="renameOutput()" hidden>이름 바꾸기</button></div>
+        <div id="out-hint" class="muted" style="font-size:12px;margin-top:2px"></div></td></tr>
+      <tr><th>④ 지시·메모</th><td><textarea id="instr" rows="4" style="width:100%;font:inherit;border:1px solid var(--line);border-radius:6px;padding:7px 9px" placeholder="이 작품에 대해 에이전트에게 알려 줄 것, 직원이 정한 것 (선택). 예: 보상여부는 Y, 보상금은 정가와 같게 / 권차는 숫자만 / 이 작품은 봄툰에서 먼저 연재됨"></textarea></td></tr>
+      <tr><th>⑤ 실행</th><td><div class="row" style="margin:0"><button id="btn-run" onclick="runPrepare()" disabled>실행</button><button id="btn-cancel" class="danger" onclick="cancelJob()" hidden>중단</button><span id="run-out" class="muted"></span></div></td></tr>
     </table>
-  </section>
-
-  <section class="card"><h2><span class="step">2</span> 파일명 정리</h2>
-    <p style="margin:0 0 4px"><b>가. 원고 파일명</b> <span class="muted">— 회차 폴더마다 8자리 일련번호(00000001.jpg …). 가이드 3.3, 다크네이머 대체</span></p>
-    <div class="row"><button class="secondary" id="btn-msp" onclick="msPreview()" disabled>미리보기</button><button id="btn-msa" onclick="msApply()" disabled>이름 변경</button><button class="secondary" id="btn-msu" onclick="msUndo()" disabled>되돌리기</button><span id="ms-out" class="muted"></span></div>
-    <div id="ms-list" class="muted" style="font-size:12px"></div>
-    <p style="margin:12px 0 4px"><b>나. 회차 썸네일 파일명</b> <span class="muted">— &lt;제목 공백제거&gt;&lt;회차 2자리&gt;.jpg (완료 사례 5-190/201/206)</span></p>
-    <div class="row"><button class="secondary" id="btn-thp" onclick="thumbsPreview()" disabled>미리보기</button><button id="btn-tha" onclick="thumbsApply()" disabled>이름 변경</button><button class="secondary" id="btn-thu" onclick="thumbsUndo()" disabled>되돌리기</button><span id="th-out" class="muted"></span></div>
-    <div id="th-list" class="muted" style="font-size:12px"></div>
-  </section>
-
-  <section class="card"><h2><span class="step">3</span> 기초메타데이터 보완</h2>
-    <p class="muted" style="margin:0 0 6px">클로드가 웹에서 작품 정보를 조사(판단)하고, 동시에 Edge 가 플랫폼 페이지에서 회차별 공개일·가격을 읽습니다. 보통 3~5분. 진행은 오른쪽 로그에 실시간으로 나옵니다.</p>
-    <div class="row"><input type="text" id="e-xlsx" placeholder="출판사 기초메타데이터 엑셀 (1단계에서 자동으로 들어감)"><button class="secondary" onclick="pickInto('e-xlsx')">찾아보기</button></div>
-    <div class="row"><input type="text" id="extra" placeholder="이번 작품 추가 지시 (선택, 저장 안 됨. 예: 봄툰에서 먼저 연재됨 / 리디 등급은 무시)"></div>
-    <details id="prompt-box" style="margin:6px 0"><summary class="muted" style="cursor:pointer">조사 지시 편집 — '볼 곳·찾을 것' 부분 <span id="prompt-state"></span></summary>
-      <p class="muted" style="margin:6px 0;font-size:12px">역할, KOLIS 접근 금지, 작품 정보 자리, 출력 형식, "지어내지 말 것"은 고정이라 바꿀 수 없습니다. 아래 부분만 편집하며 모든 작품에 적용됩니다. 저장하면 다음 "새로 웹 조사"부터.</p>
-      <textarea id="prompt-text" rows="12" style="width:100%;font:12px/1.5 Consolas,monospace;border:1px solid var(--line);border-radius:6px;padding:8px"></textarea>
-      <div class="row"><button onclick="savePrompt()">저장</button><button class="secondary" onclick="resetPrompt()">기본값으로</button><span id="prompt-out" class="muted"></span></div>
-      <details><summary class="muted" style="cursor:pointer;font-size:12px">실제로 보내는 전체 지시문 보기(고정 부분 포함)</summary><pre id="prompt-full" class="muted" style="font-size:11px;white-space:pre-wrap;background:#f6f7f9;padding:8px;border-radius:6px"></pre></details>
-    </details>
-    <div id="saved-box" class="warnbox" hidden style="background:#eef6ff;border-color:#bcd7f5">지난 조사 결과가 있습니다: <b id="saved-when"></b> <span id="saved-sum" class="muted"></span></div>
-    <div class="row">
-      <button id="btn-enrich" onclick="enrich(false)" disabled>웹 조사해서 채우기</button>
-      <button id="btn-reuse" class="secondary" onclick="enrich(true)" hidden>지난 결과로 채우기</button>
-      <button id="btn-cancel" class="danger" onclick="cancelJob()" hidden>중단</button><span id="enrich-out" class="muted"></span></div>
-    <div id="review" hidden>
-      <div id="warns" class="warnbox" hidden></div>
-      <table id="review-table"></table>
-      <details><summary class="muted" style="cursor:pointer">근거 URL</summary><ul class="ev" id="evidence"></ul></details>
-      <p class="muted" id="e-filled"></p>
+    <div id="result" hidden>
+      <p style="margin:14px 0 4px"><b>⑥ 결과</b></p>
+      <div id="r-head" style="margin:4px 0 8px"></div>
+      <div id="r-remaining" class="warnbox" hidden></div>
+      <p style="margin:10px 0 4px"><b>사람이 확인할 칸</b> <span class="muted">— 반입용 엑셀에 노란색으로 표시되고 칸 메모에 같은 이유가 있습니다</span></p>
+      <table id="r-confirm"></table>
+      <p style="margin:10px 0 4px"><b>값 요약</b></p>
+      <table id="r-summary"></table>
+      <details style="margin-top:8px"><summary class="muted" style="cursor:pointer">조사 내용 (플랫폼, 엇갈림, 찾지 못한 값, 검수 지적)</summary><div id="r-detail" style="font-size:13px"></div></details>
+      <div class="row" style="margin-top:8px"><button id="btn-undo" class="secondary" onclick="undoFiles()">원고·썸네일 파일명 되돌리기</button></div>
     </div>
+    <details id="prompt-box" style="margin:12px 0 0"><summary class="muted" style="cursor:pointer">설정 — 모든 작품에 적용할 지시 <span id="prompt-state"></span></summary>
+      <p style="margin:8px 0 2px"><b>모든 작품에 적용할 지시</b> <span class="muted" style="font-size:12px">비워 두면 에이전트는 방법 문서와 도서관 매뉴얼만 따릅니다</span></p>
+      <textarea id="prompt-text" rows="5" style="width:100%;font:12px/1.5 Consolas,monospace;border:1px solid var(--line);border-radius:6px;padding:8px"></textarea>
+      <div class="row"><button onclick="savePrompt()">저장</button><button class="secondary" onclick="resetPrompt()">지우기</button><span id="prompt-out" class="muted"></span></div>
+      <details><summary class="muted" style="cursor:pointer;font-size:12px">에이전트가 따르는 방법 문서 보기</summary><pre id="prompt-full" class="muted" style="font-size:11px;white-space:pre-wrap;background:#f6f7f9;padding:8px;border-radius:6px"></pre></details>
+    </details>
   </section>
 
-  <section class="card"><h2><span class="step">4</span> 반입용 엑셀 생성</h2>
-    <div class="row"><input type="text" id="c-xlsx" placeholder="변환할 기초메타데이터 엑셀 (3단계 보완본이 자동으로 들어감)"><button class="secondary" onclick="pickInto('c-xlsx')">찾아보기</button></div>
-    <div class="row"><input type="text" id="out-name" placeholder="출력 파일명 또는 전체 경로 (기본 저장 위치: work 폴더)"><button class="secondary" onclick="pickSave()">저장 위치</button></div>
-    <div class="row"><button id="btn-conv" onclick="convert()" disabled>반입용 생성</button><span id="conv-out" class="muted"></span></div>
-    <p class="muted">노란 셀 = 사람이 확인할 값(셀 메모에 이유). 반입 전 유저·직원이 확인합니다.</p>
-  </section>
-
-  <section class="card"><h2><span class="step">5</span> KOLIS 일괄반입 준비 <span class="warn" style="font-size:12px">직원 입회 아래에서만</span></h2>
+  <section class="card"><h2><span class="step">2</span> KOLIS 일괄반입 준비 <span class="warn" style="font-size:12px">직원 입회 아래에서만</span></h2>
     <p class="muted" style="margin:0 0 6px">Edge 에서 KOLIS 에 로그인해 둔 상태여야 합니다. 프로그램이 그 창에서 납본자료접수 → 일괄반입 → 확인(신규 접수번호 생성) → 비고 → 첨부파일까지 채웁니다. <b>'반입' 버튼은 누르지 않습니다.</b></p>
-    <div class="row"><label>비고 <input type="text" id="k-note" placeholder="2026-납본-웹툰대행(5차)(203)" style="min-width:320px"></label></div>
-    <div class="row"><input type="text" id="k-xlsx" placeholder="반입용 엑셀 경로(4단계 결과가 자동으로 들어감)"><button class="secondary" onclick="pickInto('k-xlsx')">찾아보기</button></div>
+    <div class="row"><label>비고 <input type="text" id="k-note" placeholder="2026-납본-웹툰대행(차)()" style="min-width:320px"></label></div>
+    <div class="row"><input type="text" id="k-xlsx" placeholder="반입용 엑셀 경로(1단계 결과가 자동으로 들어감)"><button class="secondary" onclick="pickInto('k-xlsx')">찾아보기</button></div>
     <div class="row"><button id="btn-kprep" onclick="kolisPrepare()">일괄반입 준비</button><span id="k-out" class="muted"></span></div>
     <div id="k-fields" class="muted" style="font-size:12px"></div>
-    <div class="row" style="margin-top:10px"><input type="text" id="k-yes" placeholder="직원 동의 후 YES 입력" style="max-width:200px"><button class="danger" onclick="kolisSubmit()">반입 실행</button><span id="k-sub" class="muted"></span></div>
+    <div class="row" style="margin-top:10px"><input type="text" id="k-yes" placeholder="직원 동의 후 YES 입력" style="max-width:200px"><button id="btn-ksub" class="danger" onclick="kolisSubmit()">반입 실행</button><span id="k-sub" class="muted"></span></div>
   </section>
 
-  <section class="card"><h2><span class="step">6</span> 반입 결과 → 원고 폴더명을 콘텐츠ID로</h2>
+  <section class="card"><h2><span class="step">3</span> 반입 결과 → 원고 폴더명을 콘텐츠ID로</h2>
     <p class="muted" style="margin:0 0 6px">가이드 3.4-가. KOLIS 화면에서 "전체출력"을 눌러 내려받은 파일(접수번호 ↔ 콘텐츠ID)로 회차 폴더 이름을 CNTS-… 로 바꿉니다. 원문일괄등록(폴더)은 이 이름을 기준으로 합니다.</p>
     <div class="row"><label>접수번호 <input type="text" id="x-receipt" placeholder="예: 811" style="max-width:120px"></label><button class="secondary" onclick="exportDownload()">KOLIS 에서 전체출력 받기</button><span id="x-out" class="muted"></span></div>
     <p class="muted" style="margin:0 0 6px;font-size:12px">홈 등 다른 화면이어도 납본자료접수로 이동해 접수번호로 찾은 뒤 전체출력합니다. 접수번호를 비우면 지금 화면의 목록을 그대로 출력합니다.</p>
@@ -103,9 +90,13 @@
     <div class="row"><input type="text" id="x-root" placeholder="원고 상위 폴더 (1단계에서 자동으로 들어감)"><button class="secondary" onclick="pickFolderInto('x-root')">찾아보기</button></div>
     <div class="row"><button class="secondary" onclick="cntsPreview()">미리보기</button><button onclick="cntsApply()">폴더명 변경</button><button class="secondary" onclick="cntsUndo()">되돌리기</button><span id="c-out" class="muted"></span></div>
     <div id="c-list" class="muted" style="font-size:12px"></div>
+    <p style="margin:14px 0 4px"><b>원문일괄등록(폴더)</b> <span class="warn" style="font-size:12px">직원 입회 아래에서만</span></p>
+    <p class="muted" style="margin:0 0 6px;font-size:12px">사람이 할 일: KOLIS 목록 전체 선택 → '원문일괄등록(폴더)' → CNTS 폴더들을 팝업에 끌어다 놓기. 그 뒤 '상태 확인'으로 올라온 폴더를 확인하고, YES 를 넣고 실행하면 전송하기 → 결과표 전체 선택 → 일괄정보입력 → 원문등록까지 단계마다 확인하며 진행합니다.</p>
+    <div class="row"><button class="secondary" onclick="uploadCheck()">상태 확인</button><input type="text" id="u-yes" placeholder="직원 동의 후 YES 입력" style="max-width:200px"><button id="btn-upl" class="danger" onclick="uploadRun()">전송·정보입력·원문등록 실행</button><button id="btn-ucancel" class="danger" onclick="cancelJob()" hidden>중단</button><span id="u-out" class="muted"></span></div>
+    <div id="u-list" class="muted" style="font-size:12px"></div>
   </section>
 
-  <section class="card"><h2><span class="step">7</span> 썸네일 등록 반복 <span class="warn" style="font-size:12px">직원 입회 아래에서만</span></h2>
+  <section class="card"><h2><span class="step">4</span> 썸네일 등록 반복 <span class="warn" style="font-size:12px">직원 입회 아래에서만</span></h2>
     <p class="muted" style="margin:0 0 6px">원문일괄등록이 끝난 뒤. KOLIS 납본자료접수에서 접수번호로 찾기 → 전체 선택 → <b>수정</b> 팝업을 연 상태에서 실행합니다. 지금 열린 건부터 '다음'으로 넘기며 건마다: 비정상 행 삭제·저장 → 열람 행 체크 → 원문등록(썸네일, 유형 검증) → 저장. 예상과 다르면 그 자리에서 멈춥니다.</p>
     <div class="row"><input type="text" id="t-xlsx" placeholder="반입용 엑셀 (편/권차 ↔ 썸네일 파일명 기준, 4단계 결과가 자동으로 들어감)"><button class="secondary" onclick="pickInto('t-xlsx')">찾아보기</button></div>
     <div class="row"><input type="text" id="t-dir" placeholder="썸네일 폴더 (1단계에서 자동으로 들어감)"><button class="secondary" onclick="pickFolderInto('t-dir')">찾아보기</button></div>
@@ -115,20 +106,96 @@
     <div id="t-list" class="muted" style="font-size:12px;max-height:160px;overflow:auto"></div>
   </section>
 </div>
-<div><div id="log">준비됨.\n</div></div>
+<div id="right"><div id="log-title">로그</div><div id="log"></div></div>
 </main>
 <script>
-const S = { folder:'', xlsx:'', ms:'', th:'', title:'', enrichedXlsx:'', workJson:'', hasSaved:false };
+// 작품 탭: 탭마다 입력값·결과·로그·진행 상태를 따로 가진다. 화면(DOM)은 하나이고, 탭을 바꿀 때 값을 넣고 뺀다.
+const BATCH_DEFAULT = '2026-납본-웹툰대행(차)()';
+const INPUTS = ['folder','batch','instr','out-name','k-note','k-xlsx','x-receipt','x-file','x-root','t-xlsx','t-dir','t-receipt','t-count'];
+const OUTS = ['out-hint','run-out','s-state','k-out','k-fields','k-sub','x-out','c-out','c-list','u-out','u-list','t-out','t-list'];
+const KOLIS_KINDS = ['kolis','kolis_submit','export','upload','thumbs_register'];
+const T = [];           // 탭 목록
+let CUR = null;         // 지금 보이는 탭
+let SEQ = 0;
+const GLOBAL_LOG = [];
 const $ = id => document.getElementById(id);
-function appendLog(m){ const l=$('log'); l.textContent += new Date().toLocaleTimeString()+'  '+m+'\n'; l.scrollTop=l.scrollHeight; }
-const STEP_LABEL = {manuscript:'원고 파일명', thumbs:'썸네일 파일명', enrich:'보완', convert:'반입용 엑셀', kolis_prepare:'KOLIS 준비', kolis_submit:'KOLIS 반입', export:'전체출력', cnts:'폴더명 CNTS'};
-async function saveState(patch){ if(!S.folder) return; S.state = await pywebview.api.save_state(S.folder, patch); renderState(); }
-async function saveMemo(){ await saveState({memo: $('memo').value}); }
-async function renderState(){
-  if(!S.folder) return;
-  const r = await pywebview.api.status(S.folder);
-  const parts = r.steps.map(s => s.done ? `<span class="ok">✓ ${s.label}</span><span class="muted"> ${s.when||''}${s.evidence?' · '+s.evidence:''}</span>` : `<span class="muted">○ ${s.label}${s.evidence?' ('+s.evidence+')':''}</span>`);
-  $('s-state').innerHTML = parts.join('<br>') + (r.warnings.length ? '<div class="warnbox">' + r.warnings.map(w=>`⚠ ${w}`).join('<br>') + '</div>' : '');
+function esc(s){ return String(s==null?'':s).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function tabOf(id){ return T.find(t => t.id === id); }
+function newTab(init){
+  const t = Object.assign({ id:'t'+(++SEQ)+'-'+Date.now().toString(36), title:'', v:{batch:BATCH_DEFAULT, 't-count':'0'}, html:{}, work:null, state:{}, log:[], running:{}, error:false }, init||{});
+  T.push(t); return t;
+}
+function label(t){ const f=(t.v.folder||'').replace(/[\\/]+$/,''); return t.title || (f ? f.split(/[\\/]/).pop() : '새 작품'); }
+function busy(t){ return Object.keys(t.running).length > 0; }
+function renderTabs(){
+  $('tabs').innerHTML = T.map(t => `<span class="tab${t===CUR?' on':''}" onclick="switchTab('${t.id}')" title="${esc(t.v.folder||'')}">`
+    + (busy(t) ? '<span class="spin"></span> ' : (t.error ? '<span class="bad">✗</span> ' : (t.work ? '<span class="ok">✓</span> ' : '')))
+    + esc(label(t)) + ` <span class="x" onclick="event.stopPropagation();closeTab('${t.id}')" title="탭 닫기">×</span></span>`).join('')
+    + '<span class="tab add" onclick="addTab()">＋ 작품 추가</span>';
+  $('log-title').textContent = CUR ? '로그 — ' + label(CUR) : '로그';
+}
+function capture(){ if(!CUR) return; INPUTS.forEach(id => { CUR.v[id] = $(id).value; }); }
+function setOut(t, id, html){ t.html[id] = html; if(t === CUR) $(id).innerHTML = html; }
+function setVal(t, id, val){ t.v[id] = val; if(t === CUR) $(id).value = val; }
+function show(){
+  const t = CUR;
+  INPUTS.forEach(id => { $(id).value = t.v[id] == null ? '' : t.v[id]; });
+  OUTS.forEach(id => { $(id).innerHTML = t.html[id] || ''; });
+  $('k-yes').value = ''; $('u-yes').value = '';
+  if(t.work) showResult(t); else $('result').hidden = true;
+  buttons(t); outHint(t);
+  $('log').textContent = GLOBAL_LOG.concat(t.log).sort((a,b)=>a[0]-b[0]).map(x=>x[1]).join('\n') + '\n';
+  $('log').scrollTop = $('log').scrollHeight;
+  renderTabs();
+}
+async function outHint(t){      // 파일명 칸 아래 안내: 비워 두면 어떤 이름이 되는지, 실행 뒤에는 저장된 위치
+  const auto = await pywebview.api.output_name(t.title || '제목', t.v.batch || '');
+  const shown = t.title ? auto : auto.replace('제목.xlsx', '<제목>.xlsx');
+  setOut(t, 'out-hint', t.work ? `저장 위치: ${esc(t.work.output_xlsx)} — 이름을 고치고 "이름 바꾸기"를 누르면 파일 이름이 바뀝니다`
+    : `비워 두면 work 폴더에 <b>${esc(shown)}</b> 로 저장합니다(작업 번호와 작품 제목으로 만듦). 직접 적으면 그 이름으로 저장합니다`);
+}
+async function renameOutput(){
+  capture(); const t = CUR;
+  const r = await pywebview.api.rename_output(t.v.folder, (t.v['out-name']||'').trim());
+  if(r.error){ setOut(t, 'out-hint', `<span class="bad">${esc(r.error)}</span>`); return; }
+  t.work.output_xlsx = r.out; t.v['out-name'] = r.out.split(/[\\/]/).pop(); fillNext(t); show(); renderState(t);
+}
+function buttons(t){
+  if(t !== CUR) return;
+  $('btn-rename').hidden = !t.work;
+  const r = t.running;
+  $('btn-run').disabled = !t.v.folder || !!r.prepare; $('btn-run').textContent = t.work ? '다시 실행' : '실행';
+  $('btn-cancel').hidden = !r.prepare; $('btn-cancel').disabled = false;
+  $('btn-kprep').disabled = !!r.kolis; $('btn-ksub').disabled = !!r.kolis_submit;
+  $('btn-upl').disabled = !!r.upload; $('btn-ucancel').hidden = !r.upload;
+  $('btn-treg').disabled = !!r.thumbs_register; $('btn-tcancel').hidden = !r.thumbs_register;
+}
+function saveTabs(){ capture(); pywebview.api.tabs_save(T.map(t => ({id:t.id, folder:t.v.folder||'', title:t.title, batch:t.v.batch||'', instr:t.v.instr||''})), CUR ? CUR.id : ''); }
+function switchTab(id){ capture(); CUR = tabOf(id) || CUR; show(); saveTabs(); }
+function addTab(){ capture(); CUR = newTab(); show(); saveTabs(); $('folder').focus(); }
+function closeTab(id){
+  const t = tabOf(id); if(!t) return;
+  if(busy(t)){ alert('이 작품은 작업이 진행 중입니다. 끝나거나 중단한 뒤 닫으세요.'); return; }
+  if(!confirm(`'${label(t)}' 탭을 닫습니다. 만들어 둔 파일과 작업 기록은 지워지지 않습니다.`)) return;
+  capture(); T.splice(T.indexOf(t), 1);
+  if(!T.length) newTab();
+  if(CUR === t) CUR = T[0];
+  show(); saveTabs();
+}
+function appendLog(m, tab){
+  const line = [Date.now(), new Date().toLocaleTimeString()+'  '+m];
+  const t = tab ? tabOf(tab) : null;
+  (t ? t.log : GLOBAL_LOG).push(line);
+  if(!t || t === CUR){ const l=$('log'); l.textContent += line[1]+'\n'; l.scrollTop=l.scrollHeight; }
+}
+function start(t, kind){ t.running[kind] = true; t.error = false; buttons(t); renderTabs(); }
+function finish(t, kind){ delete t.running[kind]; buttons(t); renderTabs(); }
+async function saveState(t, patch){ if(!t.v.folder) return; t.state = await pywebview.api.save_state(t.v.folder, patch); renderState(t); }
+async function renderState(t){
+  if(!t.v.folder) return;
+  const r = await pywebview.api.status(t.v.folder);
+  const parts = r.steps.map(s => s.done ? `<span class="ok">✓ ${esc(s.label)}</span><span class="muted"> ${esc(s.when||'')}${s.evidence?' · '+esc(s.evidence):''}</span>` : `<span class="muted">○ ${esc(s.label)}${s.evidence?' ('+esc(s.evidence)+')':''}</span>`);
+  setOut(t, 's-state', parts.join(' &nbsp;·&nbsp; ') + (r.warnings.length ? '<div class="warnbox">' + r.warnings.map(w=>`⚠ ${esc(w)}`).join('<br>') + '</div>' : ''));
 }
 async function diagnose(){
   $('diag').hidden=false; $('diag-body').innerHTML='<span class="spin"></span> 확인 중…';
@@ -137,202 +204,204 @@ async function diagnose(){
   const yn = v => v ? '<span class="ok">예</span>' : '<span class="bad">아니오</span>';
   $('diag-body').innerHTML = `
     <div>환경: 클로드코드 ${yn(e.claude)} (로그인 흔적 ${yn(e.claude_login)}) · Edge ${yn(e.edge)} · Playwright ${yn(e.playwright)}</div>
-    <div>진행 중 작업: ${Object.keys(d.running).length ? Object.entries(d.running).map(([k,v])=>`${k}(${v} 시작)`).join(', ') : '없음'}</div>
-    <div>KOLIS 창: Edge ${k.edge ? k.edge.length+'개 ('+k.edge[0]+')' : '<span class="bad">없음</span>'} · 일괄반입 팝업 ${yn(k.popup)} · 원문등록 등 IE 팝업 ${yn(k.upload_popup)} · 파일 대화상자 ${yn(k.file_dialog)} · 확인창 ${yn(k.confirm)}</div>
-    <div class="muted">로그 파일: ${d.log_path}</div>`;
+    <div>진행 중 작업: ${Object.keys(d.running).length ? Object.entries(d.running).map(([k,v])=>`${esc(k)}(${esc(v)} 시작)`).join(', ') : '없음'} · 에이전트 동시 실행 한도 ${d.max_agents}개</div>
+    <div>KOLIS 창: Edge ${k.edge ? k.edge.length+'개 ('+esc(k.edge[0])+')' : '<span class="bad">없음</span>'} · 일괄반입 팝업 ${yn(k.popup)} · 원문등록 등 IE 팝업 ${yn(k.upload_popup)} · 파일 대화상자 ${yn(k.file_dialog)} · 확인창 ${yn(k.confirm)}</div>
+    <div class="muted">로그 파일: ${esc(d.log_path)}</div>`;
   $('diag-log').textContent = (d.log_tail||[]).join('\n');
-}
-function restoreFromState(){
-  const st = S.state || {};
-  $('memo').value = st.memo || '';
-  if(st.enrich && st.enrich.out){ S.enrichedXlsx = st.enrich.out; S.workJson = st.enrich.json || ''; $('c-xlsx').value = st.enrich.out; $('btn-conv').disabled=false; }
-  if(st.convert && st.convert.out){ $('k-xlsx').value = st.convert.out; $('t-xlsx').value = st.convert.out; $('out-name').value = st.convert.out; $('conv-out').innerHTML = `<span class="muted">지난 결과 ${st.convert.done_at}: ${st.convert.rows}행, 노란 셀 ${st.convert.flags}개 → ${st.convert.out}</span>`; }
-  if(st.kolis_prepare){ $('k-note').value = st.kolis_prepare.note || ''; $('k-out').innerHTML = `<span class="muted">마지막 기록 ${st.kolis_prepare.done_at}: 반입 전 준비까지 함${st.kolis_submit?` · 반입 클릭 ${st.kolis_submit.done_at}`:''} — 실제 KOLIS 화면을 확인하고 진행</span>`; }
-  if(st.export && st.export.file){ $('x-file').value = st.export.file; $('x-receipt').value = st.export.receipt || ''; $('t-receipt').value = st.export.receipt || ''; $('x-out').innerHTML = `<span class="muted">지난 기록 ${st.export.done_at}: 접수번호 ${st.export.receipt}, ${st.export.count}건</span>`; }
-  if(st.cnts){ $('c-out').innerHTML = `<span class="muted">지난 기록 ${st.cnts.done_at}: ${st.cnts.count}개 폴더 → CNTS</span>`; }
-  if(st.manuscript){ $('ms-out').innerHTML = `<span class="muted">지난 기록 ${st.manuscript.done_at}: ${st.manuscript.files}장 변경</span>`; }
-  if(st.thumbs){ $('th-out').innerHTML = `<span class="muted">지난 기록 ${st.thumbs.done_at}: ${st.thumbs.count}장 변경</span>`; }
-  renderState();
 }
 async function loadRecent(){
   const items = await pywebview.api.recent();
-  $('recent').innerHTML = '<option value="">최근 작업…</option>' + items.map(i=>`<option value="${i.folder.replace(/"/g,'&quot;')}">${i.title||i.folder} (${i.when})</option>`).join('');
+  $('recent').innerHTML = '<option value="">최근 작업 열기…</option>' + items.map(i=>`<option value="${i.folder.replace(/"/g,'&quot;')}">${esc(i.title||i.folder)} (${i.when})</option>`).join('');
 }
-function openRecent(){ const f = $('recent').value; if(f){ $('folder').value = f; scan(); } }
-async function loadPrompt(){ const p = await pywebview.api.get_prompt(); $('prompt-text').value = p.text; $('prompt-full').textContent = p.full; $('prompt-state').textContent = p.is_default ? '(기본값)' : '(편집됨)'; }
-async function savePrompt(){ const r = await pywebview.api.save_prompt($('prompt-text').value); $('prompt-out').innerHTML = r.error ? `<span class="bad">${r.error}</span>` : '<span class="ok">저장됨</span>'; if(!r.error) loadPrompt(); }
-async function resetPrompt(){ await pywebview.api.save_prompt(''); await loadPrompt(); $('prompt-out').innerHTML='<span class="ok">기본값으로 되돌림</span>'; }
+function openInTab(folder){      // 이미 열린 작품이면 그 탭으로, 아니면 빈 탭이나 새 탭에
+  capture();
+  let t = T.find(x => (x.v.folder||'').toLowerCase() === folder.toLowerCase());
+  if(!t){ t = (CUR && !CUR.v.folder && !busy(CUR)) ? CUR : newTab(); t.v.folder = folder; }
+  CUR = t; show(); openFolder(t);
+}
+function openRecent(){ const f = $('recent').value; $('recent').value=''; if(f) openInTab(f); }
+async function loadPrompt(){ const p = await pywebview.api.get_prompt(); $('prompt-text').value = p.text; $('prompt-full').textContent = p.full; $('prompt-state').textContent = p.is_default ? '' : '(공통 지시 있음)'; }
+async function savePrompt(){ await pywebview.api.save_prompt($('prompt-text').value); $('prompt-out').innerHTML = '<span class="ok">저장됨</span>'; loadPrompt(); }
+async function resetPrompt(){ await pywebview.api.save_prompt(''); await loadPrompt(); $('prompt-out').innerHTML='<span class="ok">지움</span>'; }
 window.addEventListener('pywebviewready', async () => {
   loadRecent(); loadPrompt();
+  const saved = await pywebview.api.tabs_load();
+  (saved.tabs||[]).forEach(s => newTab({id:s.id, title:s.title||'', v:{folder:s.folder||'', batch:s.batch||BATCH_DEFAULT, instr:s.instr||'', 't-count':'0'}}));
+  if(!T.length) newTab();
+  CUR = tabOf(saved.active) || T[0];
+  show();
+  for(const t of T){ if(t.v.folder) await openFolder(t, true); }
   const e = await pywebview.api.check_env();
   const parts = [];
   parts.push(e.claude ? (e.claude_login ? '<span class="ok">클로드코드 ✓</span>' : '<span class="warn">클로드코드 설치됨, 로그인 미확인</span>') : '<span class="bad">클로드코드 없음</span>');
   parts.push(e.edge ? '<span class="ok">Edge ✓</span>' : '<span class="bad">Edge 없음</span>');
   parts.push(e.playwright ? '<span class="ok">Playwright ✓</span>' : '<span class="bad">Playwright 없음</span>');
   $('env').innerHTML = parts.join(' · ');
-  if(!e.claude) appendLog('클로드코드가 없어 2단계(보완)를 실행할 수 없습니다. 설치 후 터미널에서 claude 를 한 번 실행해 로그인하세요.');
+  if(!e.claude) appendLog('클로드코드가 없어 1단계를 실행할 수 없습니다. 설치 후 터미널에서 claude 를 한 번 실행해 로그인하세요.');
+  $('folder').addEventListener('change', () => { capture(); const f=CUR.v.folder.trim(); const dup=T.find(x=>x!==CUR && (x.v.folder||'').toLowerCase()===f.toLowerCase()); if(f && dup){ CUR.v.folder=''; openInTab(f); } else openFolder(CUR); });
+  ['batch','instr'].forEach(id => $(id).addEventListener('change', () => { saveTabs(); outHint(CUR); }));
 });
-async function pickFolder(){ const f = await pywebview.api.pick_folder(); if(f){ $('folder').value=f; scan(); } }
-async function thumbsRegister(){
-  const x=$('t-xlsx').value.trim(), d=$('t-dir').value.trim();
-  if(!x||!d){ $('t-out').innerHTML='<span class="bad">반입용 엑셀과 썸네일 폴더가 필요합니다</span>'; return; }
-  $('btn-treg').disabled=true; $('btn-tcancel').hidden=false; $('t-list').innerHTML=''; $('t-out').innerHTML='<span class="spin"></span> 진행 중… (Edge 창을 건드리지 마세요)';
-  await pywebview.api.thumbs_register(x, d, parseInt($('t-count').value||'0'), $('t-receipt').value.trim());
-}
-function onThumbProgress(r){
-  const cls = r.status==='done'?'ok':(r.status==='already'?'muted':'bad');
-  $('t-list').innerHTML += `<div><span class="${cls}">${r.status==='done'?'✓':(r.status==='already'?'–':'✗')}</span> ${r.i+1}. 편/권차 ${r.part||''} ${r.thumb||''} ${r.sec?`(${r.sec}초)`:''} ${r.error||''}</div>`;
-  $('t-list').scrollTop = $('t-list').scrollHeight;
-}
+async function pickFolder(){ const f = await pywebview.api.pick_folder(); if(f) openInTab(f); }
 async function pickFolderInto(id){ const f = await pywebview.api.pick_folder(); if(f) $(id).value=f; }
-async function exportDownload(){
-  $('x-out').innerHTML='<span class="spin"></span> KOLIS 이동 → 찾기 → 전체출력 → 저장 중… (Edge 창을 건드리지 마세요)';
-  await pywebview.api.export_download($('x-receipt').value.trim());
+async function pickInto(id, pattern){ const f = await pywebview.api.pick_file(pattern||'Excel (*.xlsx)'); if(f) $(id).value=f; }
+async function pickSave(){ const f = await pywebview.api.pick_save($('out-name').value || '반입용.xlsx'); if(f) $('out-name').value=f; }
+
+// ---------- 1. 납품 폴더 → 반입용 엑셀
+async function openFolder(t, quiet){
+  if(t === CUR) capture();
+  const f = (t.v.folder||'').trim(); if(!f) return;
+  const r = await pywebview.api.open_folder(f);
+  if(r.error){ setOut(t, 'run-out', `<span class="bad">${esc(r.error)}</span>`); buttons(t); return; }
+  t.v.folder = r.folder; t.state = r.state || {}; t.work = r.work || null;
+  if(!t.log.length && (r.log||[]).length) t.log = r.log;
+  t.title = (r.work && r.work.title) || t.state.title || '';
+  const pr = t.state.prepare || {};
+  if(!quiet || !t.v.instr) t.v.instr = pr.instructions || t.state.memo || t.v.instr || '';
+  if(!t.v.batch || t.v.batch === BATCH_DEFAULT) t.v.batch = pr.batch_note || (t.state.kolis_prepare||{}).note || BATCH_DEFAULT;
+  setOut(t, 'run-out', '');
+  restoreKolis(t);
+  if(t.work){ fillNext(t); t.v['out-name'] = t.work.output_xlsx.split(/[\\/]/).pop(); }
+  if(t === CUR) show();
+  renderState(t); renderTabs(); loadRecent(); saveTabs();
 }
-function onExport(r){
-  if(r.error){ $('x-out').innerHTML=`<span class="bad">${r.error}</span>`; return; }
-  $('x-file').value = r.file; $('x-receipt').value = r.receipt; $('x-out').innerHTML = `<span class="ok">접수번호 ${r.receipt}, ${r.count}건</span> (${r.first} … ${r.last}) → ${r.file}`;
-  saveState({export:{file:r.file, receipt:r.receipt, count:r.count}});
+async function runPrepare(){
+  capture(); const t = CUR;
+  if(!t.v.folder) return;
+  const bn = (t.v.batch||'').trim();
+  if((!bn || /\(차\)|\(\)/.test(bn)) && !confirm('작업 번호(비고)의 차수와 번호가 비어 있습니다. 그대로 실행할까요? (일괄반입 전에 채워도 됩니다)')) return;
+  if(t.work && !confirm('이 작품을 처음부터 다시 조사해 반입용 엑셀을 새로 만듭니다(10~15분). 진행할까요?')) return;
+  const r = await pywebview.api.prepare(t.id, t.v.folder, t.v.instr||'', bn, (t.v['out-name']||'').trim());
+  if(r.error){ setOut(t, 'run-out', `<span class="bad">${esc(r.error)}</span>`); return; }
+  start(t, 'prepare'); setOut(t, 'run-out', '<span class="spin"></span> 에이전트가 작업 중… (오른쪽 로그 참고)'); saveTabs();
+}
+async function undoFiles(){
+  const t = CUR;
+  if(!confirm('원고·썸네일 파일명을 원래대로 되돌립니다. 진행할까요?')) return;
+  const r = await pywebview.api.undo_files(t.v.folder);
+  setOut(t, 'run-out', r.error ? `<span class="bad">${esc(r.error)}</span>` : `원고 ${r.manuscript_files}장, 썸네일 ${r.thumbs}장 되돌림`);
+  renderState(t);
+}
+async function cancelJob(){ await pywebview.api.cancel(CUR.id); $('btn-cancel').disabled=true; }
+function link(path){ return `<a href="#" onclick="pywebview.api.open_path('${String(path).replace(/\\/g,'\\\\').replace(/'/g,"\\'")}');return false">${esc(path)}</a>`; }
+function fillNext(t){      // 1단계 결과를 다음 단계 입력칸에
+  const w = t.work;
+  t.v['k-xlsx'] = w.output_xlsx; t.v['t-xlsx'] = w.output_xlsx; t.v['x-root'] = w.manuscripts || ''; t.v['t-dir'] = w.thumbs || '';
+  if(t.v.batch && !/\(차\)|\(\)/.test(t.v.batch)) t.v['k-note'] = t.v.batch;
+}
+function showResult(t){
+  const w = t.work;
+  $('result').hidden = false;
+  const run = w.run || {}, fin = w.finalize || {};
+  $('r-head').innerHTML = `<span class="ok">반입용 엑셀</span> ${link(w.output_xlsx)}<br><span class="muted">${w.rows}행 · 사람이 확인할 칸 ${w.confirm_cells}개`
+    + (run.seconds ? ` · ${Math.round(run.seconds/60)}분 걸림` : '') + (fin.manuscript_files ? ` · 원고 파일명 ${fin.manuscript_files}장 정리` : '') + '</span>';
+  const rem = w.remaining || [];
+  $('r-remaining').hidden = !rem.length; $('r-remaining').innerHTML = rem.map(x=>`<div>⚠ 검사에 남은 항목 — ${esc(x)}</div>`).join('');
+  $('r-confirm').innerHTML = (w.confirm||[]).length ? '<tr><th>칸</th><th style="width:70px">행</th><th style="width:auto">확인할 내용</th></tr>' + w.confirm.map(c=>`<tr><td>${esc(c.field)}</td><td>${c.rows.length===w.rows?'전체':esc(c.rows.join(', '))}</td><td>${esc(c.reason)}</td></tr>`).join('') : '<tr><td class="ok">없음</td></tr>';
+  $('r-summary').innerHTML = (w.summary||[]).map(r=>`<tr><th>${esc(r[0])}</th><td>${esc(r[1])||'<span class="warn">없음</span>'}</td><td class="muted">${esc(r[2]||'')}</td></tr>`).join('');
+  const rv = w.review || {};
+  const str = x => typeof x === 'string' ? x : JSON.stringify(x||'');
+  $('r-detail').innerHTML =
+    `<p><b>확인한 플랫폼</b> (찾아본 곳 ${w.searched}곳)</p><ul class="ev">` + (w.platforms||[]).map(p=>`<li>${esc(p.name)} — ${esc(p.status||'')} ${esc(p.start_date||'')} ${esc(p.url||'')}</li>`).join('') + '</ul>'
+    + `<p><b>엇갈림</b></p><ul class="ev">` + ((w.conflicts||[]).map(c=>`<li>${esc(c.field)}: 출판사 '${esc(c.publisher_says)}' / 확인 '${esc(c.found)}' → '${esc(c.chosen)}' (${esc(c.reason)})</li>`).join('') || '<li>없음</li>') + '</ul>'
+    + `<p><b>찾지 못한 값</b></p><ul class="ev">` + ((w.not_found||[]).map(n=>`<li>${esc(n.what)} — 찾아본 곳: ${esc((n.searched||[]).join(' / '))}</li>`).join('') || '<li>없음</li>') + '</ul>'
+    + `<p><b>그 밖에 알아야 할 점</b></p><ul class="ev">` + ((w.issues||[]).map(x=>`<li>${esc(x)}</li>`).join('') || '<li>없음</li>') + '</ul>'
+    + `<p><b>검수</b> ${rv.done ? '받음' : '<span class="bad">받지 않음</span>'}</p><ul class="ev">` + (rv.findings||[]).map((f,i)=>`<li>지적: ${esc(str(f))}<br>처리: ${esc(str((rv.resolved||[])[i]))}</li>`).join('') + '</ul>';
+}
+function restoreKolis(t){
+  const st = t.state || {};
+  if(st.kolis_prepare){ t.v['k-note'] = st.kolis_prepare.note || ''; t.html['k-out'] = `<span class="muted">마지막 기록 ${st.kolis_prepare.done_at}: 반입 전 준비까지 함${st.kolis_submit?` · 반입 클릭 ${st.kolis_submit.done_at}`:''} — 실제 KOLIS 화면을 확인하고 진행</span>`; }
+  if(st.export && st.export.file){ t.v['x-file'] = st.export.file; t.v['x-receipt'] = st.export.receipt || ''; t.v['t-receipt'] = st.export.receipt || ''; t.html['x-out'] = `<span class="muted">지난 기록 ${st.export.done_at}: 접수번호 ${st.export.receipt}, ${st.export.count}건</span>`; }
+  if(st.cnts){ t.html['c-out'] = `<span class="muted">지난 기록 ${st.cnts.done_at}: ${st.cnts.count}개 폴더 → CNTS</span>`; }
+}
+
+// ---------- 2~4. KOLIS (KOLIS 창은 하나라 한 번에 한 작품만. 다른 작품이 쓰는 중이면 프로그램이 거절한다)
+async function kolisCall(kind, outId, fn, busyHtml){
+  capture(); const t = CUR;
+  const r = await fn(t);
+  if(r.error){ setOut(t, outId, `<span class="bad">${esc(r.error)}</span>`); return; }
+  start(t, kind); setOut(t, outId, busyHtml);
+}
+function kolisPrepare(){
+  const x = $('k-xlsx').value.trim(), n = $('k-note').value.trim();
+  if(!x || !n || /\(차\)|\(\)/.test(n)){ setOut(CUR, 'k-out', '<span class="bad">비고(차수와 번호 포함)와 엑셀 경로가 필요합니다</span>'); return; }
+  kolisCall('kolis', 'k-out', t => pywebview.api.kolis_prepare(t.id, x, n), '<span class="spin"></span> 진행 중… (Edge 창을 건드리지 마세요)');
+}
+function kolisSubmit(){
+  const y = $('k-yes').value.trim();
+  kolisCall('kolis_submit', 'k-sub', t => pywebview.api.kolis_submit(t.id, y), '<span class="spin"></span> 반입 처리 중… KOLIS 가 끝낼 때까지 기다립니다(수 분). Edge 창을 건드리지 마세요.');
+}
+function exportDownload(){
+  const rc = $('x-receipt').value.trim();
+  kolisCall('export', 'x-out', t => pywebview.api.export_download(t.id, rc), '<span class="spin"></span> KOLIS 이동 → 찾기 → 전체출력 → 저장 중… (Edge 창을 건드리지 마세요)');
 }
 async function cntsPreview(){
-  $('c-list').innerHTML='<span class="spin"></span> 전체출력 파일 읽고 폴더 짝 맞추는 중…';
+  const t = CUR; setOut(t, 'c-list', '<span class="spin"></span> 전체출력 파일 읽고 폴더 짝 맞추는 중…');
   const r = await pywebview.api.cnts_preview($('x-file').value, $('x-root').value);
-  if(r.error){ $('c-list').innerHTML=`<span class="bad">${r.error}</span>`; return; }
-  $('c-list').innerHTML = `접수번호 ${r.receipt} · ${r.title} · ${r.count}개 폴더<br>` + r.pairs.map(p=>`${p[0]} → ${p[1]} (${p[2]})`).join('<br>');
+  setOut(t, 'c-list', r.error ? `<span class="bad">${esc(r.error)}</span>` : `접수번호 ${r.receipt} · ${esc(r.title)} · ${r.count}개 폴더<br>` + r.pairs.map(p=>`${esc(p[0])} → ${esc(p[1])} (${esc(p[2])})`).join('<br>'));
 }
 async function cntsApply(){
+  const t = CUR;
   if(!confirm('회차 폴더 이름을 콘텐츠ID로 바꿉니다. 되돌리기 가능합니다. 진행할까요?')) return;
-  $('c-out').innerHTML='<span class="spin"></span> 폴더명 변경 중…';
+  setOut(t, 'c-out', '<span class="spin"></span> 폴더명 변경 중…');
   const r = await pywebview.api.cnts_apply($('x-file').value, $('x-root').value);
-  $('c-out').innerHTML = r.error ? `<span class="bad">${r.error}</span>` : `<span class="ok">완료</span> ${r.count}개 폴더 → CNTS (접수번호 ${r.receipt})`;
-  if(!r.error) saveState({cnts:{count:r.count, receipt:r.receipt}});
+  setOut(t, 'c-out', r.error ? `<span class="bad">${esc(r.error)}</span>` : `<span class="ok">완료</span> ${r.count}개 폴더 → CNTS (접수번호 ${r.receipt})`);
+  if(!r.error) saveState(t, {cnts:{count:r.count, receipt:r.receipt}});
 }
-async function cntsUndo(){ $('c-out').innerHTML='<span class="spin"></span> 되돌리는 중…'; const r = await pywebview.api.cnts_undo($('x-root').value); $('c-out').innerHTML = r.error ? `<span class="bad">${r.error}</span>` : `${r.count}개 되돌림`; }
-async function pickInto(id, pattern){ const f = await pywebview.api.pick_file(pattern||'Excel (*.xlsx)'); if(f){ $(id).value=f; if(id==='e-xlsx'){ S.xlsx=f; $('btn-enrich').disabled=false; refreshSaved(); } if(id==='c-xlsx'){ S.enrichedXlsx=f; $('btn-conv').disabled=false; } } }
-async function pickSave(){ const f = await pywebview.api.pick_save($('out-name').value || '반입용.xlsx'); if(f) $('out-name').value=f; }
-function resetAll(){ if(confirm('화면을 처음 상태로 되돌립니다. 만들어 둔 파일은 지워지지 않습니다.')) location.reload(); }
-async function scan(){
-  if(!$('folder').value.trim()) return;
-  $('btn-scan').disabled=true; $('scan-out').innerHTML='<span class="spin"></span> 폴더 읽는 중… (원고 장수 세는 중)';
-  await pywebview.api.scan_folder_async($('folder').value);
+async function cntsUndo(){ const t = CUR; setOut(t, 'c-out', '<span class="spin"></span> 되돌리는 중…'); const r = await pywebview.api.cnts_undo($('x-root').value); setOut(t, 'c-out', r.error ? `<span class="bad">${esc(r.error)}</span>` : `${r.count}개 되돌림`); renderState(t); }
+async function uploadCheck(){
+  const t = CUR; setOut(t, 'u-list', '<span class="spin"></span> 확인 중…');
+  const r = await pywebview.api.upload_check($('x-root').value);
+  if(r.error){ setOut(t, 'u-list', `<span class="bad">${esc(r.error)}</span>`); return; }
+  const l=r.local, p=r.popup;
+  setOut(t, 'u-list', `원고 폴더: ${l.folders}개, 파일 ${l.files}개, ${l.mb} MB` + (l.problems.length ? '<div class="warnbox">'+l.problems.map(w=>`⚠ ${esc(w)}`).join('<br>')+'</div>' : ' <span class="ok">문제 없음</span>')
+    + '<br>팝업: ' + (p.open ? `${esc((p.summary||[]).join(' / ')||'항목 표시 없음')} · 보이는 CNTS ${p.cnts.length}개 · 결과 ${esc(JSON.stringify(p.results))}` + (p.dialog?` · <span class="warn">알림창: ${esc(p.dialog)}</span>`:'') : '<span class="bad">열려 있지 않음</span>'));
 }
-function onScan(r){
-  $('btn-scan').disabled=false; $('scan-out').textContent='';
-  if(r.error){ $('scan-out').innerHTML=`<span class="bad">${r.error}</span>`; appendLog(r.error); return; }
-  Object.assign(S, {folder:r.folder, xlsx:r.xlsx, ms:r.manuscripts, th:r.thumbs, title:r.title, hasSaved:r.has_saved, state:r.state||{}, enrichedXlsx:'', workJson:''});
-  $('conv-out').textContent=''; $('k-out').textContent=''; $('ms-out').textContent=''; $('th-out').textContent=''; $('review').hidden=true;
-  $('scan-table').hidden=false;
-  $('s-xlsx').innerHTML = r.xlsx ? r.xlsx : '<span class="bad">없음</span>';
-  $('s-title').textContent = `${r.title} / ${r.rows}행`;
-  $('s-ms').innerHTML = r.manuscripts ? `${r.manuscripts}  (회차 폴더 ${r.episodes}개, 이미지 ${r.images}장)` + (r.manuscripts_done ? ' <span class="ok">이미 이름 변경됨</span>' : '') : '없음';
-  $('s-th').innerHTML = r.thumbs ? `${r.thumbs}  (${r.thumb_files}장)` + (r.thumbs_done ? ' <span class="ok">이미 이름 변경됨</span>' : '') : '없음';
-  $('s-empty').innerHTML = r.empty_cols.map(c=>`<span>${c}</span>`).join('') || '<span class="ok">없음</span>';
-  $('btn-enrich').disabled = !r.xlsx; $('btn-thp').disabled = $('btn-thu').disabled = !r.thumbs; $('btn-tha').disabled = !r.thumbs || r.thumbs_done;
-  $('btn-conv').disabled = !r.xlsx;
-  $('btn-msp').disabled = $('btn-msu').disabled = !r.manuscripts; $('btn-msa').disabled = !r.manuscripts || r.manuscripts_done;
-  $('e-xlsx').value = r.xlsx; $('c-xlsx').value = r.xlsx; $('x-root').value = r.manuscripts; $('t-dir').value = r.thumbs;
-  $('out-name').value = `기초메타데이터(26웹툰대행5차-)_코리스 반입용_${r.title.replace(/\s/g,'')}.xlsx`;
-  appendLog(`폴더 읽음: ${r.title}, ${r.rows}행, 회차 ${r.episodes}, 썸네일 ${r.thumb_files}. 비어 있는 열: ${r.empty_cols.join(', ')||'없음'}`);
-  restoreFromState(); refreshSaved(); loadRecent();
+function uploadRun(){
+  const root = $('x-root').value, y = $('u-yes').value.trim();
+  kolisCall('upload', 'u-out', t => pywebview.api.upload_run(t.id, root, y), '<span class="spin"></span> 진행 중… (Edge 창을 건드리지 마세요)');
 }
-async function refreshSaved(){
-  const x = $('e-xlsx').value || S.xlsx; if(!x) return;
-  const s = await pywebview.api.saved_info(x);
-  S.hasSaved = s.exists;
-  $('saved-box').hidden = !s.exists; $('btn-reuse').hidden = !s.exists;
-  if(s.exists){ $('saved-when').textContent = s.when; $('saved-sum').textContent = s.summary ? `(${s.summary})` : ''; }
-  $('btn-enrich').textContent = s.exists ? '새로 웹 조사' : '웹 조사해서 채우기';
+function thumbsRegister(){
+  const x=$('t-xlsx').value.trim(), d=$('t-dir').value.trim(), n=parseInt($('t-count').value||'0'), rc=$('t-receipt').value.trim();
+  if(!x||!d){ setOut(CUR, 't-out', '<span class="bad">반입용 엑셀과 썸네일 폴더가 필요합니다(썸네일이 없는 납품은 이 단계를 건너뜁니다)</span>'); return; }
+  setOut(CUR, 't-list', '');
+  kolisCall('thumbs_register', 't-out', t => pywebview.api.thumbs_register(t.id, x, d, n, rc), '<span class="spin"></span> 진행 중… (Edge 창을 건드리지 마세요)');
 }
-async function enrich(reuse){
-  $('btn-enrich').disabled=true; $('btn-reuse').disabled=true; $('btn-cancel').hidden=false; $('review').hidden=true;
-  $('enrich-out').innerHTML='<span class="spin"></span> ' + (reuse ? '지난 결과로 채우는 중…' : '웹 조사 중… (3~5분, 오른쪽 로그 참고)');
-  await pywebview.api.enrich($('e-xlsx').value || S.xlsx, !!reuse, $('extra').value);
+function onThumbProgress(r, tab){
+  const t = tabOf(tab); if(!t) return;
+  const cls = r.status==='done'?'ok':(r.status==='already'?'muted':'bad');
+  setOut(t, 't-list', (t.html['t-list']||'') + `<div><span class="${cls}">${r.status==='done'?'✓':(r.status==='already'?'–':'✗')}</span> ${r.i+1}. 편/권차 ${esc(r.part||'')} ${esc(r.thumb||'')} ${r.sec?`(${r.sec}초)`:''} ${esc(r.error||'')}</div>`);
+  if(t === CUR) $('t-list').scrollTop = $('t-list').scrollHeight;
 }
-async function cancelJob(){ await pywebview.api.cancel(); $('btn-cancel').disabled=true; }
-async function kolisPrepare(){
-  const x = $('k-xlsx').value.trim(); const n = $('k-note').value.trim();
-  if(!x || !n){ $('k-out').innerHTML='<span class="bad">비고와 엑셀 경로가 필요합니다</span>'; return; }
-  $('btn-kprep').disabled=true; $('k-out').innerHTML='<span class="spin"></span> 진행 중… (Edge 창을 건드리지 마세요)';
-  await pywebview.api.kolis_prepare(x, n);
-}
-async function kolisSubmit(){
-  const r = await pywebview.api.kolis_submit($('k-yes').value.trim());
-  if(r.error){ $('k-sub').innerHTML = `<span class="bad">${r.error}</span>`; return; }
-  $('k-sub').innerHTML = '<span class="spin"></span> 반입 처리 중… KOLIS 가 끝낼 때까지 기다립니다(수 분). Edge 창을 건드리지 마세요.';
-}
-function onDone(kind, p){
-  if(kind==='scan'){ onScan(p); return; }
-  if(kind==='export'){ onExport(p); return; }
-  if(kind==='thumbs_register'){
-    $('btn-treg').disabled=false; $('btn-tcancel').hidden=true;
-    if(p.error){ $('t-out').innerHTML=`<span class="bad">${p.error}</span>`; return; }
-    if(p.cancelled){ $('t-out').innerHTML='<span class="warn">중단됨</span>'; return; }
-    $('t-out').innerHTML = `${p.stopped?'<span class="bad">멈춤</span>':'<span class="ok">종료</span>'} 완료 ${p.done}건, 건너뜀 ${p.skipped}건`;
-    saveState({thumbs_register:{done:(S.state.thumbs_register||{}).done ? (S.state.thumbs_register.done + p.done) : p.done}});
-    return;
+function onDone(kind, p, tab){
+  const t = tabOf(tab); if(!t) return;
+  finish(t, kind);
+  if(t.v.folder) pywebview.api.log_save(t.v.folder, t.log.slice(-3000));
+  const out = {prepare:'run-out', kolis:'k-out', kolis_submit:'k-sub', export:'x-out', upload:'u-out', thumbs_register:'t-out'}[kind];
+  if(p.cancelled){ setOut(t, out, '<span class="warn">중단됨</span>'); return; }
+  if(p.error){ t.error = true; setOut(t, out, `<span class="bad">${esc(p.error)}</span>`); renderTabs(); return; }
+  if(kind==='prepare'){
+    t.work = p; t.title = p.title || t.title;
+    setOut(t, 'run-out', '<span class="ok">완료</span> — 반입 전에 아래 "사람이 확인할 칸"과 반입용 엑셀을 확인하세요');
+    fillNext(t); t.v['out-name'] = p.output_xlsx.split(/[\\/]/).pop(); if(t === CUR) show();
+    renderState(t); renderTabs(); loadRecent(); saveTabs();
+  } else if(kind==='export'){
+    setVal(t, 'x-file', p.file); setVal(t, 'x-receipt', p.receipt); setVal(t, 't-receipt', p.receipt);
+    setOut(t, 'x-out', `<span class="ok">접수번호 ${p.receipt}, ${p.count}건</span> (${p.first} … ${p.last}) → ${esc(p.file)}`);
+    saveState(t, {export:{file:p.file, receipt:p.receipt, count:p.count}});
+  } else if(kind==='upload'){
+    setOut(t, 'u-out', `<span class="ok">완료</span> 폴더 ${p.folders}개, 파일 ${p.files}개 — ${esc(p.message)}`);
+    saveState(t, {upload:{folders:p.folders, files:p.files, message:p.message}});
+  } else if(kind==='thumbs_register'){
+    setOut(t, 't-out', `${p.stopped?'<span class="bad">멈춤</span>':'<span class="ok">종료</span>'} 완료 ${p.done}건, 건너뜀 ${p.skipped}건`);
+    saveState(t, {thumbs_register:{done:((t.state.thumbs_register||{}).done||0) + p.done}});
+  } else if(kind==='kolis_submit'){
+    setOut(t, 'k-sub', p.ok ? `<span class="ok">${esc(p.message)}</span> — KOLIS 목록에서 접수번호를 확인하세요` : `<span class="warn">${esc(p.message||'결과 메시지 없음')}</span>`);
+    saveState(t, {kolis_submit:{message:p.message||'', ok:p.ok}});
+  } else if(kind==='kolis'){
+    setOut(t, 'k-out', p.attached ? '<span class="ok">준비 완료 — 팝업에 비고·첨부파일 들어감. 직원 확인 후 반입.</span>' : '<span class="warn">첨부 확인 안 됨 — 팝업을 직접 확인하세요</span>');
+    setOut(t, 'k-fields', Object.entries(p.popup_fields||{}).map(([k,v])=>`${esc(k)}: ${esc(v)}`).join('<br>'));
+    saveState(t, {kolis_prepare:{note:t.v['k-note'], xlsx:t.v['k-xlsx'], attached:!!p.attached}});
   }
-  if(kind==='kolis_submit'){
-    if(p.error){ $('k-sub').innerHTML=`<span class="bad">${p.error}</span>`; return; }
-    $('k-sub').innerHTML = p.ok ? `<span class="ok">${p.message}</span> — KOLIS 목록에서 접수번호를 확인하세요` : `<span class="warn">${p.message||'결과 메시지 없음'}</span>`;
-    saveState({kolis_submit:{message:p.message||'', ok:p.ok}}); return;
-  }
-  if(kind==='manuscript'){
-    $('btn-msp').disabled=$('btn-msu').disabled=false;
-    if(p.error){ $('ms-out').innerHTML=`<span class="bad">${p.error}</span>`; $('btn-msa').disabled=false; return; }
-    $('ms-out').innerHTML = `<span class="ok">완료</span> 폴더 ${p.folders}개, 파일 ${p.files}장 변경` + (p.skipped?` (이미 변경된 ${p.skipped}개 건너뜀)`:'') + ' — 되돌리기 가능';
-    appendLog(`원고 파일명 변경 완료: ${p.files}장`); saveState({manuscript:{files:p.files, folders:p.folders}}); return;
-  }
-  if(kind==='kolis'){
-    $('btn-kprep').disabled=false;
-    if(p.error){ $('k-out').innerHTML=`<span class="bad">${p.error}</span>`; return; }
-    $('k-out').innerHTML = p.attached ? '<span class="ok">준비 완료 — 팝업에 비고·첨부파일 들어감. 직원 확인 후 반입.</span>' : '<span class="warn">첨부 확인 안 됨 — 팝업을 직접 확인하세요</span>';
-    $('k-fields').innerHTML = Object.entries(p.popup_fields||{}).map(([k,v])=>`${k}: ${v}`).join('<br>');
-    saveState({kolis_prepare:{note:$('k-note').value, xlsx:$('k-xlsx').value, attached:!!p.attached}});
-    return;
-  }
-  if(kind!=='enrich') return;
-  $('btn-enrich').disabled=false; $('btn-reuse').disabled=false; $('btn-cancel').hidden=true; $('btn-cancel').disabled=false;
-  refreshSaved();
-  if(p.cancelled){ $('enrich-out').innerHTML='<span class="warn">중단됨</span>'; return; }
-  if(p.error){ $('enrich-out').innerHTML=`<span class="bad">${p.error}</span>`; return; }
-  S.enrichedXlsx=p.out; S.workJson=p.json; S.hasSaved=true; $('c-xlsx').value=p.out;
-  $('enrich-out').innerHTML = `완료 → <a href="#" onclick="pywebview.api.open_path('${p.out.replace(/\\/g,'\\\\')}');return false">${p.out}</a>`;
-  const rv = p.review || {rows:[],warns:[],evidence:[]};
-  $('review').hidden=false;
-  $('warns').hidden = !rv.warns.length; $('warns').innerHTML = rv.warns.map(w=>`<div>⚠ ${w}</div>`).join('');
-  $('review-table').innerHTML = rv.rows.map(r=>`<tr><th>${r[0]}</th><td>${r[1]||'<span class="warn">없음</span>'}</td><td class="muted">${r[2]||''}</td></tr>`).join('');
-  $('evidence').innerHTML = rv.evidence.map(e=>`<li>${e}</li>`).join('');
-  $('e-filled').textContent = '채운 칸: ' + (Object.entries(p.filled||{}).map(([k,v])=>`${k} ${v}`).join(', ')||'없음') + '  (노란 셀, 셀 메모에 근거)';
-  appendLog('보완 완료: '+p.out);
-  saveState({enrich:{out:p.out, json:p.json}});
-}
-async function msPreview(){
-  const r = await pywebview.api.manuscript_preview(S.ms);
-  const s = r.sample.map(x=>`${x.folder}: ${x.count}장  ${x.first.map(p=>p[0]+'→'+p[1]).join(', ')} … ${x.last.map(p=>p[0]+'→'+p[1]).join('')}`).join('<br>');
-  $('ms-list').innerHTML = `회차 폴더 ${r.folders}개, 파일 ${r.files}장` + (r.already.length?` <span class="warn">(이미 변경된 폴더 ${r.already.length}개)</span>`:'') + '<br>' + s;
-}
-async function msApply(){
-  $('btn-msa').disabled=$('btn-msp').disabled=$('btn-msu').disabled=true;
-  $('ms-out').innerHTML='<span class="spin"></span> 이름 변경 중… (진행은 오른쪽 로그)'; appendLog('원고 파일명 변경 시작: '+S.ms);
-  await pywebview.api.manuscript_apply(S.ms);
-}
-async function msUndo(){
-  $('btn-msa').disabled=$('btn-msp').disabled=$('btn-msu').disabled=true; $('ms-out').innerHTML='<span class="spin"></span> 되돌리는 중…';
-  const r = await pywebview.api.manuscript_undo(S.ms);
-  $('ms-out').textContent = `폴더 ${r.folders}개, 파일 ${r.files}장 되돌림`; $('btn-msa').disabled=$('btn-msp').disabled=$('btn-msu').disabled=false;
-}
-async function thumbsPreview(){ const r = await pywebview.api.thumbs_preview(S.th, S.title); $('th-list').textContent = r.slice(0,5).map(p=>p[0]+' → '+p[1]).join('  |  ') + (r.length>5?`  … 총 ${r.length}개`:''); }
-async function thumbsApply(){ $('th-out').innerHTML='<span class="spin"></span> 변경 중…'; const r = await pywebview.api.thumbs_apply(S.th, S.title); $('th-out').textContent = r.error? r.error : `${r.count}개 변경 (되돌리기 가능)`; if(!r.error){ $('btn-tha').disabled=true; saveState({thumbs:{count:r.count}}); } appendLog('썸네일: '+JSON.stringify(r)); }
-async function thumbsUndo(){ const r = await pywebview.api.thumbs_undo(S.th); $('th-out').textContent = `${r.count}개 되돌림`; $('btn-tha').disabled=false; }
-async function convert(){
-  $('conv-out').innerHTML='<span class="spin"></span> 생성 중…';
-  const r = await pywebview.api.convert($('c-xlsx').value || S.enrichedXlsx || S.xlsx, S.ms, S.workJson, $('out-name').value);
-  if(r.error){ $('conv-out').innerHTML=`<span class="bad">${r.error}</span>`; appendLog(r.error); return; }
-  const v = r.verify || {warnings:[]};
-  $('conv-out').innerHTML = `${r.rows}행, 확인 필요 셀 ${r.flags}개 → <a href="#" onclick="pywebview.api.open_path('${r.out.replace(/\\/g,'\\\\')}');return false">${r.out}</a>` + (v.warnings.length ? '<div class="warnbox">' + v.warnings.map(w=>`⚠ ${w}`).join('<br>') + '</div>' : ' <span class="ok">검증 통과(필수 열 채움·행 수 일치·권차 중복 없음)</span>');
-  appendLog(`반입용 생성: ${r.out} (${r.rows}행, 노란 셀 ${r.flags})`);
-  $('k-xlsx').value = r.out; $('t-xlsx').value = r.out;
-  saveState({convert:{out:r.out, rows:r.rows, flags:r.flags}});
 }
 </script>
 </body></html>

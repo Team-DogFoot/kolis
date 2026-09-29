@@ -1,12 +1,13 @@
 # kolis — 웹툰 납본·수집 대행 KOLIS 자동화 (human-in-the-loop)
 
-국립중앙도서관 "웹툰 납본·수집 대행 사업"의 수집·등록·구축·점검 절차를 반자동화하는 프로그램.
-사람이 판정하는 지점(복본 판정, 반입 엑셀 최종 확인, 전거 연결 승인, 점검 결과 확정)은 남기고, 그 사이 손작업을 프로그램이 한다.
+국립중앙도서관 "웹툰 납본·수집 대행 사업"의 수집·등록·구축·점검 절차를 자동화하는 프로그램.
+사람이 판정하는 지점(복본 판정, 반입 엑셀 최종 확인, 전거 연결 승인, 점검 결과 확정)은 남기고, 그 사이 일을 프로그램이 한다.
 
-## 현재 상태 (2026-09-19 00:10, 도서관 PC 세션 종료)
-- **창 하나짜리 프로그램(7단계)** 이 동작한다: 납품 폴더 → 파일명 정리 → 기초메타데이터 보완(클로드 리서치 + 플랫폼 수집) → 반입용 엑셀 → KOLIS 일괄반입 → 전체출력·폴더명 CNTS → 썸네일 등록 반복.
-- **실제 KOLIS 작업 1건 진행 중**: 5-219 '폐급에서 성주까지 레벨업'(접수번호 811, 123건). 일괄반입 → 원문일괄등록(2.3GB) → 일괄정보입력 → 원문등록 완료. 썸네일 7/123 등록. **다음 세션: 7단계로 나머지 116건.**
-- 케나즈 '죽고 못사는 연애'(5-203)는 반입용 엑셀까지 만들어 둠(직원 확인 후 반입).
+## 현재 상태 (2026-09-29)
+- **프로그램 4단계**: ① 납품 폴더 → 반입용 엑셀(에이전트가 한 번에) → ② KOLIS 일괄반입 → ③ 전체출력·폴더명 CNTS·원문일괄등록 → ④ 썸네일 등록 반복.
+- **작품 탭**: 여러 작품을 탭으로 열어 둔다. ①은 동시에 여러 작품(한도 3개), ②~④는 KOLIS 창이 하나라 한 번에 한 작품만.
+- **①은 에이전트(클로드코드 헤드리스)가 한다.** 출판사 엑셀과 원고 읽기, 웹 조사, 칸마다 값 결정, 스스로 검사, 별도 검수까지. 코드는 83열 양식 쓰기와 형식·파일 증거 검사만 한다.
+- ①은 개발용 3작품으로 프로그램 창에서 검증함. ②~④는 09-18~19 에 실제 작품(접수번호 811)으로 검증한 그대로이고, 원문일괄등록 자동화(`kolis_upload.py`)는 아직 실제 화면에서 돌려 보지 않음.
 - 세션 시작은 `CLAUDE.md` → `docs/HANDOFF.md`(0절) → `docs/EXECUTION-LOG.md`. 메모리 사본은 `docs/memory/`.
 
 ## 실행
@@ -14,8 +15,17 @@
 ```
 .\.venv\Scripts\python.exe -m kolis_tool.app
 ```
-전제: Edge 에서 KOLIS 로그인(5·6·7단계), 클로드코드 로그인(3단계), Playwright(`pip install playwright`, 이 PC 의 Edge 사용).
-결과·로그: `work\`(git 제외). 파일 로그 `work\logs\app-YYYYMMDD.log`, 실패 캡처 `work\logs\fail-*.png`, 작업 상태 `work\<작품>.상태.json`.
+전제: 클로드코드 로그인(①), Edge 에서 KOLIS 로그인(②~④), Playwright(이 PC 의 Edge 사용).
+결과·로그: `work\`(git 제외). 파일 로그 `work\logs\app-YYYYMMDD.log`, 실패 캡처 `work\logs\fail-*.png`,
+작품별 `work\<폴더>.상태.json`(진행 상태), `.작업.json`(에이전트 결과), `.로그.json`(탭 로그), 열어 둔 탭 `work\tabs.json`.
+
+## 에이전트
+- 원본: `kolis_tool/agent_home/` — `CLAUDE.md`(역할·일하는 순서), `.claude/skills/prepare-import`(납품 폴더 → 반입용 엑셀), `.claude/skills/research-work`(조사 기준),
+  `.claude/agents/reviewer.md`(검수 에이전트), `knowledge/`(쌓이는 요령, 직원이 고친 내용).
+- 실행할 때 `%LOCALAPPDATA%\kolis_tool\agent\` 에 펼쳐 그 안에서 돈다(저장소 밖: 저장소의 CLAUDE.md 가 섞이지 않게). 도서관 매뉴얼 원문을 `knowledge/rules/` 로 복사한다.
+- 에이전트가 고친 `knowledge/*.md` 는 실행이 끝나면 저장소 원본으로 되가져온다(커밋 대상).
+- 에이전트가 쓰는 명령(이것만 허용): `render`(페이지 열기), `check-research`(조사 결과 검사), `write-import`(반입용 값 검사 + 엑셀 쓰기).
+- 모델은 Sonnet(환경변수 `KOLIS_AGENT_MODEL`), 동시 실행 한도는 3(환경변수 `KOLIS_MAX_AGENTS`).
 
 ## 다른 PC 에서 시작하기
 ```
@@ -29,22 +39,20 @@ claude
 ```
 클로드코드가 뜨면 **"시작"** 이라고 입력한다. 지시는 `docs/HANDOFF.md` 0절.
 
-## 명령줄(프로그램과 같은 기능)
+## 명령줄(점검 도구)
 ```
 python -m kolis_tool unzip    <출판사.zip> -o <폴더>
 python -m kolis_tool inspect  <원문 상위폴더>
-python -m kolis_tool rename   <원문 상위폴더> [--dry-run|--undo]
-python -m kolis_tool thumbs   <회차썸네일 폴더> --title "<제목>" [--dry-run|--undo]
-python -m kolis_tool enrich   <출판사용.xlsx> -o work/보완.xlsx [--json 작품정보.json | --cliptoon 파일…]
-python -m kolis_tool convert  <출판사용.xlsx> --template kolis_tool/templates/import_template_83.xlsx --root <원문 상위폴더> --work-json 작품정보.json -o <반입용.xlsx>
 python -m kolis_tool ids <전체출력.xls> -o work/ids.txt
 python -m kolis_tool mods-fetch work/ids.txt [--preview] -o work/xml --config kolis.json
 python -m kolis_tool mods-check work/xml --wonbu <원부번호> --nth 1
 ```
 
 ## 폴더
-- `kolis_tool/` 본체. `app.py`+`ui/index.html`(창), `enrich.py`(리서치·보완), `platforms.py`(플랫폼 수집), `convert_import.py`, `kolis_ui.py`(KOLIS UI 자동화 공통·일괄반입·전체출력), `kolis_thumbs.py`(썸네일 등록 반복), `cnts_folders.py`, `ids_from_export.py`, `rename_files.py`, `logutil.py`, `templates/import_template_83.xlsx`
-- `docs/HANDOFF.md` 세션 시작 지시·상태 / `docs/EXECUTION-LOG.md` 실제 진행 기록(시각·화면·교훈) / `docs/FIELD-CHECKLIST.md` 현장 확인 / `docs/source/` 도서관 원본 자료 / `docs/memory/` 클로드코드 메모리 사본
-- `bin/` app.vbs·app.bat·단계별 bat, `work/` 산출물(git 제외)
+- `kolis_tool/` 본체. `app.py`+`ui/index.html`(창, 탭), `prepare.py`(① 실행·마무리), `agent.py`(클로드코드 실행기), `agent_home/`(에이전트 작업 공간 원본),
+  `import_writer.py`(83열 쓰기·검사), `checks.py`(조사 결과 검사), `render.py`(페이지 열기), `kolis_ui.py`(KOLIS 화면 조작 공통·일괄반입·전체출력),
+  `kolis_upload.py`(원문일괄등록), `kolis_thumbs.py`(썸네일 등록 반복), `cnts_folders.py`, `ids_from_export.py`, `rename_files.py`, `logutil.py`, `templates/import_template_83.xlsx`
+- `docs/HANDOFF.md` 세션 시작 지시·상태 / `docs/EXECUTION-LOG.md` 실제 진행 기록 / `docs/FIELD-CHECKLIST.md` 현장 확인 / `docs/source/` 도서관 원본 자료 / `docs/memory/` 클로드코드 메모리 사본
+- `bin/` app.vbs·app.bat·setup.bat, `work/` 산출물(git 제외)
 
 계정·비밀번호는 `.env`(git 제외)와 환경변수로만. 클라이언트 원고·HAR·계정이 든 파일은 저장소에 넣지 않는다.

@@ -1,16 +1,25 @@
 ---
 name: kolis-webtoon-project
-description: 국립중앙도서관 웹툰 납본 대행 KOLIS 자동화 — 합의 방향, 프로그램 상태(7단계), 진행 중인 실제 작업(811 썸네일 116건 남음). 세션 시작은 docs/HANDOFF.md
+description: "국립중앙도서관 웹툰 납본 대행 KOLIS 자동화 — 합의 방향, 프로그램 구조(에이전트가 1단계를 한 번에, 작품 탭, 4단계), 시험 재료와 다음 할 일. 세션 시작은 docs/HANDOFF.md"
 metadata:
+  node_type: memory
   type: project
+  originSessionId: 22e5ecb0-8fe0-458a-a579-69788bfa310b
+  modified: 2026-09-29T12:50:35.181Z
 ---
 
-**무엇:** 국립중앙도서관 "웹툰 납본·수집 대행 사업"(KOLIS 등록·MODS 구축·점검, 50,000건) 반자동화. 저장소 `C:\Users\User\dataclip\kolis`(github Team-DogFoot/kolis). 세션 시작은 `CLAUDE.md` → `docs/HANDOFF.md` 0절 → `docs/EXECUTION-LOG.md`.
+**무엇:** 국립중앙도서관 "웹툰 납본·수집 대행 사업"(KOLIS 등록·MODS 구축·점검, 50,000건) 자동화. 저장소 `C:\Users\User\dataclip\kolis`(github Team-DogFoot/kolis). 세션 시작은 `CLAUDE.md` → `docs/HANDOFF.md` 0절 → `docs/EXECUTION-LOG.md`.
 
 **2026-09-12 확정(바꾸지 말 것):** human-in-the-loop(복본 판정·반입 엑셀 확인·전거 승인·점검 확정은 사람) / MODStoXL·정리매크로·다크네이머·하이웨어 안 씀 / 윈도 파이썬+클로드코드 / KOLIS 요청은 직원 입회·동의 아래에서만, 시험 요청 금지 / 계정은 환경변수만.
 
-**2026-09-18 확정:** "1차 명령줄" 대신 **처음부터 pywebview 창 프로그램**, 기능을 하나씩 추가 / 전략: UI 자동화 반자동으로 ①~⑤ 끝까지 → 실제 업무 HAR 관찰 → HTTP 완전 자동화 / 발행일은 회차별 가장 이른 공개일 / LLM=판단, 코드=수집 / ClipToon(직원 도구)은 참고만 / 썸네일 등록은 유저 정의 절차(HANDOFF 3절 7단계).
+**2026-09-18 확정:** 처음부터 pywebview 창 프로그램 / 전략: 화면 조작 반자동으로 끝까지 → 실제 업무 네트워크 기록 관찰 → 요청 방식 완전 자동화 / 발행일은 회차(권)별 가장 이른 공개일 / ClipToon(직원 도구)은 참고만.
 
-**상태(2026-09-19 00:10):** 프로그램 7단계 완성·검증. 실제 작업 5-219 '폐급에서 성주까지 레벨업'(접수번호 811, 123건): 일괄반입·원문일괄등록·일괄정보입력·원문등록 완료, 썸네일 7/123. **다음: 7단계로 116건 등록(접수번호 811, 건수 0).** 케나즈 5-203 은 반입용 엑셀까지(직원 확인 대기). HAR 는 아직 없음(IEChooser 로 받을 것).
+**2026-09-29 확정:** 주 목적은 **프로그램 개발**(작품은 시험 재료) / 읽기·조사·판단은 에이전트, 고정 코드는 양식 쓰기·검증만([[agent-first-fixed-output]]) / 시험은 프로그램 창으로([[test-through-the-program]]) / 납품 폴더 → 반입용 엑셀은 버튼 하나 / 표준 엑셀·`_source` 시트 같은 양식 밖의 것 금지 / 여러 작품을 탭으로 동시에 / 모델 Sonnet, 금액 보고 안 함(구독) / 썸네일이 동봉되지 않으면 등록 안 함.
 
-**Why:** 다음 세션이 상태를 되묻지 않게. **How to apply:** 코드를 고치면 `pythonw` 를 죽이고 바탕화면 바로 가기로 앱을 재시작한다. 실행 기록은 EXECUTION-LOG 에 시각과 함께. 관련: [[kolis-automation-strategy]] [[user-profile]] [[never-reduce-scope-on-my-own]] [[question-means-answer-only]]
+**시험 재료 아끼기:** KOLIS 단계(일괄반입 등)는 작품당 한 번뿐이라 재료가 소모된다 → 한 번에 1작품만 쓰고 재검증할 재료를 남긴다. 개발용 `Downloads\수집자료_개발용_0929`: 원시인 삼촌(2권) → 타임머신 대소동(3권) → 추풍낙엽(5권, 화면 없는 방식 시험용으로 보존). 가원부까지 끝난 자료 `Downloads\가원부번호 2026-1598(접수번호 924).xlsx,etc -2026-09-29`(가원부 1598·1599·1600, 접수 924·923·925)는 구축·점검 개발용, 1건씩. 로컬 단계(1단계)는 몇 번이든 반복 가능.
+
+**상태(2026-09-29):** 프로그램 4단계(① 납품 폴더 → 반입용 엑셀 ② 일괄반입 ③ 전체출력·폴더명·원문일괄등록 ④ 썸네일 등록). ①은 에이전트 작업 공간(`kolis_tool/agent_home/`: 스킬 prepare-import·research-work, 검수 에이전트 reviewer, knowledge/)으로 다시 만들어 프로그램 창에서 검증(작품당 약 10분, 2작품 동시 실행 확인). 개발용 3작품 모두 반입용 엑셀까지 만들어 둠. ②~④는 09-18~19 검증 그대로, `kolis_upload.py`(원문일괄등록)는 미검증. 09-29 에는 KOLIS 에 아무것도 보내지 않음. 네트워크 기록은 아직 0건.
+
+**다음:** 유저가 직원과 원시인 삼촌 반입용 엑셀을 확인한 결과를 알려 줌 → 반영(직원 수정 기록 기능) → 직원 입회 아래 원시인 삼촌으로 KOLIS 단계 + 네트워크 기록(IEChooser) → 등록대상처리·등록원부작성 단계 제작 → 가원부 자료로 구축·점검 → 요청 방식 전환.
+
+**Why:** 다음 세션이 상태를 되묻지 않게. **How to apply:** 코드를 고치면 `pythonw` 를 죽이고 앱을 다시 띄운다. 실행 기록은 EXECUTION-LOG 에. 관련: [[kolis-automation-strategy]] [[user-profile]] [[never-reduce-scope-on-my-own]] [[question-means-answer-only]]

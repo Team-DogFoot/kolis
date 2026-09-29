@@ -1,8 +1,11 @@
 ---
 name: kolis-automation-strategy
-description: KOLIS 자동화 전략(반자동 UI → HAR 관찰 → HTTP)과 실측으로 확인한 KOLIS·IE 모드 자동화 함정 목록(포커스, 체크박스 픽셀, select 방향키, 확인창 연속, 자리표시자 행 등)
+description: "KOLIS 자동화 전략(반자동 UI → HAR 관찰 → HTTP)과 실측으로 확인한 KOLIS·IE 모드 자동화 함정 목록(포커스, 체크박스 픽셀, select 방향키, 확인창 연속, 자리표시자 행 등)"
 metadata:
+  node_type: memory
   type: project
+  originSessionId: 22e5ecb0-8fe0-458a-a579-69788bfa310b
+  modified: 2026-09-29T12:50:52.493Z
 ---
 
 **전략(유저 확정 2026-09-18):** ① pywinauto UI 자동화 + 사람 확인 지점으로 ①~⑤ 전 과정 반자동 완성 → ② 실제 업무 때 IEChooser(`%SystemRoot%\System32\F12\IEChooser.exe`) 로 HAR 를 켜 두고 요청·응답 분석 → HTTP 클라이언트로 교체. 테스트 데이터가 없어 시험 요청 불가. Playwright 는 IE 모드를 못 다루므로 중간 단계로 쓰지 않는다.
@@ -18,5 +21,7 @@ metadata:
 - 원문일괄등록(폴더): 드래그&드롭은 사람이, 그 뒤 전송하기·일괄정보입력·원문등록은 UIA 클릭 가능. DEXT5 진행창은 UIA/win32 로 안 읽힘(캡처만). 원고 폴더 안에 이미지 외 파일이 있으면 33% 에서 멈춤 → 기록 파일은 `_kolis_manifests/` 로.
 - 전체출력 `.xls` = SpreadsheetML(정규식 파싱). 목록 표시 중 접수번호 변경 시 "그리드가 초기화 됩니다" 확인창. 결과표는 가상 스크롤(11행만 읽힘).
 - 소요: 반입 수 분, 원문일괄등록 2.3GB 33분, 일괄정보입력 0.5초/건, 원문등록 2초/건, 썸네일 등록 20~30초/건.
+
+**2026-09-29 추가:** 작품 탭으로 여러 작품을 동시에 다룬다. 1단계(에이전트)는 동시 실행, KOLIS 단계는 화면 조작인 동안 한 번에 한 작품(`app.py` 의 `_kolis_owner` 잠금). 요청 방식으로 옮긴 단계부터 잠금을 푼다(유저가 확인한 방향). 그때 확인할 것: 같은 계정의 동시 요청 허용 여부, 업로드 회선. 구축·점검 화면은 크롬 엔진이라 F12 로 기록을 받을 수 있다. 원문일괄등록의 끌어다 놓은 뒤 과정은 `kolis_upload.py` 로 코드화했지만 실제 화면에서 돌려 보지 않았다.
 
 **How to apply:** 새 KOLIS 단계는 먼저 UIA 로 요소 이름을 읽고 `kolis_ui._act`(누름→확인→재시도) 패턴으로 만들고, 실패 시 캡처(`work/logs/fail-*.png`). 유저 지적: **클릭 자동화는 반드시 클릭 후 상태를 검증**할 것. 관련: [[kolis-webtoon-project]]
