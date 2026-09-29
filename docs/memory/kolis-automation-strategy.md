@@ -1,6 +1,6 @@
 ---
 name: kolis-automation-strategy
-description: "KOLIS 자동화 전략(화면 방식 → 요청 기록 → 요청 방식)과 실측 규칙: IE 모드 함정, 요청 기록 방법(화면 안 기록), 요청 방식은 로그인된 화면 안에서 보냄, 파일 전송 단계는 화면 방식으로 남음"
+description: "KOLIS 화면 방식(Edge·IE 모드 조작)에서 실측한 함정 목록과 요청 기록 방법. 기본 경로는 브라우저 없는 요청 방식으로 바뀌었고(kolis-no-browser-requests), 이 내용은 썸네일 등록·예비용 단계·새 화면의 요청을 알아낼 때 쓴다"
 metadata:
   node_type: memory
   type: project
@@ -8,7 +8,9 @@ metadata:
   modified: 2026-09-29T12:50:52.493Z
 ---
 
-**전략(유저 확정 2026-09-18):** ① pywinauto UI 자동화 + 사람 확인 지점으로 ①~⑤ 전 과정 반자동 완성 → ② 실제 업무 때 IEChooser(`%SystemRoot%\System32\F12\IEChooser.exe`) 로 HAR 를 켜 두고 요청·응답 분석 → HTTP 클라이언트로 교체. 테스트 데이터가 없어 시험 요청 불가. Playwright 는 IE 모드를 못 다루므로 중간 단계로 쓰지 않는다.
+**2026-09-30 에 바뀜:** KOLIS 등록은 브라우저 없이 요청만으로 한다([[kolis-no-browser-requests]]). 아래는 화면 방식의 기록이고, 썸네일 등록(아직 화면 방식)과 새 화면의 요청을 알아낼 때만 쓴다.
+
+**옛 전략(2026-09-18, 끝남):** ① pywinauto UI 자동화 + 사람 확인 지점으로 ①~⑤ 전 과정 반자동 완성 → ② 실제 업무 때 IEChooser(`%SystemRoot%\System32\F12\IEChooser.exe`) 로 HAR 를 켜 두고 요청·응답 분석 → HTTP 클라이언트로 교체. 테스트 데이터가 없어 시험 요청 불가. Playwright 는 IE 모드를 못 다루므로 중간 단계로 쓰지 않는다.
 
 **KOLIS/IE 모드 자동화에서 실측한 규칙(2026-09-18~19):**
 - 주소 직접 입력 → 로그인 풀림. 메뉴 클릭(수집→납본→온라인 납본자료접수)만. 공지 레이어 `fixedNotice` 닫기.
