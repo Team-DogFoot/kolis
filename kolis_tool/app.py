@@ -14,7 +14,7 @@ import os
 
 HERE = Path(__file__).parent
 MAX_AGENTS = max(1, int(os.environ.get("KOLIS_MAX_AGENTS", "3")))      # 에이전트 동시 실행 한도
-KOLIS_KINDS = ("kolis", "kolis_submit", "export", "upload_open", "upload", "thumbs_register", "register", "register_export")
+KOLIS_KINDS = ("flow", "kolis", "kolis_submit", "export", "upload_open", "upload", "thumbs_register", "register", "register_export")
 
 
 class Api:
@@ -445,6 +445,32 @@ class Api:
                 "remaining": w.get("remaining") or [], "finalize": w.get("finalize") or {}, "run": w.get("run") or {},
                 "platforms": [{"name": p.get("name"), "status": p.get("status"), "start_date": p.get("start_date"), "url": p.get("url_work")} for p in res.get("platforms") or []],
                 "searched": len(res.get("searched") or [])}
+
+    # ---------- 2. KOLIS 등록 전체(반입 → 원문 → 가원부번호)를 한 번에 ----------
+    def flow_run(self, tab: str, folder: str, note: str, yes: str, receipt: str = "", mode: str = "request") -> dict:
+        """반입용 엑셀 확인(사람) 뒤의 KOLIS 단계를 이어서 한다. 끝난 단계는 건너뛴다(이어서 하기)."""
+        from . import kolis_flow, prepare
+        w = prepare.load(Path(folder), self._work_dir) or {}
+        if not w.get("output_xlsx"):
+            return {"error": "반입용 엑셀이 없습니다. 1단계를 먼저 실행하세요"}
+        handle = self._jobs[tab] = {"cancel": False}
+        def send(fn, *args):
+            if self._window:
+                self._window.evaluate_js(f"{fn}({', '.join(json.dumps(a, ensure_ascii=False) for a in args)})")
+        def job():
+            try:
+                return kolis_flow.run(w, self.load_state(folder), lambda p: self.save_state(folder, p), note.strip(), yes, self._work_dir,
+                                      self._kolis_log(tab), handle, lambda key, status, text="": send("onFlowStep", key, status, text, tab),
+                                      receipt, lambda i, r: send("onThumbProgress", {"i": i, **r}, tab), "screen" if mode == "screen" else "request")
+            except kolis_flow.Stop as e:
+                raise SystemExit(str(e)) from e
+            finally:
+                self._jobs.pop(tab, None)
+        return self._run("flow", job, capture=True, tab=tab)
+
+    def flow_steps(self) -> list:
+        from . import kolis_flow
+        return [list(s) for s in kolis_flow.STEPS]
 
     # ---------- 5. KOLIS 일괄반입 준비 (직원 입회) ----------
     def kolis_prepare(self, tab: str, xlsx: str, note: str) -> dict:

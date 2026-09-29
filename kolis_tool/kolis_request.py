@@ -21,6 +21,8 @@ REG_CODE = "FTX"
 WONMUN_SVC = "07"           # 납본뷰어
 S_RECEIVED, S_TARGET, S_RECORD = "DS_1100", "DS_2100", "DS_3100"      # 접수 / 낱권등록대상 / 등록가원부자료
 
+U_IMPORT = "/online/reg/bo/accrectarget/fileUpload.do"
+IMPORT_DIR = "/Upload1/jangseo/ImpCont/amcont/"
 U_KEY = "/online/acq/bodepst/depstrecet/onlineDepstRecet/getReceiptKeyByRcptNo.do"
 U_LIST = "/online/acq/bodepst/depstrecet/onlineDepstRecet/selectMultipleOnlineDepstrecetList.do"
 U_TARGET = "/online/acq/bodepst/depstrecet/onlineDepstRecet/updateTargetProcessing.do"
@@ -47,11 +49,17 @@ class Stop(RuntimeError):
     pass
 
 
+class NotSent(Stop):
+    """요청이 KOLIS 로 나가지 않았다(화면을 못 찾음, 스크립트 오류). KOLIS 의 자료는 바뀌지 않았으므로 화면 방식으로 바꿔 진행해도 된다."""
+
+
 # ---------- 화면 안에서 요청 보내기 ----------
 SEND = r"""
 (function(id, method, url, ctype, body){
+  var b64 = null;
+  if (body && body.indexOf('base64:') === 0) { b64 = body.substring(7); body = null; }
   window.__kolisReq = window.__kolisReq || {};
-  var slot = window.__kolisReq[id] = {done: false, status: 0, text: '', error: ''};
+  var slot = window.__kolisReq[id] = {done: false, sent: false, status: 0, text: '', error: ''};
   try {
     var x = new XMLHttpRequest();
     x.open(method, url, true);
@@ -63,14 +71,22 @@ SEND = r"""
       try { slot.status = x.status; slot.text = x.responseText; } catch (e) { slot.error = '' + (e.message || e); }
       slot.done = true;
     };
-    x.send(body);
+    if (b64) {                       // 파일이 든 본문: 프로그램이 만든 바이트를 그대로 보낸다
+      var bin = window.atob(b64), n = bin.length, u = new Uint8Array(n);
+      for (var i = 0; i < n; i++) u[i] = bin.charCodeAt(i);
+      slot.sent = true;
+      x.send(u.buffer);
+    } else {
+      slot.sent = true;
+      x.send(body);
+    }
   } catch (e) { slot.error = '' + (e.message || e); slot.done = true; }
 })(%s, %s, %s, %s, %s);
 """
 READ = r"""
 (function(id){
   var s = (window.__kolisReq || {})[id], out = '';
-  if (s && s.done) { out = s.status + '\n' + s.error + '\n' + s.text; delete window.__kolisReq[id]; }
+  if (s && s.done) { out = s.status + '\n' + (s.sent ? 'sent' : 'notsent') + '\n' + s.error + '\n' + s.text; delete window.__kolisReq[id]; }
   document.documentElement.setAttribute('data-kolis-req', out);
 })(%s);
 """
@@ -83,9 +99,11 @@ def _js(v) -> str:
 class Page:
     """로그인된 KOLIS 화면 하나. 알림창·대화 상자 뒤에 가려 멈춰 있는 화면은 쓰지 않는다."""
 
-    def __init__(self, log=None):
+    def __init__(self, log=None, journal=None):
         self.log = log or (lambda m: None)
+        self.journal = journal          # 보낸 것과 받은 것을 전부 남기는 기록(journal.Journal)
         self.doc = None
+        self.count = 0
 
     def _find(self):
         from . import ie_dom
@@ -96,24 +114,53 @@ class Page:
                 continue
             if url.startswith(BASE + "/") and "login" not in url.lower():
                 return top
-        raise Stop("로그인된 KOLIS 화면을 찾지 못했습니다. Edge 에서 KOLIS 에 로그인하고, 떠 있는 알림창·팝업을 닫은 뒤 다시 실행하세요")
+        raise NotSent("로그인된 KOLIS 화면을 찾지 못했습니다. Edge 에서 KOLIS 에 로그인하고, 떠 있는 알림창·팝업을 닫은 뒤 다시 실행하세요")
 
-    def send(self, method: str, path: str, body: str | None, ctype: str | None, wait: float = 60.0) -> dict:
-        """응답을 JSON 으로 돌려준다. 로그인 화면이 돌아오면(세션 끊김) 멈춘다."""
-        if self.doc is None:
-            self.doc = self._find()
-        rid = uuid.uuid4().hex
-        win = self.doc.parentWindow
-        win.execScript(SEND % (_js(rid), _js(method), _js(BASE + path), _js(ctype), _js(body)), "JavaScript")
+    def _note(self, **row):
+        if self.journal:
+            self.journal.write("request", **row)
+
+    def send(self, method: str, path: str, body: str | None, ctype: str | None, wait: float = 60.0, shown: str | None = None) -> dict:
+        """응답을 JSON 으로 돌려준다. 로그인 화면이 돌아오면(세션 끊김) 멈춘다. 보낸 것과 받은 것을 기록에 남긴다.
+        shown: 기록에 남길 본문(파일이 든 본문은 바이트 대신 항목 요약을 남긴다)."""
+        self.count += 1
+        n, t0 = self.count, time.time()
+        shown = body if shown is None else shown
+        self.log(f"  요청 {n}: {method} {path} (본문 {len(body or '')}자)")
+        self._note(n=n, phase="send", method=method, path=path, content_type=ctype, body=shown)
+        try:
+            if self.doc is None:
+                self.doc = self._find()
+            page = str(self.doc.URL)
+            rid = uuid.uuid4().hex
+            win = self.doc.parentWindow
+            win.execScript(SEND % (_js(rid), _js(method), _js(BASE + path), _js(ctype), _js(body)), "JavaScript")
+        except Stop:
+            self._note(n=n, phase="fail", sent=False, error="로그인된 KOLIS 화면 없음")
+            raise
+        except Exception as e:  # noqa: BLE001
+            self._note(n=n, phase="fail", sent=False, error=f"{type(e).__name__}: {e}")
+            raise NotSent(f"화면에 요청 스크립트를 넣지 못했습니다({path}): {type(e).__name__}: {str(e)[:120]}") from e
         end = time.time() + wait
         while time.time() < end:
             time.sleep(0.2)
-            win.execScript(READ % _js(rid), "JavaScript")
-            raw = str(self.doc.documentElement.getAttribute("data-kolis-req") or "")
+            try:
+                win.execScript(READ % _js(rid), "JavaScript")
+                raw = str(self.doc.documentElement.getAttribute("data-kolis-req") or "")
+            except Exception as e:  # noqa: BLE001
+                self._note(n=n, phase="fail", sent=None, error=f"응답을 읽다가 {type(e).__name__}: {e}")
+                raise Stop(f"요청을 보낸 뒤 화면을 읽지 못했습니다({path}). 요청이 처리됐는지 KOLIS 에서 확인하세요: {type(e).__name__}") from e
             if raw:
                 self.doc.documentElement.setAttribute("data-kolis-req", "")
-                return parse(raw, path)
-        raise Stop(f"{wait:.0f}초 안에 응답이 없습니다: {path}")
+                sec = round(time.time() - t0, 2)
+                status, sent, error, text = (raw.split("\n", 3) + ["", "", ""])[:4]
+                self._note(n=n, phase="response", page=page, status=status, sent=sent == "sent", error=error, seconds=sec, chars=len(text), response=text[:20000])
+                self.log(f"  응답 {n}: 상태 {status}, {len(text)}자, {sec}초" + (f", 오류 {error}" if error else ""))
+                if sent != "sent":
+                    raise NotSent(f"요청이 나가지 않았습니다({path}): {error or '이유 없음'}")
+                return parse(f"{status}\n{error}\n{text}", path)
+        self._note(n=n, phase="fail", sent=None, error=f"{wait:.0f}초 안에 응답 없음")
+        raise Stop(f"{wait:.0f}초 안에 응답이 없습니다: {path}. 요청이 처리됐는지 KOLIS 에서 확인하세요")
 
 
 def parse(raw: str, path: str = "") -> dict:
@@ -162,6 +209,56 @@ def body_make(year: str, items: list[dict]) -> str:
 def body_mng_list(year: str, no: str) -> str:
     return urlencode({"acc_rec_key": "", "key_arr": "", "har_stat_cd": "20", "use_limit_code": "", "reg_code": REG_CODE,
                       "accession_rec_make_year": year, "rec_no_yn": "N", "accession_rec_no": no, "species": "", "book": "", "missingregnocnt": ""})
+
+
+def multipart(fields: list[tuple[str, str]], file_field: str, file_path: Path, at: int, boundary: str = "") -> tuple[str, bytes]:
+    """파일 첨부 형식의 본문. 화면의 폼과 같은 순서로 항목을 넣는다(at = 파일 항목이 들어갈 자리). (Content-Type, 본문 바이트)"""
+    boundary = boundary or "----kolisFormBoundary" + uuid.uuid4().hex[:16]
+    file_path = Path(file_path)
+    parts = [f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode("utf-8") for k, v in fields]
+    head = (f'--{boundary}\r\nContent-Disposition: form-data; name="{file_field}"; filename="{file_path.name}"\r\n'
+            "Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n\r\n").encode("utf-8")
+    parts.insert(at, head + file_path.read_bytes() + b"\r\n")
+    return f"multipart/form-data; boundary={boundary}", b"".join(parts) + f"--{boundary}--\r\n".encode("ascii")
+
+
+def import_fields(year: str, note: str) -> list[tuple[str, str]]:
+    """일괄반입 팝업의 폼 항목(2026-09-29 기록의 순서와 값). 접수 키·접수번호는 비워 보낸다(KOLIS 가 새 접수번호를 만든다)."""
+    return [("acquisit_code", "1"), ("acquisit_year", year), ("work_code", WORK_CODE), ("receipt_key", ""), ("receipt_no", ""),
+            ("working_status", S_RECEIVED), ("har_stat_cd", "14"), ("desc", note), ("ipt_acquisit_year", year), ("s_work_code", WORK_CODE),
+            ("ipt_desc", note), ("work_dir_path", IMPORT_DIR)]
+
+
+def import_excel(page: Page, year: str, note: str, xlsx: Path, rows: int, yes: str, log=None) -> dict:
+    """일괄반입을 요청으로. 반입은 되돌릴 수 없다: 보내기 전에 조건을 확인하고, 보낸 뒤 목록을 읽어 건수를 맞춰 본다.
+    요청이 나가지 않았으면 NotSent(화면 방식으로 바꿔도 됨), 나간 뒤의 실패는 Stop(다시 반입하면 안 됨)."""
+    import base64
+    log = log or (lambda m: None)
+    if yes != "YES":
+        raise Stop("반입은 직원 동의 후 YES 를 넘겨야 합니다")
+    xlsx = Path(xlsx)
+    if not xlsx.is_file() or xlsx.suffix.lower() != ".xlsx":
+        raise NotSent(f"반입용 엑셀이 없거나 xlsx 가 아닙니다: {xlsx}")
+    if not note or re.search(r"\(차\)|\(\)", note):
+        raise NotSent("비고에 차수와 번호가 없습니다")
+    size = xlsx.stat().st_size
+    fields = import_fields(year, note)
+    ctype, body = multipart(fields, "file_name", xlsx, 11)
+    log(f"일괄반입 요청: 파일 {xlsx.name} ({size:,}바이트, {rows}행), 비고 '{note}', 수입년도 {year}, 업무구분 {WORK_CODE}")
+    page.send("POST", "/main/sessionDelay.do", None, None, wait=20)        # 로그인 상태 확인(화면이 주기적으로 보내는 것과 같은 요청, 자료를 바꾸지 않음)
+    d = page.send("POST", U_IMPORT, "base64:" + base64.b64encode(body).decode("ascii"), ctype, wait=900,
+                  shown=json.dumps({"fields": fields, "file": {"name": xlsx.name, "bytes": size}}, ensure_ascii=False))
+    receipt = _text(d.get("receiptno"))
+    if not receipt.isdigit():
+        raise Stop(f"반입 응답에 접수번호가 없습니다: {str(d)[:200]}. KOLIS 에서 반입됐는지 확인하세요(다시 반입하지 마세요)")
+    if int(d.get("file_size") or 0) != size:
+        log(f"경고: KOLIS 가 받은 크기 {d.get('file_size')} ≠ 보낸 파일 크기 {size}")
+    items = receipt_items(page, year, receipt)
+    if rows and len(items) != rows:
+        raise Stop(f"반입은 됐지만(접수번호 {receipt}) 목록이 {len(items)}건으로 반입용 엑셀 {rows}행과 다릅니다 → 직원 확인")
+    log(f"반입 완료: 접수번호 {receipt}, {len(items)}건 ({items[0]['CONTENTS_ID']} … {items[-1]['CONTENTS_ID']})")
+    return {"receipt": receipt, "count": len(items), "file_size": d.get("file_size"), "message": _text(d.get("msg")), "ok": True,
+            "ids": [i["CONTENTS_ID"] for i in items], "titles": sorted({_text(i.get("TITLE")) for i in items})}
 
 
 # ---------- 읽기 ----------
@@ -317,19 +414,27 @@ def export_record(page: Page, year: str, no: str, receipt: str, work_dir: Path =
     return {"file": str(out), "count": len(items), "no": no, "year": year, "receipt": receipt, "ids": [i["CONTENTS_ID"] for i in items]}
 
 
-def run(receipt: str, year: str, work_dir: Path = Path("work"), log=None, handle: dict | None = None, yes: str = "") -> dict:
+def run(receipt: str, year: str, work_dir: Path = Path("work"), log=None, handle: dict | None = None, yes: str = "", page: Page | None = None) -> dict:
     """등록대상처리 → 가원부번호 → 가원부 파일. 화면 방식 `kolis_register.run` 과 같은 결과를 돌려준다."""
     handle = handle or {}
-    page = Page(log)
-    a = target_process(page, year, receipt, yes, log)
+    log = log or (lambda m: None)
+    page = page or Page(log)
+    if receipt_items(page, year, receipt):
+        a = target_process(page, year, receipt, yes, log)
+    else:          # 앞 실행이 등록대상처리까지 하고 멈춘 경우: 등록원부작성 목록에 있으면 이어서 한다
+        made = make_items(page, year, receipt)
+        if not made:
+            raise Stop(f"접수번호 {receipt} 가 납본자료접수에도 등록원부작성에도 없습니다(번호가 틀렸거나 이미 가원부번호를 받음) → KOLIS 에서 확인")
+        log(f"납본자료접수 목록에 없음 — 등록대상처리는 이미 된 상태. 등록원부작성 목록 {len(made)}건으로 이어서 진행")
+        a = {"receipt": receipt, "count": len(made), "ids": [i["CONTENTS_ID"] for i in made], "already": True}
     if handle.get("cancel"):
         raise Stop("사용자가 중단함(등록대상처리까지 끝남)")
     b = make_record(page, year, receipt, yes, log)
     if handle.get("cancel"):
         raise Stop(f"사용자가 중단함(가원부번호 {year}-{b['no']} 발급까지 끝남)")
     c = export_record(page, year, b["no"], receipt, work_dir, log)
-    if c["count"] != a["count"]:
-        raise Stop(f"등록대상처리 {a['count']}건, 가원부 파일 {c['count']}건으로 다릅니다")
+    if c["count"] != a["count"] or sorted(c["ids"]) != sorted(a["ids"]):
+        raise Stop(f"등록대상처리한 자료({a['count']}건)와 가원부 파일의 자료({c['count']}건)가 다릅니다 → 직원 확인")
     return {"receipt": receipt, "target": a, "record": b, "export": c, "record_no": f"{year}-{b['no']}", "file": c["file"], "count": c["count"]}
 
 
@@ -350,7 +455,7 @@ class Replay:
         self.sent: list[dict] = []
         self.used: dict[str, int] = {}
 
-    def send(self, method, path, body, ctype, wait=0):
+    def send(self, method, path, body, ctype, wait=0, shown=None):
         found = [r for r in self.rows if r["url"].split("?")[0] == BASE + path]
         if not found:
             raise Stop(f"기록에 없는 주소: {path}")
@@ -381,6 +486,22 @@ def check_saved(rec_root: Path = Path("work/captures/rec"), work_dir: Path = Pat
         r = export_receipt(p, "2026", "939", Path(td))
         a, b = receipt_map(Path(r["file"])), receipt_map(work_dir / "접수번호 939.xls")
         out.append(f"요청으로 만든 접수 목록 파일 → 폴더명 단계가 읽는 값: {'전체출력 파일과 같음' if a == b else '다름'} ({len(a)}건), MODS {len(list((Path(td) / 'xml').glob('*.xml')))}건")
+    # 일괄반입 본문: 항목 이름·순서가 기록(화면의 폼)과 같은가, 파일이 그대로 들어가는가
+    import email, email.policy
+    rec_fields = next(r for f in sorted(Path(rec_root).glob("*/requests.jsonl")) for r in map(json.loads, f.read_text(encoding="utf-8", errors="replace").splitlines())
+                      if r.get("kind") == "ajaxSubmit")["fields"]
+    x = Path(next(f["value"] for f in rec_fields if f["type"] == "file"))
+    note = next(f["value"] for f in rec_fields if f["name"] == "desc")
+    if x.is_file():
+        ctype, raw = multipart(import_fields("2026", note), "file_name", x, 11)
+        msg = email.message_from_bytes(b"Content-Type: " + ctype.encode() + b"\r\n\r\n" + raw, policy=email.policy.HTTP)
+        got = [(p.get_param("name", header="content-disposition"), p.get_payload(decode=True)) for p in msg.iter_parts()]
+        same_names = [n for n, _ in got] == [f["name"] for f in rec_fields]
+        same_vals = all(v.decode("utf-8") == f["value"] for (n, v), f in zip(got, rec_fields) if f["type"] != "file")
+        same_file = dict(got)["file_name"] == x.read_bytes()
+        out.append(f"일괄반입 본문: 항목 이름·순서 {'같음' if same_names else '다름'}, 값 {'같음' if same_vals else '다름'}, 파일 바이트 {'같음' if same_file else '다름'} ({len(raw):,}바이트)")
+    else:
+        out.append(f"일괄반입 본문: 기록에 있는 파일이 없어 확인하지 못함({x.name})")
     out.append("등록대상처리 본문: " + ("기록과 같음" if body_target(list(reversed(items))) == next(
         r["body"] for r in p.rows if r["url"].endswith("updateTargetProcessing.do")) else "기록과 다름"))
     made = make_items(p, "2026", "939")

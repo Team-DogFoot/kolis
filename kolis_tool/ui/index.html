@@ -73,16 +73,29 @@
     </details>
   </section>
 
-  <section class="card"><h2><span class="step">2</span> KOLIS 일괄반입 준비 <span class="warn" style="font-size:12px">직원 입회 아래에서만</span></h2>
+  <section class="card"><h2><span class="step">2</span> KOLIS 등록 — 반입부터 가원부번호까지 한 번에 <span class="warn" style="font-size:12px">직원 입회 아래에서만</span></h2>
+    <p class="muted" style="margin:0 0 6px">직원과 반입용 엑셀을 확인한 뒤 실행합니다. Edge 에서 KOLIS 에 로그인해 둔 상태여야 합니다. 중간에 멈추면 이유를 고친 뒤 다시 실행하세요. 끝난 단계는 건너뛰고 이어서 합니다(반입은 두 번 하지 않습니다). 실행 중에는 마우스와 Edge 창을 건드리지 마세요.</p>
+    <table class="form">
+      <tr><th>① 비고</th><td><input type="text" id="k-note" placeholder="2026-납본-웹툰대행(차)()" style="min-width:320px"> <span class="muted" style="font-size:12px">차수와 번호를 넣습니다</span></td></tr>
+      <tr><th>② 반입용 엑셀</th><td><span id="f-xlsx" class="muted"></span></td></tr>
+      <tr><th>③ 접수번호</th><td><input type="text" id="f-receipt" placeholder="비워 둠" style="max-width:120px"> <span class="muted" style="font-size:12px">처음 실행할 때는 비워 둡니다(반입하면 생깁니다). 이미 반입한 작품을 이어서 할 때만 넣습니다</span></td></tr>
+      <tr><th>④ 방식</th><td><select id="f-mode" style="max-width:520px"><option value="request">요청 방식 우선 — 화면을 누르지 않고 진행. 요청이 나가지 않을 때만 화면 방식으로 바꿈</option><option value="screen">화면 방식 — Edge 화면을 눌러서 진행</option></select></td></tr>
+      <tr><th>⑤ 실행</th><td><div class="row" style="margin:0"><input type="text" id="f-yes" placeholder="엑셀 확인 후 YES 입력" style="max-width:200px"><button id="btn-flow" class="danger" onclick="flowRun()">실행</button><button id="btn-fcancel" class="danger" onclick="cancelJob()" hidden>중단</button><span id="f-out" class="muted"></span></div></td></tr>
+      <tr><th>⑥ 진행</th><td><div id="f-steps" style="font-size:13px;line-height:1.7"></div></td></tr>
+    </table>
+  </section>
+
+  <details id="steps-box" style="margin:0 0 12px"><summary class="muted" style="cursor:pointer;padding:4px 2px">단계별로 따로 실행 — 문제가 생겨 한 단계만 다시 해야 할 때</summary>
+  <section class="card"><h2><span class="step" style="background:#8a93a3">2-1</span> KOLIS 일괄반입 준비 <span class="warn" style="font-size:12px">직원 입회 아래에서만</span></h2>
     <p class="muted" style="margin:0 0 6px">Edge 에서 KOLIS 에 로그인해 둔 상태여야 합니다. 프로그램이 그 창에서 납본자료접수 → 일괄반입 → 확인(신규 접수번호 생성) → 비고 → 첨부파일까지 채웁니다. <b>'반입' 버튼은 누르지 않습니다.</b></p>
-    <div class="row"><label>비고 <input type="text" id="k-note" placeholder="2026-납본-웹툰대행(차)()" style="min-width:320px"></label></div>
+    <div class="row"><label>비고 <span class="muted">위 2번의 ① 비고를 씁니다</span></label></div>
     <div class="row"><input type="text" id="k-xlsx" placeholder="반입용 엑셀 경로(1단계 결과가 자동으로 들어감)"><button class="secondary" onclick="pickInto('k-xlsx')">찾아보기</button></div>
     <div class="row"><button id="btn-kprep" onclick="kolisPrepare()">일괄반입 준비</button><span id="k-out" class="muted"></span></div>
     <div id="k-fields" class="muted" style="font-size:12px"></div>
     <div class="row" style="margin-top:10px"><input type="text" id="k-yes" placeholder="직원 동의 후 YES 입력" style="max-width:200px"><button id="btn-ksub" class="danger" onclick="kolisSubmit()">반입 실행</button><span id="k-sub" class="muted"></span></div>
   </section>
 
-  <section class="card"><h2><span class="step">3</span> 반입 결과 → 원고 폴더명을 콘텐츠ID로</h2>
+  <section class="card"><h2><span class="step" style="background:#8a93a3">2-2</span> 반입 결과 → 원고 폴더명을 콘텐츠ID로</h2>
     <p class="muted" style="margin:0 0 6px">가이드 3.4-가. KOLIS 화면에서 "전체출력"을 눌러 내려받은 파일(접수번호 ↔ 콘텐츠ID)로 회차 폴더 이름을 CNTS-… 로 바꿉니다. 원문일괄등록(폴더)은 이 이름을 기준으로 합니다.</p>
     <div class="row"><label>접수번호 <input type="text" id="x-receipt" placeholder="예: 811" style="max-width:120px"></label><button class="secondary" onclick="exportDownload()">KOLIS 에서 전체출력 받기</button><button class="secondary" onclick="exportDownload('request')" title="화면을 누르지 않고 목록을 요청으로 받습니다(읽기만 함). 실제 실행 전">요청 방식으로 받기</button><span id="x-out" class="muted"></span></div>
     <p class="muted" style="margin:0 0 6px;font-size:12px">홈 등 다른 화면이어도 납본자료접수로 이동해 접수번호로 찾은 뒤 전체출력합니다. 접수번호를 비우면 지금 화면의 목록을 그대로 출력합니다.</p>
@@ -96,7 +109,7 @@
     <div id="u-list" class="muted" style="font-size:12px"></div>
   </section>
 
-  <section class="card"><h2><span class="step">4</span> 썸네일 등록 반복 <span class="warn" style="font-size:12px">직원 입회 아래에서만</span></h2>
+  <section class="card"><h2><span class="step" style="background:#8a93a3">2-3</span> 썸네일 등록 반복 <span class="warn" style="font-size:12px">직원 입회 아래에서만</span></h2>
     <p class="muted" style="margin:0 0 6px">원문일괄등록이 끝난 뒤. KOLIS 납본자료접수에서 접수번호로 찾기 → 전체 선택 → <b>수정</b> 팝업을 연 상태에서 실행합니다. 지금 열린 건부터 '다음'으로 넘기며 건마다: 비정상 행 삭제·저장 → 열람 행 체크 → 원문등록(썸네일, 유형 검증) → 저장. 예상과 다르면 그 자리에서 멈춥니다.</p>
     <div class="row"><input type="text" id="t-xlsx" placeholder="반입용 엑셀 (편/권차 ↔ 썸네일 파일명 기준, 4단계 결과가 자동으로 들어감)"><button class="secondary" onclick="pickInto('t-xlsx')">찾아보기</button></div>
     <div class="row"><input type="text" id="t-dir" placeholder="썸네일 폴더 (1단계에서 자동으로 들어감)"><button class="secondary" onclick="pickFolderInto('t-dir')">찾아보기</button></div>
@@ -106,22 +119,23 @@
     <div id="t-list" class="muted" style="font-size:12px;max-height:160px;overflow:auto"></div>
   </section>
 
-  <section class="card"><h2><span class="step">5</span> 등록대상처리 → 가원부번호 <span class="warn" style="font-size:12px">직원 입회 아래에서만</span></h2>
+  <section class="card"><h2><span class="step" style="background:#8a93a3">2-4</span> 등록대상처리 → 가원부번호 <span class="warn" style="font-size:12px">직원 입회 아래에서만</span></h2>
     <p class="muted" style="margin:0 0 6px">원문과 썸네일 등록이 끝난 뒤. ① 납본자료접수에서 접수번호 전체를 <b>등록대상처리</b> → ② 등록원부작성에서 원문서비스구분 "07 | 납본뷰어"로 <b>가원부번호 발급</b> → ③ 등록원부관리에서 전체출력을 받아 <b>"가원부번호 연도-번호(접수번호 N).xlsx"</b> 로 저장합니다(주무관에게 보내는 파일). 이용대상·서비스범위가 섞여 있으면 멈춥니다.</p>
     <div class="row"><label>방식 <select id="g-mode" style="max-width:420px"><option value="screen">화면 방식 — Edge 화면을 눌러서 진행(한 번에 한 작품)</option><option value="request">요청 방식 — 화면을 누르지 않음(여러 작품 동시 가능, 실제 실행 전)</option></select></label></div>
     <div class="row"><label>접수번호 <input type="text" id="g-receipt" placeholder="예: 939" style="max-width:120px"></label><input type="text" id="g-yes" placeholder="직원 동의 후 YES 입력" style="max-width:200px"><button id="btn-reg" class="danger" onclick="registerRun()">실행</button><span id="g-out" class="muted"></span></div>
     <div class="row"><label>가원부번호 <input type="text" id="g-no" placeholder="예: 2026-1615" style="max-width:160px"></label><button id="btn-regx" class="secondary" onclick="registerExport()">가원부 파일만 다시 받기</button></div>
     <div id="g-list" class="muted" style="font-size:12px"></div>
   </section>
+  </details>
 </div>
 <div id="right"><div id="log-title">로그</div><div id="log"></div></div>
 </main>
 <script>
 // 작품 탭: 탭마다 입력값·결과·로그·진행 상태를 따로 가진다. 화면(DOM)은 하나이고, 탭을 바꿀 때 값을 넣고 뺀다.
 const BATCH_DEFAULT = '2026-납본-웹툰대행(차)()';
-const INPUTS = ['folder','batch','instr','out-name','k-note','k-xlsx','x-receipt','x-file','x-root','t-xlsx','t-dir','t-receipt','t-count','g-receipt','g-no','g-mode'];
-const OUTS = ['out-hint','run-out','s-state','k-out','k-fields','k-sub','x-out','c-out','c-list','u-out','u-list','t-out','t-list','g-out','g-list'];
-const KOLIS_KINDS = ['kolis','kolis_submit','export','upload','thumbs_register'];
+const INPUTS = ['folder','batch','instr','out-name','k-note','k-xlsx','x-receipt','x-file','x-root','t-xlsx','t-dir','t-receipt','t-count','g-receipt','g-no','g-mode','f-receipt','f-mode'];
+const OUTS = ['out-hint','run-out','s-state','k-out','k-fields','k-sub','x-out','c-out','c-list','u-out','u-list','t-out','t-list','g-out','g-list','f-out','f-steps','f-xlsx'];
+const KOLIS_KINDS = ['flow','kolis','kolis_submit','export','upload','thumbs_register'];
 const T = [];           // 탭 목록
 let CUR = null;         // 지금 보이는 탭
 let SEQ = 0;
@@ -149,8 +163,10 @@ function show(){
   const t = CUR;
   INPUTS.forEach(id => { $(id).value = t.v[id] == null ? '' : t.v[id]; });
   if(!$('g-mode').value) $('g-mode').value = 'screen';
+  if(!$('f-mode').value) $('f-mode').value = 'request';
   OUTS.forEach(id => { $(id).innerHTML = t.html[id] || ''; });
-  $('k-yes').value = ''; $('u-yes').value = ''; $('g-yes').value = '';
+  $('k-yes').value = ''; $('u-yes').value = ''; $('g-yes').value = ''; $('f-yes').value = '';
+  flowShow(t);
   if(t.work) showResult(t); else $('result').hidden = true;
   buttons(t); outHint(t);
   $('log').textContent = GLOBAL_LOG.concat(t.log).sort((a,b)=>a[0]-b[0]).map(x=>x[1]).join('\n') + '\n';
@@ -175,6 +191,7 @@ function buttons(t){
   const r = t.running;
   $('btn-run').disabled = !t.v.folder || !!r.prepare; $('btn-run').textContent = t.work ? '다시 실행' : '실행';
   $('btn-cancel').hidden = !r.prepare; $('btn-cancel').disabled = false;
+  $('btn-flow').disabled = !!r.flow || !t.work; $('btn-fcancel').hidden = !r.flow; $('btn-flow').textContent = flowStarted(t) ? '이어서 실행' : '실행';
   $('btn-kprep').disabled = !!r.kolis; $('btn-ksub').disabled = !!r.kolis_submit;
   $('btn-upl').disabled = !!r.upload; $('btn-ucancel').hidden = !r.upload; $('btn-uopen').disabled = !!r.upload_open;
   $('btn-treg').disabled = !!r.thumbs_register; $('btn-tcancel').hidden = !r.thumbs_register;
@@ -235,6 +252,7 @@ async function savePrompt(){ await pywebview.api.save_prompt($('prompt-text').va
 async function resetPrompt(){ await pywebview.api.save_prompt(''); await loadPrompt(); $('prompt-out').innerHTML='<span class="ok">지움</span>'; }
 window.addEventListener('pywebviewready', async () => {
   loadRecent(); loadPrompt();
+  FLOW_STEPS = await pywebview.api.flow_steps();
   const saved = await pywebview.api.tabs_load();
   (saved.tabs||[]).forEach(s => newTab({id:s.id, title:s.title||'', v:{folder:s.folder||'', batch:s.batch||BATCH_DEFAULT, instr:s.instr||'', 't-count':'0'}}));
   if(!T.length) newTab();
@@ -386,6 +404,31 @@ function registerExport(){
   const m = $('g-mode').value;
   kolisCall('register_export', 'g-out', t => pywebview.api.register_export(t.id, no, rc, m), '<span class="spin"></span> 진행 중… ' + (m==='request' ? '(요청 방식)' : '(Edge 창을 건드리지 마세요)'));
 }
+let FLOW_STEPS = [];
+function flowStarted(t){ const s = t.state||{}; return !!(s.kolis_submit || s.export || s.upload || s.register); }
+function flowShow(t){      // 진행 표: 방금 실행의 상태가 있으면 그것을, 없으면 저장된 상태 기록으로
+  const s = t.state||{}, live = t.flow||{};
+  const saved = {import: s.kolis_submit && s.kolis_submit.ok ? ['done', '접수번호 '+(s.kolis_submit.receipt||'')] : (s.kolis_submit && s.kolis_submit.attempted ? ['fail','반입을 눌렀지만 결과 미확인'] : null),
+    export: s.export ? ['done', `접수번호 ${s.export.receipt||''} ${s.export.count||''}건`] : null, cnts: s.cnts ? ['done', `${s.cnts.count||''}개 폴더`] : null,
+    upload: s.upload ? ['done', `폴더 ${s.upload.folders||''}개, 파일 ${s.upload.files||''}개`] : null,
+    thumbs: s.thumbs_register && s.thumbs_register.complete ? ['done', `${s.thumbs_register.done||0}건`] : (t.work && !t.work.thumbs ? ['skip', '썸네일이 동봉되지 않음(등록하지 않음)'] : null),
+    register: s.register && s.register.record_no ? ['done', '가원부번호 '+s.register.record_no] : null};
+  const icon = {run:'<span class="spin"></span>', done:'<span class="ok">✓</span>', skip:'<span class="ok">✓</span>', fail:'<span class="bad">✗</span>'};
+  setOut(t, 'f-steps', FLOW_STEPS.map(([k, label], n) => { const v = live[k] || saved[k];
+    return `<div>${v ? icon[v[0]] : '<span class="muted">○</span>'} ${n+1}. ${esc(label)} <span class="${v && v[0]==='fail' ? 'bad' : 'muted'}">${v ? esc(v[1]||'') : ''}</span></div>`; }).join(''));
+  setOut(t, 'f-xlsx', t.work ? esc(t.work.output_xlsx) + ` · ${t.work.rows}행 · 사람이 확인할 칸 ${t.work.confirm_cells}개` : '1단계를 먼저 실행하세요');
+}
+function onFlowStep(key, status, text, tab){
+  const t = tabOf(tab); if(!t) return;
+  t.flow = t.flow || {}; t.flow[key] = [status, text]; flowShow(t);
+}
+function flowRun(){
+  const n = $('k-note').value.trim(), y = $('f-yes').value.trim(), rc = $('f-receipt').value.trim();
+  if(y !== 'YES'){ setOut(CUR, 'f-out', '<span class="bad">직원과 반입용 엑셀을 확인한 뒤 YES 를 넣으세요</span>'); return; }
+  if(!rc && !flowStarted(CUR) && (!n || /\(차\)|\(\)/.test(n))){ setOut(CUR, 'f-out', '<span class="bad">비고에 차수와 번호를 넣으세요</span>'); return; }
+  CUR.flow = {};
+  kolisCall('flow', 'f-out', t => pywebview.api.flow_run(t.id, t.v.folder, n, y, rc, $('f-mode').value), '<span class="spin"></span> 진행 중… (마우스와 Edge 창을 건드리지 마세요)');
+}
 function uploadRun(){
   const root = $('x-root').value, y = $('u-yes').value.trim(), rc = $('x-receipt').value.trim();
   kolisCall('upload', 'u-out', t => pywebview.api.upload_run(t.id, root, y, rc), '<span class="spin"></span> 진행 중… (Edge 창을 건드리지 마세요)');
@@ -402,14 +445,20 @@ function onThumbProgress(r, tab){
   setOut(t, 't-list', (t.html['t-list']||'') + `<div><span class="${cls}">${r.status==='done'?'✓':(r.status==='already'?'–':'✗')}</span> ${r.i+1}. 편/권차 ${esc(r.part||'')} ${esc(r.thumb||'')} ${r.sec?`(${r.sec}초)`:''} ${esc(r.error||'')}</div>`);
   if(t === CUR) $('t-list').scrollTop = $('t-list').scrollHeight;
 }
-function onDone(kind, p, tab){
+async function onDone(kind, p, tab){
   const t = tabOf(tab); if(!t) return;
   finish(t, kind);
   if(t.v.folder) pywebview.api.log_save(t.v.folder, t.log.slice(-3000));
-  const out = {prepare:'run-out', kolis:'k-out', kolis_submit:'k-sub', export:'x-out', upload_open:'u-out', upload:'u-out', thumbs_register:'t-out', register:'g-out', register_export:'g-out'}[kind];
+  const out = {prepare:'run-out', kolis:'k-out', kolis_submit:'k-sub', export:'x-out', flow:'f-out', upload_open:'u-out', upload:'u-out', thumbs_register:'t-out', register:'g-out', register_export:'g-out'}[kind];
+  if(kind==='flow'){ t.state = await pywebview.api.load_state(t.v.folder); renderState(t); flowShow(t); buttons(t);
+    const e = t.state.export||{}, g = t.state.register||{};
+    if(e.receipt){ setVal(t, 'f-receipt', e.receipt); setVal(t, 'x-receipt', e.receipt); setVal(t, 't-receipt', e.receipt); setVal(t, 'g-receipt', e.receipt); setVal(t, 'x-file', e.file||''); }
+    if(g.record_no) setVal(t, 'g-no', g.record_no); }
   if(p.cancelled){ setOut(t, out, '<span class="warn">중단됨</span>'); return; }
   if(p.error){ t.error = true; setOut(t, out, `<span class="bad">${esc(p.error)}</span>`); renderTabs(); return; }
-  if(kind==='prepare'){
+  if(kind==='flow'){
+    setOut(t, 'f-out', `<span class="ok">완료</span> 접수번호 ${esc(p.receipt)} · 가원부번호 ${esc(p.record_no)} · ${p.count}건 → ${link(p.file)} · 확인 ${p.checks}개 통과 · ${p.seconds}초 <span class="muted">기록 ${esc(p.journal)} · 다음: 이 파일을 웹하드에 올리고 가원부번호를 주무관에게 전달(사람이 함)</span>`);
+  } else if(kind==='prepare'){
     t.work = p; t.title = p.title || t.title;
     setOut(t, 'run-out', '<span class="ok">완료</span> — 반입 전에 아래 "사람이 확인할 칸"과 반입용 엑셀을 확인하세요');
     fillNext(t); t.v['out-name'] = p.output_xlsx.split(/[\\/]/).pop(); if(t === CUR) show();

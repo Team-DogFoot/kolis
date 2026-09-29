@@ -309,10 +309,15 @@ class Recorder:
         try:
             self._write([{"kind": "step", "label": label, "time": f"{datetime.datetime.now():%H:%M:%S}"}])
             for title, cls, top in _documents(only_free=True):
+                try:
+                    inside = _is_kolis(str(top.URL))
+                except Exception:  # noqa: BLE001
+                    inside = False
                 for doc in _walk(top):
                     try:
                         url = str(doc.URL)
-                        if not _is_kolis(url):
+                        # KOLIS 화면 안의 프레임은 주소가 비어 있어도 기록한다(2026-09-29: 업로더 프레임의 주소가 KOLIS 주소가 아니라 빠졌었다)
+                        if not _is_kolis(url) and not inside:
                             continue
                         win = doc.parentWindow
                         win.execScript(HOOK, "JavaScript")

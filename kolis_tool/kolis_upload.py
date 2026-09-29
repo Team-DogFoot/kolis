@@ -1,4 +1,8 @@
-"""원문일괄등록(폴더) — 가이드 3.4-나. 폴더를 팝업에 끌어다 놓는 것은 사람이 하고, 그 뒤를 이 모듈이 한다.
+"""원문일괄등록(폴더) — 가이드 3.4-나. 팝업 열기 → 폴더 올리기 → 전송 → 일괄정보입력 → 원문등록 → 닫기.
+
+폴더 올리기(2026-09-29 업로더 스크립트 분석): 업로더(DEXT5)는 IE 모드에서 설치형 부품으로 돈다. 폴더를 끌어다 놓으면 업로더 스크립트가
+부품의 `AddLocalFileDirectly(경로)` 를 부른다. 그래서 마우스로 끌지 않고 **팝업 화면 안에서 그 함수를 직접 부른다**(add_folders).
+부품을 찾지 못해 하나도 부르지 못했을 때만 마우스로 끌어다 놓는다(drop_folders). 전송 시작도 같은 식으로 업로더의 `Transfer` 를 부른다.
 
 전제: 납본자료접수에서 접수번호 찾기 → 전체 선택 → '원문일괄등록(폴더)' 팝업을 열고, CNTS 폴더들을 끌어다 놓아 목록에 올라온 상태.
 순서(2026-09-18 실제 1회 수행한 절차 그대로, 단계마다 상태를 읽어 확인하고 어긋나면 멈춘다):
@@ -218,6 +222,114 @@ def drop_folders(root: Path, log=None) -> dict:
             pass
 
 
+UPLOADER = "dext5upload"          # 팝업 스크립트의 new Dext5Upload("dext5upload")
+ADD_JS = r"""
+(function(paths){
+  var out = {ok: false, called: 0, mode: '', before: null, after: null, error: ''};
+  try {
+    out.mode = '' + DEXT5UPLOAD.GetUserRuntimeMode('%(id)s');
+    var f = document.getElementById('dext5uploader_frame_%(id)s');
+    if (!f) throw new Error('업로더 프레임이 없음');
+    var pl = f.contentWindow.Dext5PL;
+    if (!pl) throw new Error('업로더 부품(Dext5PL)이 없음');
+    try { out.before = pl.GetFileCount(); } catch (e1) {}
+    pl.nNotAllowIfOpen = '0';
+    for (var i = 0; i < paths.length; i++) { pl.AddLocalFileDirectly(paths[i]); out.called++; }
+    try { out.after = pl.GetFileCount(); } catch (e2) {}
+    out.ok = true;
+  } catch (e) { out.error = '' + (e.message || e); }
+  document.documentElement.setAttribute('data-kolis-add', JSON.stringify(out));
+})(%(paths)s);
+"""
+START_JS = r"""
+(function(){
+  var out = {ok: false, error: ''};
+  try {
+    if (typeof DEXT5UPLOAD === 'undefined' || !DEXT5UPLOAD.Transfer) throw new Error('업로더가 없음');
+    window.setTimeout(function(){ DEXT5UPLOAD.Transfer('%(id)s'); }, 50);      // 전송 창이 뜨는 동안 이 호출이 붙잡히지 않게 나중에 실행
+    out.ok = true;
+  } catch (e) { out.error = '' + (e.message || e); }
+  document.documentElement.setAttribute('data-kolis-start', JSON.stringify(out));
+})();
+"""
+
+
+def _popup_doc():
+    """원문일괄등록 팝업의 문서."""
+    for _title, _cls, top in ie_dom._documents():
+        try:
+            if "contentsTextRegPop.do" in str(top.URL):
+                return top
+        except Exception:  # noqa: BLE001
+            continue
+    return None
+
+
+def _script(js: str, attr: str, wait: float) -> dict:
+    """팝업 화면 안에서 스크립트를 실행하고 결과를 읽는다. wait 초 안에 돌아오지 않으면 Stop."""
+    import json, threading
+    box: dict = {}
+    def work():
+        try:
+            doc = _popup_doc()
+            if doc is None:
+                box["error"] = "팝업 문서를 찾지 못함"; return
+            doc.documentElement.setAttribute(attr, "")
+            doc.parentWindow.execScript(js, "JavaScript")
+            box["raw"] = str(doc.documentElement.getAttribute(attr) or "")
+        except Exception as e:  # noqa: BLE001
+            box["error"] = f"{type(e).__name__}: {str(e)[:160]}"
+    th = threading.Thread(target=work, daemon=True, name="kolis-upload-script")
+    th.start(); th.join(wait)
+    if th.is_alive():
+        raise Stop(f"팝업 화면이 {int(wait)}초 동안 응답하지 않습니다. 화면을 확인하세요")
+    if box.get("error"):
+        return {"ok": False, "called": 0, "error": box["error"]}
+    try:
+        return json.loads(box.get("raw") or "{}") or {"ok": False, "called": 0, "error": "결과 없음"}
+    except json.JSONDecodeError:
+        return {"ok": False, "called": 0, "error": f"결과를 읽지 못함: {box.get('raw', '')[:80]}"}
+
+
+def add_folders(root: Path, log=None) -> dict:
+    """원고 폴더(CNTS-…)를 팝업의 업로더에 올린다(마우스를 쓰지 않음). 올라온 수는 팝업의 표시("N 항목")로 확인한다.
+    돌려주는 값의 called 가 0 이면 아무것도 올리지 못한 것이다(이때만 끌어다 놓기로 바꿔도 된다)."""
+    import json
+    log = k._aslog(log)
+    local = check_local(Path(root))
+    if local["problems"]:
+        raise Stop("원고 폴더 문제: " + "; ".join(local["problems"]))
+    paths = [str((Path(root) / name).resolve()) for name in local["names"]]
+    n = local["folders"]
+    ie_dom.tick("폴더 올리기 (전)")
+    r = _script(ADD_JS % {"id": UPLOADER, "paths": json.dumps(paths)}, "data-kolis-add", max(120, local["files"] * 0.5))
+    log(f"폴더 올리기(스크립트): 업로더 방식 {r.get('mode')!r}, 부른 횟수 {r.get('called')}/{n}, 파일 수 {r.get('before')} → {r.get('after')}"
+        + (f", 오류 {r.get('error')}" if r.get("error") else ""))
+    if not r.get("called"):
+        return {**r, "folders": 0}
+    if r.get("called") != n or not r.get("ok"):
+        raise Stop(f"폴더 {n}개 중 {r.get('called')}개만 올렸습니다({r.get('error')}). 팝업의 목록을 비운 뒤 다시 실행하세요")
+    t0 = time.time()
+    while time.time() - t0 < 120:
+        st = state()
+        if any(re.search(rf"(?<!\d){n}\s*항목", s_) for s_ in st["summary"]):
+            break
+        time.sleep(1)
+    else:
+        raise Stop(f"폴더를 올렸지만 팝업에 {n}개 항목으로 표시되지 않습니다(표시 {state()['summary']}). 팝업을 확인하세요")
+    ie_dom.tick("폴더 올리기 (후)")
+    log(f"폴더 {n}개를 팝업에 올림({int(time.time() - t0)}초 뒤 표시 확인)")
+    return {**r, "folders": n}
+
+
+def start_transfer(log=None) -> bool:
+    """업로더의 전송을 시작한다(화면의 '전송하기' 버튼과 같은 함수). 시작하지 못하면 False."""
+    log = k._aslog(log)
+    r = _script(START_JS % {"id": UPLOADER}, "data-kolis-start", 20)
+    log("전송 시작(스크립트)" + ("" if r.get("ok") else f" 실패: {r.get('error')}"))
+    return bool(r.get("ok"))
+
+
 def _close(pop, log) -> None:
     """팝업을 닫고 닫혔는지 확인한다. 떠 있으면 뒤의 본화면을 쓸 수 없다."""
     def do():
@@ -275,10 +387,16 @@ def run(root: Path, log=None, handle: dict | None = None, yes: str = "", receipt
     elif d:
         raise Stop(f"알림창이 열려 있습니다: '{t[:80]}'")
     st = state(pop)
+    log(f"팝업 상태(시작): 표시 {st['summary']}, 결과표 {len(st['rows'])}행, 결과 {st['results']}, 버튼 {st['buttons']}")
+    how = "이미 올라와 있음"
     if not st["rows"] and not any(re.search(r"(?<!\d)[1-9]\d*\s*항목", s_) for s_ in st["summary"]):
-        drop_folders(Path(root), log)
+        how = "스크립트"
+        if not add_folders(Path(root), log).get("folders"):
+            log("스크립트로 올리지 못함 → 마우스로 끌어다 놓기로 바꿉니다")
+            how = "끌어다 놓기"
+            drop_folders(Path(root), log)
         st = state(pop)
-    log(f"팝업 상태: {st['summary']}")
+    log(f"팝업 상태(폴더 올린 뒤, 방법: {how}): 표시 {st['summary']}, 올라온 폴더 {st['cnts']}")
     unknown = [c for c in st["cnts"] if c not in local["names"]]
     if unknown:
         raise Stop(f"팝업에 이 작품 것이 아닌 폴더가 있습니다: {unknown[:3]}")
@@ -297,10 +415,12 @@ def run(root: Path, log=None, handle: dict | None = None, yes: str = "", receipt
         if not any(re.search(rf"(?<!\d){n}\s*항목", s_) for s_ in st["summary"]):
             raise Stop(f"팝업에 올라온 항목 수를 확인하지 못했습니다(기대 {n}개, 표시 {st['summary']}). 끌어다 놓기가 끝났는지 확인하세요")
         limit = max(T_UPLOAD_MIN, local["mb"] * SEC_PER_MB + 120)
-        _focus(pop)
         ie_dom.tick("전송하기 (전)")
-        k._button(ie(), "전송하기").click_input()
-        log(f"'전송하기' 클릭 — 전송 대기(한도 {int(limit)}초)")
+        if not start_transfer(log):
+            _focus(pop)
+            k._button(ie(), "전송하기").click_input()
+            log("'전송하기' 버튼 클릭")
+        log(f"전송 대기(한도 {int(limit)}초)")
         t0, last = time.time(), ""
         while True:
             cancelled()
@@ -370,6 +490,8 @@ def run(root: Path, log=None, handle: dict | None = None, yes: str = "", receipt
     msg = _confirm("원문이 등록되었습니다", n * 6 + 120, log)
     ie_dom.tick("원문등록 끝")
     s_last = state(pop)["results"]
+    if s_last.get("원문등록", 0) < shown:
+        raise Stop(f"완료 알림은 떴지만 원문등록결과가 채워지지 않았습니다(보이는 행 {s_last}). 팝업을 닫지 않았습니다 → 화면 확인")
     _close(pop, log)
     s = {"results": s_last}
     log(f"=== 원문일괄등록 완료: {msg} (보이는 행 {s['results']})")
