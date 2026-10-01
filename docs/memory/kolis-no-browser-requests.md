@@ -15,3 +15,5 @@ KOLIS 단계는 **브라우저를 띄우지 않고** 프로그램이 계정으�
 - 확인된 것: 로그인 `POST /main/loginprocess.do`(uid, pwd, jsp_ip), 반입 `fileUpload.do`, 전송 `/dext5upload/handler/dext5handler.jsp`(값은 base64("R"+base64)), 가원부 파일 `POST /main/save.do`(화면이 만드는 내용을 보내면 파일로 돌아옴). 전체 목록은 `docs/REQUEST-AUTOMATION.md`, 코드는 `kolis_http.py`·`kolis_request.py`.
 - 계정은 프로그램 창 로그인(환경변수) 또는 `.env` 에서만 읽는다. 유저가 대화에 적어 줘도 어디에도 옮기지 않는다. **비밀번호 5회 실패 시 계정 잠김 → 로그인은 실행당 한 번만.**
 - 관련: [[kolis-automation-strategy]] [[say-unverified-and-blockers-first]] [[kolis-webtoon-project]]
+
+(2026-10-01 추가) 썸네일도 요청으로 옮겼다(`kolis_modify.py`). 요청 형식을 알아내는 방법은 [[headless-edge-for-kolis-recon]] — 화면 없는 Edge 는 개발할 때 대조용이고 프로그램에는 넣지 않는다. 파일 전송은 연결 여러 개로 동시에 한다(연결당 약 1.2~2MB/s, 로그인 하나의 쿠키를 같이 씀).
