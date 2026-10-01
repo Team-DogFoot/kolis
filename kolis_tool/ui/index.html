@@ -64,6 +64,7 @@
       <div id="r-remaining" class="warnbox" hidden></div>
       <p style="margin:10px 0 4px"><b>사람이 확인할 칸</b> <span class="muted">— 반입용 엑셀에 노란색으로 표시되고 칸 메모에 같은 이유가 있습니다</span></p>
       <table id="r-confirm"></table>
+      <div id="r-done" class="row" style="margin:8px 0;padding:8px 10px;border:1px solid var(--line);border-radius:6px"><button id="btn-confirm" onclick="confirmImport()">확인 완료 — 노란색·메모 지우기</button><span id="r-done-out" class="muted"></span></div>
       <p style="margin:10px 0 4px"><b>값 요약</b></p>
       <table id="r-summary"></table>
       <details style="margin-top:8px"><summary class="muted" style="cursor:pointer">조사 내용 (플랫폼, 엇갈림, 찾지 못한 값, 검수 지적)</summary><div id="r-detail" style="font-size:13px"></div></details>
@@ -305,6 +306,13 @@ async function runPrepare(){
   if(r.error){ setOut(t, 'run-out', `<span class="bad">${esc(r.error)}</span>`); return; }
   start(t, 'prepare'); setOut(t, 'run-out', '<span class="spin"></span> 에이전트가 작업 중… (오른쪽 로그 참고)'); saveTabs();
 }
+async function confirmImport(){
+  const t = CUR;
+  if(!confirm('반입용 엑셀을 직원이 다 확인했습니까? 엑셀의 노란색 칸과 메모를 지우고, KOLIS 등록을 할 수 있게 엽니다. (엑셀이 열려 있으면 저장하고 닫은 뒤 누르세요)')) return;
+  const r = await pywebview.api.confirm_import(t.v.folder);
+  if(r.error){ $('r-done-out').innerHTML = `<span class="bad">${esc(r.error)}</span>`; return; }
+  t.work = r; showResult(t); renderState(t);
+}
 async function undoFiles(){
   const t = CUR;
   if(!confirm('원고·썸네일 파일명을 원래대로 되돌립니다. 진행할까요?')) return;
@@ -325,9 +333,20 @@ function showResult(t){
   const run = w.run || {}, fin = w.finalize || {};
   $('r-head').innerHTML = `<span class="ok">반입용 엑셀</span> ${link(w.output_xlsx)}<br><span class="muted">${w.rows}행 · 사람이 확인할 칸 ${w.confirm_cells}개`
     + (run.seconds ? ` · ${Math.round(run.seconds/60)}분 걸림` : '') + (fin.manuscript_files ? ` · 원고 파일명 ${fin.manuscript_files}장 정리` : '') + '</span>';
+  const cf = w.confirmed;
+  $('btn-confirm').disabled = !!cf;
+  $('r-done-out').innerHTML = cf ? `<span class="ok">✓ 확인 완료 ${esc(cf.at)}</span> · 엑셀의 확인 표시 ${cf.cleared}칸을 지웠습니다. 이제 아래 KOLIS 등록을 할 수 있습니다. <span class="muted">(1번을 다시 실행하면 확인도 다시 해야 합니다)</span>`
+    : '반입용 엑셀을 열어 아래 항목을 직원이 확인하고 고친 뒤 누릅니다. <b>누르기 전에는 KOLIS 등록을 할 수 없습니다.</b>';
   const rem = w.remaining || [];
   $('r-remaining').hidden = !rem.length; $('r-remaining').innerHTML = rem.map(x=>`<div>⚠ 검사에 남은 항목 — ${esc(x)}</div>`).join('');
-  $('r-confirm').innerHTML = (w.confirm||[]).length ? '<tr><th>칸</th><th style="width:70px">행</th><th style="width:auto">확인할 내용</th></tr>' + w.confirm.map(c=>`<tr><td>${esc(c.field)}</td><td>${c.rows.length===w.rows?'전체':esc(c.rows.join(', '))}</td><td>${esc(c.reason)}</td></tr>`).join('') : '<tr><td class="ok">없음</td></tr>';
+  const linkify = s => esc(s||'').replace(/(https?:\/\/[^\s<)\]]+)/g, u => `<a href="#" data-url="${u}" onclick="pywebview.api.open_path(this.dataset.url);return false">${u}</a>`);
+  const where = c => c.rows.length===w.rows ? `전체 ${w.rows}행` : c.rows.map((n,i)=>`${n}행${(c.parts||[])[i] ? '('+esc(c.parts[i])+')' : ''}`).join(', ');
+  const vals = c => (c.values||[]).slice(0,4).map(esc).join(' / ') + ((c.values||[]).length>4 ? ` … (${c.values.length}가지)` : '');
+  const line = (label, body) => body ? `<div style="margin-top:3px"><span class="muted" style="display:inline-block;min-width:92px">${label}</span>${body}</div>` : '';
+  $('r-confirm').innerHTML = (w.confirm||[]).length ? `<tr><th style="width:36px">#</th><th>「${esc(w.title||'')}」 — 반입 전에 직원이 확인할 것 ${w.confirm.length}가지</th></tr>` + w.confirm.map((c,i)=>`<tr><td>${i+1}</td><td>
+      <div><b>${esc(c.field)}</b> <span class="muted">· ${where(c)}</span></div>
+      ${line('넣은 값', vals(c))}${line('출판사 엑셀', esc(c.publisher_says))}${line('왜 확인하나', esc(c.reason))}${line('근거', linkify(c.evidence))}
+      ${c.ask ? `<div style="margin-top:4px;padding:4px 8px;background:#fff8e1;border-radius:4px"><b>직원이 정할 것</b> ${esc(c.ask)}</div>` : ''}</td></tr>`).join('') : '<tr><td class="ok">없음</td></tr>';
   $('r-summary').innerHTML = (w.summary||[]).map(r=>`<tr><th>${esc(r[0])}</th><td>${esc(r[1])||'<span class="warn">없음</span>'}</td><td class="muted">${esc(r[2]||'')}</td></tr>`).join('');
   const rv = w.review || {};
   const str = x => typeof x === 'string' ? x : JSON.stringify(x||'');
@@ -444,6 +463,7 @@ async function kolisLogin(){
 async function kolisLogout(){ acctShow(await pywebview.api.kolis_logout()); $('a-id').value = ''; }
 function flowRun(){
   const n = $('k-note').value.trim(), y = $('f-yes').value.trim();
+  if(!(CUR.work && CUR.work.confirmed)){ setOut(CUR, 'f-out', "<span class=\"bad\">반입용 엑셀 확인이 끝나지 않았습니다. 1번 결과의 '확인 완료' 버튼을 먼저 누르세요</span>"); return; }
   if(y !== 'YES'){ setOut(CUR, 'f-out', '<span class="bad">직원과 반입용 엑셀을 확인한 뒤 YES 를 넣으세요</span>'); return; }
   if(!n || /\(차\)|\(\)/.test(n)){ setOut(CUR, 'f-out', '<span class="bad">비고에 차수와 번호를 넣으세요</span>'); return; }
   CUR.flow = {};

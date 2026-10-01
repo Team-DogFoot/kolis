@@ -142,6 +142,11 @@ def run(work: dict, note: str, yes: str, work_dir: Path, log, handle: dict | Non
         xlsx = Path(work.get("output_xlsx") or "")
         root = Path(work.get("manuscripts") or "")
         check("반입용 엑셀 파일", xlsx.is_file(), str(xlsx), f"반입용 엑셀이 없습니다: {xlsx}")
+        done = work.get("confirmed") or {}
+        check("반입용 엑셀 확인 완료(직원)", bool(done), done.get("at") or "없음", "1번 결과의 '확인 완료' 버튼을 누르지 않았습니다")
+        from . import import_writer
+        left = import_writer.marks(xlsx)
+        check("반입용 엑셀에 확인 표시(노란색·메모)가 남아 있지 않음", left == 0, f"{left}칸", "확인 표시가 남아 있습니다 → '확인 완료'를 다시 누르세요")
         check("원고 폴더", root.is_dir(), str(root), f"원고 폴더가 없습니다: {root}")
         info = _excel_rows(xlsx)
         rows = info["rows"]

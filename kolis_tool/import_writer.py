@@ -40,7 +40,7 @@ CONSTANTS: dict[Key, str] = {
     ("/mods/note[@type]", 2): "acquisition",
     ("/mods/subject/topic", 0): "만화",
     ("/mods/subject/topic", 1): "웹툰",
-    ("/mods/classification", 0): "810",
+    ("/mods/classification", 0): 810,
     ("/mods/classification[@authority]", 0): "KDC",
     ("/mods/classification[@edition]", 0): "6",
     ("/mods/location/physicalLocation", 0): "국립중앙도서관",
@@ -52,7 +52,7 @@ CONSTANTS: dict[Key, str] = {
 
 # 에이전트가 쓰는 항목 이름 → 양식의 열. 완료 사례(83열): 주기 1번째=기타, 2번째=이용대상, 3번째=수집처 / 원문주소 1번째=작품이 들어 있는 목록 페이지, 2번째=작품의 회차 목록 페이지
 FIELDS: dict[str, Key] = {
-    "title": ("/mods/titleInfo/title", 0), "subTitle": ("/mods/titleInfo/subTitle", 0),
+    "title": ("/mods/titleInfo/title", 0), "title_parallel": ("/mods/titleInfo/title", 1), "subTitle": ("/mods/titleInfo/subTitle", 0),
     "partNumber": ("/mods/titleInfo/partNumber", 0), "partName": ("/mods/titleInfo/partName", 0),
     "place": ("/mods/originInfo/place/placeTerm", 0), "place_code": ("/mods/originInfo/place/placeTerm", 1),
     "publisher": ("/mods/originInfo/publisher", 0), "dateIssued": ("/mods/originInfo/dateIssued", 0),
@@ -68,7 +68,10 @@ REQUIRED = ["title", "publisher", "place", "place_code", "dateIssued", "targetAu
 AUDIENCES = ("고등학생", "성인용", "아동용", "일반이용자", "중학생", "초등학생", "취학전아동", "취학전 아동", "특수계층", "미상")
 
 
-KOREAN = {"title": "본표제", "subTitle": "표제관련정보", "partNumber": "권차", "partName": "권차표제", "place": "발행지", "place_code": "발행국 부호",
+NUMERIC = ("price", "compensation", "dateIssued", "identifier", "licenseType")      # 완료 사례는 이 칸들을 숫자로 저장한다(글자로 넣으면 엑셀이 "텍스트 형식 숫자"로 표시)
+ISBN_FORMAT = r"0_);[Red]\(0\)"          # 완료 사례의 식별기호 칸 서식(13자리가 지수 표기로 바뀌지 않게)
+
+KOREAN = {"title": "본표제", "title_parallel": "대등표제", "subTitle": "표제관련정보", "partNumber": "권차", "partName": "권차표제", "place": "발행지", "place_code": "발행국 부호",
           "publisher": "발행처", "dateIssued": "발행일", "targetAudience": "이용대상자", "other_note": "주기", "audience_note": "이용대상자 주기",
           "acquisition_note": "입수처 주기", "identifier": "식별기호", "identifier_type": "식별기호 유형", "url_main": "원문주소(작품이 들어 있는 목록 페이지)",
           "url_work": "원문주소(작품의 회차 목록 페이지)", "licenseType": "접근제한유형", "price": "정가", "compensation": "보상금", "reward_yn": "보상여부",
@@ -133,6 +136,8 @@ def check(data: dict, folder: Path) -> list[str]:
                 out.append(f"{i}행 confirm: '{c.get('field')}' 는 없는 항목 이름입니다. 쓸 수 있는 이름: {', '.join(field_names())}")
             if not str(c.get("reason") or "").strip():
                 out.append(f"{i}행 confirm '{c.get('field')}': 이유가 없습니다")
+            if not str(c.get("ask") or "").strip():
+                out.append(f"{i}행 confirm '{c.get('field')}': ask(직원이 무엇을 정해야 하는지)가 없습니다. 이 작품을 처음 보는 직원이 그 문장만 읽고 답할 수 있게 적으세요")
         unknown = [k for k in v if k not in field_names()]
         if unknown:
             out.append(f"{i}행 values: 없는 항목 이름 {unknown}. 쓸 수 있는 이름: {', '.join(field_names())}")
@@ -219,6 +224,15 @@ def check(data: dict, folder: Path) -> list[str]:
     return out
 
 
+def confirm_text(c: dict) -> str:
+    """확인할 칸 하나를 사람이 읽을 글로(엑셀 메모에 넣는다)."""
+    parts = [str(c.get("reason") or "").strip()]
+    for label, k in (("출판사 엑셀", "publisher_says"), ("근거", "evidence"), ("직원이 정할 것", "ask")):
+        if str(c.get(k) or "").strip():
+            parts.append(f"{label}: {str(c[k]).strip()}")
+    return "\n".join(p for p in parts if p)
+
+
 def _isbn13_ok(s: str) -> bool:
     if not re.fullmatch(r"\d{13}", s):
         return False
@@ -244,7 +258,9 @@ def write(data: dict, folder: Path, out_xlsx: Path, template: Path = TEMPLATE_83
         for name, key in FIELDS.items():
             val = v.get(name)
             if val is not None and str(val).strip() != "":
-                cells[key] = int(val) if name in ("price", "compensation") and re.fullmatch(r"\d+", str(val).strip()) else str(val).strip()
+                cells[key] = int(val) if name in NUMERIC and re.fullmatch(r"\d+", str(val).strip()) else str(val).strip()
+        if str(v.get("title_parallel") or "").strip():
+            cells[("/mods/titleInfo[@type]", 1)] = "parallel"
         for i, n in enumerate([n for n in v.get("names") or [] if str(n.get("name") or "").strip()][:3]):
             cells[NAME_KEYS[i]["name"]] = str(n["name"]).strip()
             cells[NAME_KEYS[i]["type"]] = n.get("type") or "개인명"
@@ -263,6 +279,10 @@ def write(data: dict, folder: Path, out_xlsx: Path, template: Path = TEMPLATE_83
         for key, val in cells.items():
             if key in col:
                 ws.cell(row=rn, column=col[key]).value = val
+                if key == FIELDS["identifier"] and isinstance(val, int):
+                    ws.cell(row=rn, column=col[key]).number_format = ISBN_FORMAT
+                elif key == ("/mods/classification[@edition]", 0):
+                    ws.cell(row=rn, column=col[key]).number_format = "@"
         for c in r.get("confirm") or []:
             name = str(c.get("field"))
             key = FIELDS.get(name) or COMPUTED.get(name) or {"names": NAME_KEYS[0]["name"], "color": COMPUTED["extent"]}.get(name)
@@ -270,13 +290,38 @@ def write(data: dict, folder: Path, out_xlsx: Path, template: Path = TEMPLATE_83
                 cell = ws.cell(row=rn, column=col[key])
                 cell.fill = YELLOW
                 prev = cell.comment.text + "\n" if cell.comment else ""
-                cell.comment = Comment((prev + str(c.get("reason")))[:2000], "kolis_tool")
+                cell.comment = Comment((prev + confirm_text(c))[:2000], "kolis_tool")
                 nconfirm += 1
     for name in wb.sheetnames:
         if name not in ("Sample", "Contents"):
             del wb[name]
     wb.save(out_xlsx)
     return {"rows": len(data["rows"]), "confirm": nconfirm, "out": str(out_xlsx)}
+
+
+def marks(xlsx: Path) -> int:
+    """반입용 엑셀에 남아 있는 확인 표시(노란색 칸·메모)의 수."""
+    wb = openpyxl.load_workbook(xlsx)
+    try:
+        return sum(1 for row in wb["Contents"].iter_rows(min_row=2) for c in row if c.comment or (c.fill and c.fill.fill_type == "solid" and c.fill.fgColor.rgb in ("FFFFFF00", "00FFFF00")))
+    finally:
+        wb.close()
+
+
+def clear_marks(xlsx: Path) -> int:
+    """직원이 확인을 끝냈을 때: 프로그램이 넣은 확인 표시(노란색 칸·메모)를 지운다. 값은 건드리지 않는다. 완료 사례의 반입용 엑셀에는 색·메모가 없다."""
+    wb = openpyxl.load_workbook(xlsx)
+    n = 0
+    for row in wb["Contents"].iter_rows(min_row=2):
+        for c in row:
+            yellow = c.fill and c.fill.fill_type == "solid" and c.fill.fgColor.rgb in ("FFFFFF00", "00FFFF00")
+            if c.comment or yellow:
+                n += 1
+                c.comment = None
+                if yellow:
+                    c.fill = PatternFill(fill_type=None)
+    wb.save(xlsx)
+    return n
 
 
 def main(import_json: str) -> int:

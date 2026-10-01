@@ -417,6 +417,27 @@ class Api:
         except Exception as e:  # noqa: BLE001
             return {"error": "".join(traceback.format_exception_only(type(e), e)).strip()}
 
+    def confirm_import(self, folder: str) -> dict:
+        """반입 전 확인 완료(사람 판정 지점): 직원이 반입용 엑셀을 다 봤다는 표시. 엑셀의 노란색·메모를 지우고 기록한다. 이걸 눌러야 KOLIS 등록을 할 수 있다."""
+        import datetime
+        from . import prepare, import_writer
+        f = Path(folder)
+        w = prepare.load(f, self._work_dir)
+        if not w or not w.get("output_xlsx"):
+            return {"error": "반입용 엑셀이 없습니다. 1단계를 먼저 실행하세요"}
+        x = Path(w["output_xlsx"])
+        if not x.is_file():
+            return {"error": f"반입용 엑셀이 없습니다: {x}"}
+        try:
+            n = import_writer.clear_marks(x)
+        except PermissionError:
+            return {"error": "반입용 엑셀이 열려 있어 고칠 수 없습니다. 엑셀에서 저장하고 닫은 뒤 다시 누르세요"}
+        except Exception as e:  # noqa: BLE001
+            return {"error": "".join(traceback.format_exception_only(type(e), e)).strip()}
+        w["confirmed"] = {"at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), "cleared": n, "mtime": x.stat().st_mtime}
+        prepare.result_path(f, self._work_dir).write_text(json.dumps(w, ensure_ascii=False, indent=1), encoding="utf-8")
+        return self._view(w)
+
     def get_prompt(self) -> dict:
         """모든 작품에 적용할 직원 지시(편집 가능)와 에이전트가 따르는 방법 문서(보기 전용)."""
         from . import agent
@@ -469,15 +490,23 @@ class Api:
         confirm = []
         for r in rows:
             for c in r.get("confirm") or []:
-                confirm.append({"no": r.get("no"), "field": import_writer.column_label(str(c.get("field"))), "reason": c.get("reason")})
+                v = r.get("values") or {}
+                name = str(c.get("field"))
+                special = {"names": "; ".join(f"{n.get('name')} ({n.get('type') or ''}, {n.get('role') or '역할 없음'})" for n in v.get("names") or []), "thumb_file": r.get("thumb_file")}
+                val = special[name] if name in special else v.get(name)
+                part = " ".join(str(v.get(k) or "") for k in ("partNumber", "partName")).strip()
+                confirm.append({"no": r.get("no"), "part": part, "value": "(빈칸)" if val in (None, "") else str(val), "field": import_writer.column_label(name),
+                                "reason": c.get("reason"), "ask": c.get("ask") or "", "evidence": c.get("evidence") or "", "publisher_says": c.get("publisher_says") or ""})
         grouped: dict = {}
-        for c in confirm:      # 같은 칸·같은 이유는 행 번호를 모아 한 줄로
-            grouped.setdefault((c["field"], c["reason"]), []).append(c["no"])
+        for c in confirm:      # 같은 칸·같은 내용은 행을 모아 한 묶음으로
+            grouped.setdefault((c["field"], c["reason"], c["ask"], c["evidence"]), []).append(c)
         rv = imp.get("review") or {}
-        return {"folder": w.get("folder"), "title": imp.get("title"), "output_xlsx": w.get("output_xlsx"), "rows": w.get("rows"),
+        return {"folder": w.get("folder"), "title": imp.get("title"), "output_xlsx": w.get("output_xlsx"), "rows": w.get("rows"), "confirmed": w.get("confirmed"),
                 "confirm_cells": w.get("confirm_cells"), "manuscripts": w.get("manuscripts"), "thumbs": w.get("thumbs"),
                 "summary": summary,
-                "confirm": [{"field": k[0], "reason": k[1], "rows": v} for k, v in grouped.items()],
+                "confirm": [{"field": k[0], "reason": k[1], "ask": k[2], "evidence": k[3], "rows": [c["no"] for c in v],
+                             "publisher_says": (lambda ps: ps[0] if len(ps) == 1 else " / ".join(ps[:3]) + (f" … ({len(ps)}가지)" if len(ps) > 3 else ""))(list(dict.fromkeys(c["publisher_says"] for c in v if c["publisher_says"])) or [""]),
+                             "parts": [c["part"] for c in v], "values": list(dict.fromkeys(c["value"] for c in v))} for k, v in grouped.items()],
                 "conflicts": res.get("conflicts") or [], "not_found": res.get("not_found") or [], "issues": imp.get("issues") or [],
                 "review": {"done": bool(rv.get("done")), "findings": rv.get("findings") or [], "resolved": rv.get("resolved") or []},
                 "remaining": w.get("remaining") or [], "finalize": w.get("finalize") or {}, "run": w.get("run") or {},
@@ -491,6 +520,8 @@ class Api:
         w = prepare.load(Path(folder), self._work_dir) or {}
         if not w.get("output_xlsx"):
             return {"error": "반입용 엑셀이 없습니다. 1단계를 먼저 실행하세요"}
+        if not w.get("confirmed"):
+            return {"error": "반입용 엑셀 확인이 끝나지 않았습니다. 1번 결과의 '확인 완료' 버튼을 먼저 누르세요"}
         from . import kolis_http
         if not kolis_http.source():
             return {"error": "KOLIS 계정이 없습니다. 창 위쪽에서 KOLIS 아이디와 비밀번호로 로그인하세요"}
