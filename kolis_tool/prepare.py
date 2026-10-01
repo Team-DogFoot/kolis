@@ -181,8 +181,9 @@ def run(folder: Path, work_dir: Path, output_xlsx: Path | None = None, instructi
 
 def finalize(folder: Path, data: dict, log=None) -> dict:
     """마무리(기계적인 일): 원고 파일명을 8자리 일련번호로, 썸네일을 반입용 엑셀에 적힌 이름으로. 되돌리기 기록은 폴더 밖 `_kolis_manifests/`."""
-    from . import rename_files
+    from . import rename_files, arrange
     log = log or (lambda m: None)
+    arranged = arrange.apply(folder, data, log)      # 에이전트가 정한 정리 계획대로 폴더·파일을 옮긴다(되돌리기 가능)
     ms = folder / data["manuscripts_root"]
     migrate_legacy(ms)
     nfiles = nfolders = 0
@@ -206,7 +207,7 @@ def finalize(folder: Path, data: dict, log=None) -> dict:
                 manifest_path(td, "thumbs").write_text(json.dumps(pairs, ensure_ascii=False, indent=1), encoding="utf-8")
                 nthumb = len(pairs)
                 log(f"썸네일 파일명 정리: {nthumb}장(되돌리기 가능)")
-    return {"manuscript_folders": nfolders, "manuscript_files": nfiles, "thumbs": nthumb}
+    return {"manuscript_folders": nfolders, "manuscript_files": nfiles, "thumbs": nthumb, "arranged": arranged}
 
 
 def undo(folder: Path, data: dict) -> dict:
@@ -223,4 +224,5 @@ def undo(folder: Path, data: dict) -> dict:
                 if (td / b).exists():
                     (td / b).rename(td / a); t += 1
             mf.unlink()
-    return {"manuscript_files": n, "thumbs": t}
+    from . import arrange
+    return {"manuscript_files": n, "thumbs": t, "arranged": arrange.undo(Path(folder))}      # 파일명을 먼저 되돌린 뒤 폴더 정리를 되돌린다

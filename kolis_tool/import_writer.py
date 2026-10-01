@@ -15,7 +15,8 @@ from pathlib import Path
 import openpyxl
 from openpyxl.comments import Comment
 from openpyxl.styles import PatternFill
-from .common import REGION_CODE, list_images, extent_string
+from . import arrange
+from .common import REGION_CODE, extent_string
 
 HERE = Path(__file__).parent
 TEMPLATE_83 = HERE / "templates" / "import_template_83.xlsx"
@@ -49,7 +50,7 @@ CONSTANTS: dict[Key, str] = {
     ("currency_code", 0): "\\",
 }
 
-# 에이전트가 쓰는 항목 이름 → 양식의 열. 완료 사례(83열): 주기 1번째=기타, 2번째=이용대상, 3번째=수집처 / 원문주소 1번째=플랫폼 메인, 2번째=작품
+# 에이전트가 쓰는 항목 이름 → 양식의 열. 완료 사례(83열): 주기 1번째=기타, 2번째=이용대상, 3번째=수집처 / 원문주소 1번째=작품이 들어 있는 목록 페이지, 2번째=작품의 회차 목록 페이지
 FIELDS: dict[str, Key] = {
     "title": ("/mods/titleInfo/title", 0), "subTitle": ("/mods/titleInfo/subTitle", 0),
     "partNumber": ("/mods/titleInfo/partNumber", 0), "partName": ("/mods/titleInfo/partName", 0),
@@ -69,8 +70,8 @@ AUDIENCES = ("고등학생", "성인용", "아동용", "일반이용자", "중�
 
 KOREAN = {"title": "본표제", "subTitle": "표제관련정보", "partNumber": "권차", "partName": "권차표제", "place": "발행지", "place_code": "발행국 부호",
           "publisher": "발행처", "dateIssued": "발행일", "targetAudience": "이용대상자", "other_note": "주기", "audience_note": "이용대상자 주기",
-          "acquisition_note": "입수처 주기", "identifier": "식별기호", "identifier_type": "식별기호 유형", "url_main": "원문주소(플랫폼 메인)",
-          "url_work": "원문주소(작품)", "licenseType": "접근제한유형", "price": "정가", "compensation": "보상금", "reward_yn": "보상여부",
+          "acquisition_note": "입수처 주기", "identifier": "식별기호", "identifier_type": "식별기호 유형", "url_main": "원문주소(작품이 들어 있는 목록 페이지)",
+          "url_work": "원문주소(작품의 회차 목록 페이지)", "licenseType": "접근제한유형", "price": "정가", "compensation": "보상금", "reward_yn": "보상여부",
           "names": "저자명", "color": "수량(크기)의 색", "thumb_file": "썸네일 파일명", "extent": "수량(크기)", "format": "디지털 자료유형"}
 
 
@@ -103,20 +104,27 @@ def check(data: dict, folder: Path) -> list[str]:
     rows = data.get("rows") or []
     if not rows:
         return ["rows 가 비어 있습니다"]
-    ms = folder / str(data.get("manuscripts_root") or "")
-    if not data.get("manuscripts_root") or not ms.is_dir():
-        return [f"원고 폴더(manuscripts_root)가 없습니다: {data.get('manuscripts_root')!r}"]
-    subs = {p.name: p for p in ms.iterdir() if p.is_dir() and not p.name.startswith("_kolis")}
+    # 정리 계획(arrange)이 있으면 "옮긴 뒤의 모습"으로 검사한다. 실제로 옮기는 것은 프로그램의 마무리 단계다
+    plan_fails = arrange.check(folder, data)
+    if plan_fails:
+        return plan_fails
+    vw = arrange.View(folder, data)
+    root = str(data.get("manuscripts_root") or "")
+    if not root or not vw.is_dir(root):
+        return [f"원고 폴더(manuscripts_root)가 없습니다: {data.get('manuscripts_root')!r}. 회차 폴더만 들어 있는 상위 폴더여야 합니다"
+                "(지금 그런 폴더가 없으면 arrange.moves 로 회차 폴더를 한 폴더 아래로 모으세요)"]
+    kids = vw.children(root)
+    subs = {n: p for n, p in kids if p.is_dir() and not n.startswith("_kolis")}
     if len(rows) != len(subs):
-        out.append(f"자료 {len(rows)}행 ≠ 원고 하위 폴더 {len(subs)}개")
-    stray = [p.name for p in ms.iterdir() if p.is_file()]
+        out.append(f"자료 {len(rows)}행 ≠ 원고 하위 폴더 {len(subs)}개 {sorted(subs)[:15]}")
+    stray = [n for n, p in kids if p.is_file()]
     if stray:
         out.append(f"원고 폴더 바로 아래에 파일이 있습니다(원문일괄등록이 멈춥니다): {stray[:3]}")
     th = str(data.get("thumbs_dir") or "")
-    names = {p.name for p in (folder / th).iterdir() if p.is_file()} if th and (folder / th).is_dir() else None
+    names = {n for n, p in vw.children(th) if p.is_file()} if th and vw.is_dir(th) else None
     if th and names is None:
         out.append(f"썸네일 폴더가 없습니다: {th}")
-    used, parts = set(), []
+    used, parts, idents = set(), [], []
     for i, r in enumerate(rows, 1):
         v = r.get("values") or {}
         confirm = {str(c.get("field")) for c in r.get("confirm") or [] if str(c.get("reason") or "").strip()}
@@ -135,8 +143,11 @@ def check(data: dict, folder: Path) -> list[str]:
             out.append(f"{i}행: 폴더 '{f}' 가 두 번 쓰였습니다")
         else:
             used.add(f)
-            if not list_images(subs[f]):
+            if not vw.images(f"{root}/{f}"):
                 out.append(f"{i}행: 폴더 '{f}' 에 이미지가 없습니다")
+            extra = vw.others(f"{root}/{f}")
+            if extra:
+                out.append(f"{i}행: 폴더 '{f}' 에 이미지가 아닌 것이 있습니다(원문일괄등록이 멈춥니다): {extra[:3]}. arrange.set_aside 로 빼 두세요")
         for k in REQUIRED:
             if str(v.get(k) if v.get(k) is not None else "").strip() == "" and k not in confirm:
                 out.append(f"{i}행: '{k}' 가 비어 있습니다. 값을 넣거나, 정할 수 없으면 confirm 에 이유와 함께 넣으세요")
@@ -162,9 +173,28 @@ def check(data: dict, folder: Path) -> list[str]:
             out.append(f"{i}행: price '{v.get('price')}' 는 숫자만")
         if str(v.get("reward_yn") or "") not in ("", "Y", "N"):
             out.append(f"{i}행: reward_yn 은 Y 또는 N")
-        ident = re.sub(r"[\s-]", "", str(v.get("identifier") or ""))
-        if str(v.get("identifier_type") or "").lower() == "isbn" and ident and not _isbn13_ok(ident) and "identifier" not in confirm:
+        raw_ident = str(v.get("identifier") or "").strip()
+        ident = re.sub(r"[\s-]", "", raw_ident)
+        is_isbn = str(v.get("identifier_type") or "").lower() == "isbn"
+        if is_isbn and raw_ident and not raw_ident.isdigit():
+            out.append(f"{i}행: ISBN '{raw_ident}' 는 붙임표(-)·공백 없이 숫자만 적습니다")
+        if is_isbn and ident and not _isbn13_ok(ident) and "identifier" not in confirm:
             out.append(f"{i}행: ISBN '{v.get('identifier')}' 의 검증 숫자가 맞지 않습니다. 확인하거나 confirm 에 넣으세요")
+        if is_isbn and ident:
+            idents.append((ident, "identifier" in confirm))
+        # 직원 규칙(2026-10-01)의 형식: 발행처 각괄호 금지, 보상금 = 정가, 유료는 Y / 무료(정가 0)는 N
+        if re.search(r"[\[\]]", str(v.get("publisher") or "")):
+            out.append(f"{i}행: publisher '{v.get('publisher')}' 에 각괄호가 있습니다. 발행처에는 각괄호를 넣지 않습니다")
+        price, comp, yn = (str(v.get(k) if v.get(k) is not None else "").strip() for k in ("price", "compensation", "reward_yn"))
+        if price.isdigit():
+            if comp.isdigit() and int(comp) != int(price):
+                out.append(f"{i}행: compensation {comp} ≠ price {price}. 보상금은 정가와 같습니다")
+            if int(price) > 0 and comp.isdigit() and int(comp) > 0 and yn != "Y":
+                out.append(f"{i}행: 정가와 보상금이 둘 다 있으면 reward_yn 은 Y")
+            if int(price) > 0 and not comp and "compensation" not in confirm:
+                out.append(f"{i}행: 유료(정가 {price})인데 compensation 이 비어 있습니다. 보상금 = 정가")
+            if int(price) == 0 and yn != "N":
+                out.append(f"{i}행: 무료 회차(정가 0)의 reward_yn 은 N")
         t = str(r.get("thumb_file") or "")
         if names is None and t:
             out.append(f"{i}행: 썸네일 폴더가 없는 납품인데 thumb_file 에 값이 있습니다(반입하면 0 Bytes 자리표시자 행이 생깁니다). 비우세요")
@@ -177,6 +207,9 @@ def check(data: dict, folder: Path) -> list[str]:
     dup = sorted({p for p in parts if any(p) and parts.count(p) > 1})
     if dup:
         out.append(f"권차·권차표제가 같은 행이 있습니다: {dup[:5]}")
+    shared = sorted({x for x, _ in idents if sum(1 for y, _ in idents if y == x) > 1})
+    if shared and not all(c for x, c in idents if x in shared):
+        out.append(f"같은 ISBN 이 여러 행에 쓰였습니다: {shared[:3]}. 권·회차별 ISBN 을 찾아 넣거나, 끝내 세트 ISBN 뿐이면 그 행들 전부의 confirm 에 identifier 로 이유(어디를 찾아봤는지)를 적으세요")
     if not out:
         rv = data.get("review") or {}
         if not rv.get("done"):
@@ -203,7 +236,7 @@ def write(data: dict, folder: Path, out_xlsx: Path, template: Path = TEMPLATE_83
     col = _columns(ws)
     if ws.max_row >= 2:
         ws.delete_rows(2, ws.max_row - 1)
-    ms = folder / str(data["manuscripts_root"])
+    vw = arrange.View(folder, data)
     nconfirm = 0
     for r in data["rows"]:
         v = r.get("values") or {}
@@ -219,7 +252,7 @@ def write(data: dict, folder: Path, out_xlsx: Path, template: Path = TEMPLATE_83
                 cells[NAME_KEYS[i]["role"]] = str(n["role"]).strip()
             if i == 0:
                 cells[("/mods/name[@usage]", 0)] = "primary"
-        imgs = list_images(ms / str(r["folder"]))
+        imgs = vw.images(f"{data['manuscripts_root']}/{r['folder']}")
         cells[COMPUTED["extent"]] = extent_string(len(imgs), sum(p.stat().st_size for p in imgs), v.get("color") or "천연색")
         exts = {p.suffix.lower().lstrip(".") for p in imgs}
         cells[COMPUTED["format"]] = "JPG" if exts <= {"jpg"} else "JPEG" if exts <= {"jpeg", "jpg"} else sorted(exts)[0].upper()

@@ -55,6 +55,18 @@ def _folders(root: Path) -> list[Path]:
     return [p for p in Path(root).iterdir() if p.is_dir() and not p.name.startswith("_kolis")]
 
 
+def _thumb_names(xlsx: Path) -> list[str]:
+    """반입용 엑셀의 thum_files 칸을 행 순서대로."""
+    import openpyxl
+    wb = openpyxl.load_workbook(xlsx, read_only=True)
+    try:
+        rows = [r for r in wb["Contents"].iter_rows(values_only=True) if any(v not in (None, "") for v in r)]
+    finally:
+        wb.close()
+    ti = [str(v or "") for v in rows[0]].index("thum_files")
+    return [str(r[ti] or "").strip() for r in rows[1:]]
+
+
 def _excel_rows(xlsx: Path) -> dict:
     """반입용 엑셀의 데이터 행 수와 본표제(반입 뒤 KOLIS 목록과 맞춰 볼 값)."""
     import openpyxl
@@ -227,20 +239,27 @@ def run(work: dict, note: str, yes: str, work_dir: Path, log, handle: dict | Non
 
         # ---------- 5. 썸네일(동봉된 납품만) ----------
         def do_thumbs():
-            from . import kolis_thumbs
-            r = kolis_thumbs.run(xlsx, thumbs, 0, log, handle, thumb_progress, receipt)
-            jr.write("thumbs", results=r.get("results"))
-            save({"thumbs_register": {"done": r["done"], "skipped": r["skipped"], "complete": not r["stopped"]}})
-            check("썸네일 등록이 끝까지 감", not r["stopped"], f"완료 {r['done']}건, 이미 있음 {r['skipped']}건")
-            check("썸네일 건수 = 엑셀 행 수", r["done"] + r["skipped"] == rows, f"{r['done'] + r['skipped']} / {rows}")
-            return f"등록 {r['done']}건"
+            # 짝은 반입용 엑셀의 행 순서로 짓는다: n 번째 행의 thum_files ↔ n 번째 콘텐츠ID(접수번호 뒷번호 순). 편/권차 글자로 맞추지 않는다(본편·외전의 숫자가 겹친다)
+            names = _thumb_names(xlsx)
+            check("엑셀의 thum_files 가 행마다 있음", len(names) == rows and all(names), [n for n in names if n][:3] or "없음",
+                  "썸네일이 동봉된 납품인데 반입용 엑셀의 thum_files 가 비어 있는 행이 있습니다")
+            check("thum_files 가 행마다 다름", len(set(names)) == rows, len(set(names)))
+            pairs = [(cid, thumbs / n) for cid, n in zip(ids, names)]
+            jr.write("thumb_pairs", pairs=[(c, f.name) for c, f in pairs])
+            try:
+                r = req.upload_thumbs(client, year, receipt, pairs, log, handle, check)
+            except req.Stop as e:
+                raise Stop(str(e)) from e
+            jr.write("thumbs", results=r["items"])
+            save({"thumbs_register": {"done": r["count"], "skipped": 0, "complete": True}})
+            check("썸네일 건수 = 엑셀 행 수", r["count"] == rows, f"{r['count']} / {rows}")
+            return f"등록 {r['count']}건"
         jr.step = "thumbs"
         if thumbs is None:
             jr.write("step", status="skip", text="썸네일 없음")
             log("■ 썸네일 등록: 썸네일이 동봉되지 않은 납품 — 하지 않음")
             progress("thumbs", "skip", "썸네일이 동봉되지 않음(등록하지 않음)")
         else:
-            log("  썸네일 등록은 아직 화면 방식입니다(Edge 에 KOLIS 가 로그인돼 있어야 함)")
             step("thumbs", do_thumbs)
 
         # ---------- 6. 등록대상처리 → 가원부번호 → 가원부 파일 ----------

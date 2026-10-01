@@ -33,6 +33,8 @@ U_CHECK_SAVE = "/online/cmmn/updateTextCheck.do"
 U_TEXT = "/online/cmmn/insertContentsText.do"
 TEMP_ROOT = "/Upload1/tmp/wonmun/"         # 팝업 스크립트가 전송 시작 때 정하는 임시 위치(+ 날짜와 시각)
 TEXT_KIND = "01"                           # 원문유형 열람
+THUMB_KIND = "06"                          # 원문유형 썸네일(수정 팝업의 원문유형 목록: 01 열람, 02 표지, 03 목차, 04 초록, 05 원본, 06 썸네일)
+U_FILE_LIST = "/online/cmmn/retrieveComContentsFileList.do"   # 수정 팝업의 파일 표가 읽는 주소
 CHUNK_LIMIT = 10485760                     # 이 크기부터 업로더는 조각으로 나눠 보낸다(업로더 설정)
 MIME = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif", ".bmp": "image/bmp", ".tif": "image/tiff", ".tiff": "image/tiff"}
 U_KEY = "/online/acq/bodepst/depstrecet/onlineDepstRecet/getReceiptKeyByRcptNo.do"
@@ -442,6 +444,87 @@ def upload_folders(client, year: str, receipt: str, root: Path, ids: list[str], 
     check("전 건에 원문이 등록됨", sorted(after) == sorted(ids) and all(x >= 1 for x in after.values()), {k: x for k, x in after.items() if x < 1} or f"{len(after)}건 모두 1 이상")
     return {"folders": len(folders), "files": total, "mb": round(size / 1048576, 1), "seconds": int(time.time() - t0), "directory": directory, "temp": f"{TEMP_ROOT}{stamp}/",
             "file_info_id": info, "message": "원문이 등록되었습니다."}
+
+
+# ---------- 썸네일 등록 ----------
+def file_list(client, cid: str) -> list[dict]:
+    """콘텐츠 한 건의 원문 파일 목록(수정 팝업의 파일 표와 같은 요청). 읽기만 한다."""
+    r = client.send("POST", U_FILE_LIST, urlencode({"contents_id": cid}), FORM)
+    return [{"kind": _text(x.get("TEXT_GBN_CD")), "kind_name": _text(x.get("TEXT_GBN")), "name": _text(x.get("FILE_NAME")), "size": _text(x.get("FILE_SIZE")),
+             "date": _text(x.get("REG_DT")), "id": _text(x.get("FILE_ID")), "path": _text(x.get("FILE_LOCA")), "seq": _text(x.get("SEQ_NO"))} for x in r.get("list") or []]
+
+
+def upload_thumbs(client, year: str, receipt: str, pairs: list[tuple[str, Path]], log=None, handle: dict | None = None, check=None) -> dict:
+    """썸네일을 건마다 한 장씩 올린다. pairs: (콘텐츠ID, 썸네일 파일) — 반입용 엑셀의 행 순서대로.
+    원문일괄등록과 같은 요청(전송 → 파일 목록 등록 → 건마다 등록)에 원문유형만 '썸네일'(06)로 보낸다.
+    건마다 등록 전·후의 파일 목록을 읽어 썸네일 행이 생겼는지, 열람 원문이 그대로인지 확인한다."""
+    import datetime, uuid
+    log = log or (lambda m: None)
+    handle = handle or {}
+    check = check or (lambda name, ok, value="", why="": None)
+    missing = [str(f) for _, f in pairs if not Path(f).is_file() or Path(f).stat().st_size == 0]
+    check("썸네일 파일이 전부 있음", not missing, missing[:3] or f"{len(pairs)}장")
+    odd = [Path(f).name for _, f in pairs if Path(f).suffix.lower() not in MIME or Path(f).stat().st_size >= CHUNK_LIMIT]
+    check("썸네일이 이미지이고 10MB 미만", not odd, odd[:3] or "예")
+    before = {cid: file_list(client, cid) for cid, _ in pairs}
+    no_view = [cid for cid, rows in before.items() if not any(r["kind"] == TEXT_KIND for r in rows)]
+    check("전 건에 열람 원문이 있음(썸네일 등록 전)", not no_view, no_view[:3] or f"{len(pairs)}건")
+    real = {cid: [r["name"] for r in rows if r["kind"] == THUMB_KIND and _size(r["size"]) > 0] for cid, rows in before.items()}
+    check("썸네일이 아직 등록되지 않음", not any(real.values()), {k: v for k, v in real.items() if v} or "전 건 없음")
+    holders = sum(1 for rows in before.values() for r in rows if r["kind"] == THUMB_KIND)
+    if holders:
+        log(f"  반입 때 생긴 썸네일 자리(0 Bytes) {holders}건이 있습니다")
+    d = client.send("POST", U_DIR, urlencode({"har_type_cd": WORK_CODE}), FORM)
+    directory = _text(d.get("direPath"))
+    check("서버 저장 위치", directory.startswith("/"), directory)
+    stamp = datetime.datetime.now().strftime("%Y%m%d") + str(int(time.time() * 1000))
+    records, t0, total = [], time.time(), len(pairs)
+    for n, (cid, f) in enumerate(pairs, 1):
+        if handle.get("cancel"):
+            raise Stop(f"사용자가 중단함(썸네일 {n - 1}/{total}장 전송)")
+        f = Path(f)
+        rule, guid, data = f"{TEMP_ROOT}{stamp}/{cid}", str(uuid.uuid4()).upper(), f.read_bytes()
+        raw = client.upload(U_HANDLER, upload_fields(guid, f.name, f"{n - 1}z" if n == total else str(n - 1), rule), f.name, data,
+                            MIME[f.suffix.lower()], note={"rule": rule, "guid": guid, "index": n - 1})
+        try:
+            ans = uploader_answer(raw).split("|")
+        except Exception as e:  # noqa: BLE001
+            raise Stop(f"전송 응답을 읽지 못했습니다({cid}/{f.name}): {raw[:120]}") from e
+        server = ans[1].split("::", 1)[-1] if len(ans) > 1 else ""
+        if ans[0] != "success" or server != f"/{rule}/{f.name}" or (len(ans) > 3 and ans[3] != str(len(data))):
+            raise Stop(f"전송 결과가 예상과 다릅니다({cid}/{f.name}): {ans}")
+        records.append(file_record(f.name, len(data), guid, server, cid, f))
+    log(f"  썸네일 전송 {total}장 ({int(time.time() - t0)}초)")
+    d = client.send("POST", U_SETLIST, urlencode({"textNew": "\x0b".join(records)}), FORM, wait=180, shown=f"(파일 {len(records)}건의 목록)")
+    info = _text(d.get("fileInfoId"))
+    check("썸네일 파일 목록 등록", bool(info), f"fileInfoId {info}")
+    done = []
+    for i, (cid, f) in enumerate(pairs):
+        if handle.get("cancel"):
+            raise Stop(f"사용자가 중단함(썸네일 등록 {i}/{total}건)")
+        f, path = Path(f), f"/{TEMP_ROOT}{stamp}/{cid}"
+        r = client.send("POST", U_FILES, urlencode({"folder_path": path, "index": str(i), "file_info_id": info, "directory_info": directory, "contents": ""}), FORM, wait=120)
+        got = [_text(x.get("FILE_NAME") or x.get("SERVER_FILE_NAME")) for x in r.get("list") or []]
+        check(f"{cid}: 서버에 올라간 파일 = 썸네일 1장", got == [f.name], got)
+        client.send("POST", U_TEXT, urlencode({"reg_contentsId": cid, "reg_cdNum": "", "reg_path": path, "reg_directory": directory,
+                                               "reg_fileNm": cid, "text_gbn": THUMB_KIND, "file_info_id": info}), FORM, wait=300)
+        after = file_list(client, cid)
+        thumb = [r for r in after if r["kind"] == THUMB_KIND and _size(r["size"]) > 0]
+        check(f"{cid}: 썸네일 행이 생김({f.name}, {f.stat().st_size:,}B)", len(thumb) == 1, [(r["kind_name"], r["name"], r["size"], r["date"]) for r in after if r["kind"] != TEXT_KIND] or "썸네일 행 없음",
+              "등록 요청 뒤 파일 목록에 크기가 있는 썸네일 행이 정확히 1개여야 합니다")
+        views = lambda rows: sorted((r["name"], r["size"]) for r in rows if r["kind"] == TEXT_KIND)
+        check(f"{cid}: 열람 원문이 그대로", views(after) == views(before[cid]), f"{len(views(after))}개 / {len(views(before[cid]))}개")
+        done.append({"id": cid, "file": f.name, "rows": [r for r in after if r["kind"] != TEXT_KIND]})
+        log(f"  썸네일 등록 {i + 1}/{total}: {cid} ← {f.name}")
+    return {"count": len(done), "seconds": int(time.time() - t0), "items": done, "placeholders": holders}
+
+
+def _size(v) -> int:
+    d = re.sub(r"[^\d.]", "", str(v or ""))
+    try:
+        return int(float(d)) if d else 0
+    except ValueError:
+        return 0
 
 
 # ---------- 바꾸는 요청 ----------
