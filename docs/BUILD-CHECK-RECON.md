@@ -46,10 +46,24 @@
 - MODS 수정 화면의 주소(소스): 값 읽기 `/online/contents/onContentsDetail.do`, 이전·다음 `/online/contents/onContentsDetailPreNext.do`, **저장 `/online/contents/updateHarContents.do`**, 전거 정보 `/online/contents/acInfoPop.do`, 로마자 `/online/contents/genRomaja.do`, 이용제한 `/online/contents/useLimitPop.do`, MODS 보기 `/online/contents/popXmlView.do`
 - 부모 대역 없이 띄우면 `parentGrid is not defined` 로 폼이 그려지지 않는다 → **다음 할 일 1번**.
 
+## 4-1. MODS 수정 화면 — 접수 985 자료로 띄워 확인한 것 (10-01 저녁)
+- 띄우는 법: `tools/recon.py 5-3_MODS수정화면 "/online/contents/onContentsDetailPop.do?contents_id=<콘텐츠ID>&view_type=&menu_id=F1131200" --opener work/captures/pages/opener_985.json`. 부모 대역 파일은 `{"rows": [{"CONTENTS_ID", "SPECIES_KEY"}], "vals": {"#species_key": "…", "#issuance": "MO"}}`.
+- 화면이 값을 읽는 요청: `POST /online/contents/onContentsDetail.do`(본문은 `harContentsUpdateForm` 폼 전체: `contentsId=<콘텐츠ID>&xmlType=2&…`). 응답은 **MODS 입력 폼의 HTML**이다(칸 이름이 `_titleInfo_title10`, `_name_namePart54` 처럼 요소 경로 + 번호).
+- **저장 = 그 폼을 그대로 직렬화해 `POST /online/contents/updateHarContents.do`**(화면의 `serializeObject('harContentsUpdateForm')`). 접수 985 첫 건에서 저장 본문을 **보내지 않고** 떠 두었다: `work/captures/pages/5-3_MODS수정화면/eval1.json`(273항목, 값 있는 것 81개). 수정 팝업(썸네일)과 달리 폼이 서버가 그려 준 것이라, 요청 방식은 "폼 HTML 을 받아 칸을 읽고, 바꿀 칸만 바꿔 그대로 돌려보내기"로 만들 수 있다. 폼에 `contentsWofElemListSerialized`(서버가 준 긴 값)가 들어 있으므로 반드시 받은 값을 그대로 돌려보낸다.
+- 구축에서 채울 칸(저장 본문의 이름): 저자전거 연결 `_name@ID`, `_name@authority`(찾기 버튼 `popSearchNameKolis('_name_namePartN', N, '_name_IDN', '_name_authorityN', '_name_typeN')`) / 주제명 연결 `_subject@ID`, `_subject@authority`, `_subject@authorityURI`(찾기 `subjectSearchPop(...)`) / 식별기호 `_identifier`, `_identifier@type`(UCI) / 저자 다른이름은 `_name` 묶음의 반복 칸(＋ 버튼 21개, － 버튼 20개 — 반복 칸을 늘리는 스크립트는 아직 읽지 않음).
+- 지금 값(반입 직후): `_name@type` personal, `_name_role_roleTerm` 글·그림, `_subject_topic` [만화, 웹툰], `_classification` 810(KDC 6), `_note` 2개(target audience, acquisition), `_originInfo_place_placeTerm` [[서울], ulk], `_accessCondition_licenseType` 1.
+- 찾기 함수(`popSearchNameKolis`, `subjectSearchPop`, `popSearchKInqcode`, `kdcSearchPop`)의 본문은 `onContentsDetail.do` 가 돌려주는 HTML 안에 있다(수집본은 20만 자에서 잘렸다 → `tools/recon.py` 의 응답 저장 한도를 늘려 다시 받아 읽는다). 전거 찾기 팝업 주소 후보는 종·콘텐츠 화면에 있던 `/bocata/kormarcmatmng/kormarcmatmng/ACControl.do?flag=4&tagno=700&type=0,1,2`, 주제명은 `/cmmn/subjnm/subjNmPop.do?flag_type=on`.
+- 그 밖의 버튼: 전거추출목록 `/online/contents/acInfoPop.do?contents_id=…`, 이용제한 `/online/contents/useLimitPop.do?contents_id=…`, 원문목록 `/online/contents/wFilePop.do`, 변경이력 `/online/contents/cntsHistPop.do`.
+
+## 4-2. MODS XML 받기 (점검의 입력) — 확인됨
+- `POST /online/contents/popup/getHarContentsXml.do` 본문 `contentsId=<콘텐츠ID>` → `{"sttus": "success", "mods_xml": "<?xml …"}`. 접수 985 첫 건으로 받음(2,988자, `mods:` 접두사, MODS 3.7). MODS보기 버튼의 화면은 `/online/contents/popXmlView.do?contentsId=…` 이고 그 화면이 위 요청을 보낸다.
+- **`kolis_tool/mods_fetch.py` 는 옛 주소(`/ndl2011/…/contentsXml.ndl`)를 쓰고 있어 고쳐야 한다**: 로그인은 `kolis_http.Client`, 받기는 위 요청으로. MODStoXL 을 대신하는 부분이 이것으로 확정된다.
+- `tests/fixtures/CNTS-00134746760.xml` 은 가이드 그림을 옮겨 적은 것이다. 실제 응답 한 건을 기준 자료로 바꾼다(작품 내용이 들어가므로 저장소에 넣어도 되는지 유저에게 확인).
+
 ## 5. 다음 할 일 (순서대로)
-1. `tools/recon.py` 에 부모 대역(`--opener`)을 넣어 MODS 수정 화면을 접수 985 의 콘텐츠(CNTS-00135578019 ~ 029)로 띄운다. 모을 것: 폼의 칸 전부(저자 반복, 전거 연결 칸, 다른이름, 주제명, 식별기호 UCI), 저장 버튼이 만드는 본문(누르지 않고 `tools/modify_truth.py` 처럼 본문을 만드는 함수만 불러 떠 둔다), 값 읽기 응답.
+1. (끝냄, 4-1절) MODS 수정 화면을 띄워 폼과 저장 본문을 떠 둠. 남은 것: 찾기 함수 본문 읽기, 반복 칸(＋)을 늘리는 방법, **접수 985 의 한 건에 실제로 전거·주제명을 연결해 저장해 보기**(985 는 유지 건이므로 유저·직원에게 먼저 묻는다. 취소 요청 건 984 로 해도 되는지도 묻는다).
 2. 저자전거 찾기(`ACControl.do`), 주제명 찾기(`subjNmPop.do`)를 띄워 조회 요청·응답을 기록한다(찾기는 조회다). 검색어: 큰조맨, 만화, 웹툰.
-3. `popXmlView.do` 로 MODS XML 을 받는 요청을 확정한다(`mods_fetch.py` 는 옛 주소 `…/contentsXml.ndl` 을 쓰고 실행한 적이 없다). 접수 985 의 콘텐츠로 받아 `tests/fixtures/` 의 형식과 같은지 본다.
+3. (요청 확정, 4-2절) `mods_fetch.py` 를 새 요청으로 고치고, 접수 985 의 11건을 받아 `mods-check` 로 점검 시트까지 만들어 본다(프로그램 창에 붙이는 것은 그 뒤).
 4. 일괄변경 팝업(`codeMngPop.do`), 콘텐츠목록보기(`showContentsList.do`), 엑셀 반출, 일괄복본조사의 실행·완료 함수의 본문을 소스에서 읽어 적는다.
 5. 통합검색 조회(복본 판정)를 본표제로 한 번 보내 응답을 기록한다.
 6. 원부번호가 필요한 조회(디지털콘텐츠관리 목록, 일괄복본조사 목록)는 직원에게 **정리 단계에 있는 원부번호 하나**를 받아 조회만 한다. 직원에게 물을 것: 가원부가 원부로 바뀌면 프로그램이 어떻게 아는가(주무관이 메일로 알려 주는가), 일괄복본조사의 '완료'는 무엇을 바꾸는가.

@@ -35,12 +35,29 @@ with sync_playwright() as p:
         page.on("response", on_resp); page.on("dialog", lambda d: (msgs.append(d.message), d.dismiss()))
         page.on("pageerror", lambda e: msgs.append("오류: " + str(e)[:200]))
     hook(pg); ctx.on("page", lambda np: (pops.append(np), hook(np)))
-    pg.goto(kr.BASE + url); pg.wait_for_load_state("load"); pg.wait_for_timeout(wait * 1000)
+    op = opt("--opener")
+    if op:      # 팝업은 부모 창의 표와 값을 읽는다: 부모 대역(JSON 파일 {"rows": [...], "vals": {"#id": "값"}})을 만들고 거기서 window.open 으로 띄운다
+        spec = json.loads(Path(op[0]).read_text(encoding="utf-8"))
+        pg.goto(kr.BASE + "/jscript/json/json2.js")
+        pg.evaluate("""spec => { let sel = 0; const rows = spec.rows || [], vals = spec.vals || {};
+            const g = {getCheckedIndexList: () => rows.map((_, i) => i), getRowsCount: () => rows.length, getSelectedIndexList: () => [sel], getselectedrowindex: () => sel,
+                       selectRow: i => { sel = i; }, getCellValue: (i, n) => rows[i] ? rows[i][n] : '', getCheckedValue: n => rows.map(r => r[n])};
+            window.grid = g; window.grid2 = g;
+            window.$ = s => ({val: () => vals[s] || '', text: () => vals[s + ':text'] || '', length: 1});
+            window.bindDataToGrid = () => {}; window.bindContDataToGrid = () => {}; window.searchPage = () => {}; }""", spec)
+        with pg.expect_popup() as pi:
+            pg.evaluate("u => { window.open(u, 'pop'); }", kr.BASE + url)
+        pg = pi.value; pg.wait_for_load_state("load"); pg.wait_for_timeout(wait * 1000)
+    else:
+        pg.goto(kr.BASE + url); pg.wait_for_load_state("load"); pg.wait_for_timeout(wait * 1000)
     for fid, val in fills:
         pg.evaluate("([i, v]) => { const e = document.getElementById(i); e.value = v; if (window.$) $(e).trigger('change'); }", [fid, val])
     for sel in clicks:
         pg.evaluate("s => document.querySelector(s).click()", sel); pg.wait_for_timeout(wait * 1000)
-    pages = [pg] + pops
+    for n, js in enumerate(opt("--eval"), 1):      # 화면 안에서 식을 계산해 저장(예: 저장 버튼이 만드는 본문을 보내지 않고 떠 두기)
+        try: (out / f"eval{n}.json").write_text(json.dumps(pg.evaluate(js), ensure_ascii=False, indent=1), encoding="utf-8")
+        except Exception as e: msgs.append(f"eval{n} 실패: {str(e)[:300]}")
+    pages = [pg] + [x for x in pops if x is not pg]
     lines = []
     for n, page in enumerate(pages):
         try: html = page.content()
