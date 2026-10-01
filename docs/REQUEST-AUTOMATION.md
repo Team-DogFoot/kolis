@@ -28,7 +28,7 @@
 
 코드: `kolis_http.py`(로그인·접속), `kolis_request.py`(요청 본문과 확인), `kolis_flow.py`(순서·확인·목록), `journal.py`(기록).
 
-아직 브라우저 없이 하지 못하는 것: **썸네일 등록**(재료가 없어 요청을 본 적이 없음. 동봉된 납품이면 화면 방식 `kolis_thumbs` 를 부른다), **10MB 이상 파일**(업로더가 조각으로 나눠 보내는 방식은 만들지 않음. 있으면 시작 전에 멈춘다).
+썸네일 등록은 10-01 에 요청으로 옮겼다(6절). 아직 브라우저 없이 하지 못하는 것: **10MB 이상 파일**(업로더가 조각으로 나눠 보내는 방식은 만들지 않음. 있으면 시작 전에 멈춘다).
 
 알아 둘 것
 - 비밀번호를 5번 틀리면 계정이 잠긴다. 로그인은 실행당 한 번만 시도하고 실패하면 다시 시도하지 않는다.
@@ -101,3 +101,25 @@
 - 로그인 요청(따로 접속하는 방법을 열려면). 직원이 로그인하기 전에 기록을 켜야 한다.
 - 썸네일이 동봉된 작품(썸네일 등록 확인용).
 - 썸네일 등록, 복본 판정(통합검색), 디지털콘텐츠관리, 일괄복본조사, 일괄변경, 전거·주제명 찾기.
+
+## 6. 썸네일 등록을 요청으로 (2026-10-01)
+
+결론: **브라우저 없이, 건마다 한 장씩, 요청만으로 된다.** 코드 `kolis_tool/kolis_modify.py`, `kolis_flow.py` 의 5번 단계.
+
+화면에서 직원이 하는 일과 보내는 요청(수정 팝업 `…/onlineDepstRecet/popupModify.do` 과 원문등록 팝업 `/online/cmmn/popFileUploadForm.do` 의 소스를 KOLIS 에서 받아 읽음. 사본은 `work/captures/pages/수정팝업/`, 저장소에는 넣지 않음):
+
+| 화면 | 요청 |
+|---|---|
+| 수정 팝업이 열릴 때 그 건의 값 148칸 | `POST …/onlineDepstRecet/modifyInputOnlineDepstRecet/selectModifyInputOnlineDepstRecetData.do` (receipt_key, arrSpeciesKey = 목록의 REC_KEY) |
+| 파일 표 | `POST /online/cmmn/retrieveComContentsFileList.do` (contents_id). 원문유형 코드: 01 열람, 02 표지, 03 목차, 04 초록, 05 원본, **06 썸네일** |
+| 원문등록 팝업의 파일 전송 | 원문과 같은 업로더 `POST /dext5upload/handler/dext5handler.jsp`. 임시 위치는 `/Upload1/tmp/wonmun/<날짜8자리+시각(ms)>/<파일명>`(폴더 없이) |
+| 원문삭제 → 저장 | `POST …/onlineDepstRecet/popupUpdateOnlineDepstRecet.do`. `frm_file` = 남는 행, `frm_del_file` = 지울 행 목록 `[{idx,file_id,file_name,file_loca,seq_no,contents_id}]` |
+| 원문등록(확인) → 저장 | 같은 주소. `frm_file` = 지금 행 + 새 행(원문유형 06, TEMP_PATH = 임시 위치, SELECT_FILE_ID = 열람 원문의 FILE_ID), `frm_del_file` = `{contents_id, kolis_control_no, select_file_id, data:[{text_gbn:'06', …}]}` (원문등록 팝업이 이 칸에 덮어쓴다) |
+
+- 반입용 엑셀에 thum_files 를 적으면 건마다 FILE_ID `1`, 0 Bytes 인 썸네일 자리 행이 생긴다(TEMP_PATH `/Upload1/jangseo/ImpCont/amcont/<파일명>`). 그래서 저장을 두 번 한다(자리 행 삭제 → 썸네일 등록). 화면 절차와 같다.
+- **저장 요청은 수정 화면의 서지 칸 146개를 전부 함께 보낸다.** 칸의 이름·순서와 어느 값에서 오는지는 수정 화면의 `getParam()` 에서 뽑아 `kolis_tool/templates/modify_param_spec.json` 에 두었다. 따로 계산하는 칸 18개는 `kolis_modify.build` 에 있다(콘텐츠유형·장르는 `코드 | 이름`, 이용제한구분은 비면 `--`, 서비스범위 글자, 공개 시점 등).
+- **맞는지 어떻게 확인했나**: 화면 없는 Edge(개발용 도구 `tools/modify_truth.py`)에 수정 팝업을 띄워 그 화면의 스크립트가 만드는 본문을 떠서 대조했다. 접수 982 의 2번째 건은 그 화면의 스크립트로 실제 저장(`tools/modify_screen_once.py`)했고, 그때 나간 본문과 `kolis_modify.build` 가 만든 본문이 항목 순서·값 모두 같았다(저장이 스스로 바꾸는 날짜와 MODS 제외). 3·4번째 건은 요청만으로 등록했다.
+  이 도구들은 **개발할 때 대조용**이다. 프로그램은 브라우저를 쓰지 않는다. KOLIS 의 수정 화면이 바뀌면 `tools/modify_spec_check.py` 로 표를 다시 뽑고 `tools/modify_truth.py` 로 대조한다.
+- **수정 화면의 저장이 스스로 바꾸는 것**(손으로 저장해도 같다): 생성일·작업일이 저장 시각으로 바뀌고, 입수일이 비고, 이용제한구분이 `--`, 서비스범위 글자가 채워진다. 콘텐츠 MODS 에는 빈 태그(`subTitle`, `partName`, 대등표제 `titleInfo type="parallel"`, `edition`, `KoreaUniversity`)와 `accessCondition`(비공개 등)이 더해지고 요소 순서가 바뀐다. 값이 든 요소는 그대로다. 프로그램은 건마다 저장 전·후를 읽어 이것 말고 달라진 것이 있으면 멈춘다.
+- **안 되는 방법**: 원문일괄등록 요청 `insertContentsText.do` 에 `text_gbn=06` → KOLIS 가 "해당콘텐츠에 원문이 이미 존재합니다"로 거절(접수 982).
+- **가이드 3.4-다의 일괄 방식(하이웨어·파일질라 SFTP)**: 만들지 않았다. 다만 그 방식이 파일을 넣는 자리 `/Upload1/jangseo/ImpCont/amcont/` 에 업로더 요청으로 파일을 넣을 수 있다는 것은 확인했다(접수 982 의 1번째 건 썸네일 1장, 10-01 18:39 전송 성공). KOLIS 가 1~2시간 뒤 자리 행을 채우는지는 EXECUTION-LOG 에 적는다.

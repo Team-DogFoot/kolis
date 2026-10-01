@@ -244,10 +244,13 @@ def run(work: dict, note: str, yes: str, work_dir: Path, log, handle: dict | Non
             check("엑셀의 thum_files 가 행마다 있음", len(names) == rows and all(names), [n for n in names if n][:3] or "없음",
                   "썸네일이 동봉된 납품인데 반입용 엑셀의 thum_files 가 비어 있는 행이 있습니다")
             check("thum_files 가 행마다 다름", len(set(names)) == rows, len(set(names)))
-            pairs = [(cid, thumbs / n) for cid, n in zip(ids, names)]
-            jr.write("thumb_pairs", pairs=[(c, f.name) for c, f in pairs])
+            from . import kolis_modify
+            by_id = {i["CONTENTS_ID"]: i for i in req.receipt_items(client, year, receipt)}
+            check("접수 목록에 전 건이 있음", all(c in by_id for c in ids), f"{len(by_id)}건")
+            pairs = [(by_id[cid], thumbs / n) for cid, n in zip(ids, names)]
+            jr.write("thumb_pairs", pairs=[(i["CONTENTS_ID"], f.name) for i, f in pairs])
             try:
-                r = req.upload_thumbs(client, year, receipt, pairs, log, handle, check)
+                r = kolis_modify.upload_thumbs(client, receipt, pairs, log, handle, check)
             except req.Stop as e:
                 raise Stop(str(e)) from e
             jr.write("thumbs", results=r["items"])
