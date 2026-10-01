@@ -549,7 +549,7 @@ class Api:
             finally:
                 self._jobs.pop(tab, None)
         # 브라우저를 쓰지 않으므로 KOLIS 창 잠금을 걸지 않고 프로그램 창도 내리지 않는다(여러 작품 동시 실행 가능). 썸네일이 있는 납품만 Edge 를 쓴다
-        return self._run("flow", job, tab=tab, screen=bool(w.get("thumbs")))
+        return self._run("flow", job, tab=tab, screen=False)      # 썸네일도 요청으로 한다(2026-10-01) → KOLIS 창을 쓰지 않으므로 여러 작품을 동시에 실행할 수 있다
 
     def flow_ledger(self) -> dict:
         """실행한 접수번호 목록(work/취소요청_목록.csv). 처리 = 유지 / 취소 요청."""

@@ -403,8 +403,13 @@ def upload_folders(client, year: str, receipt: str, root: Path, ids: list[str], 
             if ans[0] != "success" or server != want or (len(ans) > 3 and ans[3] != str(len(data))):
                 raise Stop(f"전송 결과가 예상과 다릅니다({folder.name}/{q.name}): {ans} (예상 위치 {want}, 크기 {len(data)})")
             records.append(file_record(q.name, len(data), guid, server, folder.name, q))
-            if n % 50 == 0 or n == total:
+            if not hasattr(client, "drain") and (n % 50 == 0 or n == total):
                 log(f"  전송 {n}/{total} ({int(time.time() - t0)}초)")
+    if hasattr(client, "drain"):       # 동시 전송: 여기서 전부 끝나기를 기다리고 실제 응답을 대조한다(다르면 멈춤)
+        got = client.drain(cancel=lambda: handle.get("cancel"), progress=lambda a, b: log(f"  전송 {a}/{b} ({int(time.time() - t0)}초)"))
+        if got.get("files"):
+            check("전송한 파일 수 = PC 의 파일 수", got["files"] == total, f"{got['files']} / {total}")
+            log(f"  전송 끝: {got['bytes'] / 1048576:.1f}MB, {got['seconds']}초, {got['rate']}MB/s")
     d = client.send("POST", U_SETLIST, urlencode({"textNew": "\x0b".join(records)}), FORM, wait=180, shown=f"(파일 {len(records)}건의 목록)")
     info = _text(d.get("fileInfoId"))
     check("파일 목록 등록", bool(info), f"fileInfoId {info}")
