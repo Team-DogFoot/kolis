@@ -248,3 +248,11 @@
 - `tools/mods_fields_doc.py` → `docs/MODS-FIELDS.md`: 세 출처를 경로로 합침 — A 지침 0.5 요소 목록 55, **B KOLIS MODS 수정 화면 칸 174(저장이 받는 전부)**, C 반입 템플릿 Sample 시트 「필드설명」 50(도서관 공식 열 설명·값 규칙·언어 코드표) + 템플릿 83열·예시 88열(고유 경로 54) + 반입 직후 XML 에서 확인된 42.
 - 발견: Sample 필드설명에 없는 열(`name[@usage]`, `note[@type]`, `originInfo[@eventType]`, `classification[@edition]`, `edition`)이 승인 양식에 있고 반입 XML 에 들어가 있음 → 반입 파서는 "요소 뒤 속성" 일반 규칙. 따라서 전거 `name[@ID]`·`[@authority]`, `subject[@ID]`·`[@authority]`, `subject/genre`, `alternativeName[@altType]` 도 들어갈 **가능성 높음**, 다만 **반입 1회 없이는 확정 불가**(UCI 는 지침이 반입 오류라고 적음). KOLIS 화면에만 있고 반입 설명·양식에 없는 경로 117개(relatedItem·part·extension·recordInfo 대부분).
 - 커밋 fd5b7b9(세션 마무리) 뒤 추가.
+
+## 2026-10-03 23:20~23:50 — 반입 헤더 시험(유저 지시 "다 테스트 해봐, 취소하면 되잖아") + 그림 전수 읽기(서브에이전트 3)
+- `tools/import_probe.py`: 원시인 삼촌 2행에 시험 열을 끼워 일괄반입(요청) → 접수 목록의 MODS 로 확인 → 접수번호를 `work/취소요청_목록.csv` 에 "취소 요청". 원문 등록·가원부 안 함.
+  - 1차(접수 1027, 101열): 저자 전거 `name[@ID]`·`[@authority]` ○ / 다른이름 `alternativeName`+`[@type]`=nickname → `altType="nickname"` ○ / 주제명 2묶음 `subject[@ID]`·`[@authority]`·`subject/genre` ○ / 식별기호 둘째 `identifier` `[@type]`=uci ○ / 출처정보 2묶음 ○ — 발행지 부모 열을 placeTerm 마다 두니 `<place>` 둘.
+  - 2차(접수 1028, 99열): 출처정보마다 발행지 부모 열 한 번 → `<place>` 하나에 placeTerm text+code(지침 꼴). **유저가 본 "출처정보 하나에 발행지 4개"의 원인 = 둘째 `/mods/originInfo` 부모 열 없이 placeTerm 만 반복.**
+  - 3차(접수 아래 기록): 디스플레이형식·`[@altType]` 표기·첫 출처정보 발행처 2칸·판사항·넷째 주기(awards).
+- 결론: **5.3 의 추가 작업(전거·다른이름·주제명·UCI·출처정보)이 전부 반입용 엑셀로 들어간다.** → 반입에서 끝낼 수 있다. 지침 13 "UCI 반입 오류"는 지금 KOLIS 에서 재현 안 됨. 상세 `BUILD-CHECK-RECON.md` 9절.
+- 그림 전수 읽기: 서브에이전트 3개가 mods-guide 60장·매뉴얼/지침서·프로세스 가이드 38장을 읽어 `docs/source/text/IMAGE-NOTES-*.md` 에 쓰는 중.

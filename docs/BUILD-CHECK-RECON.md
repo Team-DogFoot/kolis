@@ -84,3 +84,12 @@
 ## 8. 공용사항관리 팝업(2026-10-03 21:50 조사, 열기만)
 디지털콘텐츠관리 `#btnCommonMods` → `openModal('/online/cata/bocata/digitalcont/digitalcontmng/popCommonMods.do?har_stat_cd=30&publish_form_code=MO')`. 칸: 공용사항제목, 장르(콘텐츠유형·장르), 출처정보(발행연속성·간행빈도), 언어, 형태기술정보(자료형태·디지털품질·디지털자료유형·수량·형태주기), 이용대상자, 주기사항 1~3(유형+글), 분류기호(@authority·@edition·@generator), 소장정보(소장위치·@authority), 로컬정보(지역구분·NOTE·한국대학/정부기관/공공기관부호). 단추: 입력·수정·삭제(공용사항 저장본 관리: `insertCommonMods/updateCommonMods/deleteCommonMods/getCommonMods(List).do`), **MODS적용**(`updateContentsXml.do` — 체크한 콘텐츠들에 공용사항을 덮어씀).
 **저자(전거)·주제명·식별기호(UCI)·표제·출처정보 발행처 칸이 없다.** → 5.3 의 추가 작업(전거 연결·다른이름·주제명 연결·UCI)에는 쓸 수 없다. 쓸 수 있는 곳: 주기사항·이용대상자·분류·언어처럼 원부 전체가 같은 값(이미 반입에서 들어감). 기록: `work/captures/pages/5-3_공용사항관리/`(popup.html, fields.json, inline_scripts.js, urls.txt, popup.png). 저장은 누르지 않음.
+
+## 9. 반입 헤더 시험(2026-10-03 23:30, 원시인 삼촌 2행, 접수 2건 → 취소 요청 목록)
+`tools/import_probe.py`. 일괄반입(요청)에 시험 열을 끼워 넣고 접수 목록이 돌려주는 MODS(CONTENTS_XML)로 확인. **전부 들어갔다.**
+- 저자 전거: `/mods/name[@ID]`, `/mods/name[@authority]` → `<name ID="KAC…" authority="국립중앙도서관전거데이터" type="개인명">`.
+- 다른이름: 템플릿 열 `/mods/name/alternativeName`, `/mods/name/alternativeName[@type]`(값 nickname), `/mods/name/alternativeName/namePart` → `<alternativeName altType="nickname">`(열 이름은 [@type] 로 써도 altType 으로 들어감).
+- 주제명 연결: `/mods/subject/` | `/mods/subject/topic` | `/mods/subject[@ID]` | `/mods/subject[@authority]` | `/mods/subject/` | `/mods/subject/genre` | `[@ID]` | `[@authority]` → 주제명 2묶음(만화[漫畵] KSH1998022212 topic, 웹툰[webtoon] KSH2016000049 genre) 전거 포함.
+- 식별기호 UCI: 둘째 `/mods/identifier` + `/mods/identifier[@type]`=uci → `<identifier type="uci">` 들어감(지침 13 의 "반입 오류"는 지금 KOLIS 에서는 재현되지 않음).
+- 출처정보 2묶음: 둘째 `/mods/originInfo` 부모 열 뒤에 `[@type]`·발행지·발행처·발행일·발행연속성 → 두 `<originInfo>` 로 나뉨. **발행지 구조는 부모 열 `/mods/originInfo/place` 로 정해진다**: 부모 열을 placeTerm 쌍 앞에 **한 번** 두면 `<place>` 하나에 placeTerm(text, code) 둘(지침 예시 꼴, 2차 시험 접수), placeTerm 마다 두면 `<place>` 둘(1차 시험), 부모 열이 없으면 앞 묶음에 붙는다(유저가 본 "출처정보 하나에 발행지 4개"의 원인 — 둘째 `/mods/originInfo` 부모 열 없이 placeTerm 만 반복하면 그렇게 된다). 규칙(Sample 시트): "반복에 따른 부모정의 항목으로 데이터는 없음".
+- 접수번호 1027(1차)·둘째 접수(2차)는 `work/취소요청_목록.csv` 에 "취소 요청"으로 적음. 원문 등록·가원부번호는 하지 않음.
