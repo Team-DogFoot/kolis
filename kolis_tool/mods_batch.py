@@ -202,7 +202,7 @@ def status(wonbu: str) -> list[dict]:
             cnts = (job_eps.get(item["row"]) or {}).get("contents_id") or next((c for c, s in states.items() if s.get("row") == item["row"]), None)
             st = states.get(cnts, {})
             stage = "saved" if st.get("saved_at") else "filled" if st.get("applied_at") else "judged" if (cnts in judged or st.get("judged_at")) else "todo"
-            out.append({"row": item["row"], "title": item.get("TITLE"), "part": item.get("VOL"), "contents_id": cnts, "stage": stage,
+            out.append({"row": item["row"], "title": item.get("TITLE"), "part": item.get("VOL"), "contents_id": cnts, "stage": stage, "body_ready": bool(cnts) and (WORK / str(cnts) / "save_body.json").exists(),
                         "applied_at": st.get("applied_at"), "saved_at": st.get("saved_at"), "judged_at": st.get("judged_at")})
     else:
         for cnts, st in states.items():
@@ -210,3 +210,141 @@ def status(wonbu: str) -> list[dict]:
             out.append({"row": st.get("row", 0), "title": st.get("title"), "part": st.get("part"), "contents_id": cnts, "stage": stage,
                         "applied_at": st.get("applied_at"), "saved_at": st.get("saved_at"), "judged_at": st.get("judged_at")})
     return sorted(out, key=lambda x: x.get("row", 0))
+
+
+def set_author_decision(wonbu: str, name: str, ac_control_no: str, signpost: str = "", reason: str = "") -> dict:
+    """직원 결정: 작품 판단(build.json)의 저자 하나를 '연결(전거 번호)'로 바꾼다(source: staff). 빈 번호면 '연결 안 함'으로."""
+    p = wdir(wonbu) / "build.json"
+    w = json.loads(p.read_text(encoding="utf-8"))
+    hit = None
+    for a in w.get("authors") or []:
+        if a.get("name") == name:
+            hit = a
+            if ac_control_no:
+                a.update({"decision": "link", "ac_control_no": ac_control_no, "choice_signpost": signpost or name, "source": "staff", "confidence": "high", "staff_reason": reason or "직원이 확인해 연결"})
+            else:
+                a.update({"decision": "none", "ac_control_no": "", "source": "staff", "staff_reason": reason or "직원이 연결하지 않기로 함"})
+    if hit is None:
+        raise SystemExit(f"작품 판단에 저자 '{name}' 이 없습니다")
+    p.write_text(json.dumps(w, ensure_ascii=False, indent=1), encoding="utf-8")
+    _note(wonbu, step="staff_decision", author=name, ac_control_no=ac_control_no, reason=reason)
+    return hit
+
+
+def prepare_bodies(wonbu: str, rows: list[int], log=print, handle: dict | None = None) -> dict:
+    """「한 번에 입력」의 앞 절반(보내지 않음): 회차마다 MODS 수정 화면을 열어 작품 판단대로 채우고, 화면의 저장 함수가 만드는 요청 본문을 가로채
+    work/build/CNTS-…/save_body.json 에 둔다. 1화의 실제 저장 본문(기록)과 꼴을 견주어 확인한 뒤에야 보내는 단계를 만든다."""
+    mb._LOG[0] = log
+    work = json.loads((wdir(wonbu) / "build.json").read_text(encoding="utf-8"))
+    job = json.loads((wdir(wonbu) / "job.json").read_text(encoding="utf-8"))
+    b = Browser(log); b.login()
+    out = []
+    try:
+        for row in rows:
+            if (handle or {}).get("cancel"):
+                break
+            _close_popups(b)
+            mods, info = mb.open_mods(b, wonbu, row)
+            cnts = mb.contents_id(mods)
+            build = episode_build(work, cnts)
+            d = WORK / cnts; d.mkdir(parents=True, exist_ok=True)
+            (d / "build.json").write_text(json.dumps(build, ensure_ascii=False, indent=1), encoding="utf-8")
+            (d / "job.json").write_text(json.dumps({"contents_id": cnts, "authors": [{**a, "index": i} for i, a in enumerate(job.get("authors") or [])], "manuscript": job.get("manuscript"), "project": job.get("project")}, ensure_ascii=False, indent=1), encoding="utf-8")
+            before_xml = mb.fetch_xml(mods, cnts); (d / "mods_before.xml").write_text(before_xml, encoding="utf-8")
+            ap = mb.apply(b, mods, d / "build.json")
+            body = mb.capture_save_body(b, mods)
+            (d / "save_body.json").write_text(json.dumps({"contents_id": cnts, "row": row, "at": f"{datetime.datetime.now():%Y-%m-%d %H:%M:%S}", "url": "/online/contents/updateHarContents.do", "fields": body, "apply": ap}, ensure_ascii=False, indent=1), encoding="utf-8")
+            xp = str(body.get("inputedXpath", "")).split(","); vals = str(body.get("inputedElemValue", "")).split(",")
+            summary = {"contents_id": cnts, "row": row, "fields": len(body), "xpaths": len(xp), "values": len(vals), "has_comma_mark": "▲COMMA▲" in str(body.get("inputedElemValue", "")),
+                       "name_ids": [v for x, v in zip(xp, vals) if x == "/mods/name@ID" and v], "subject_ids": [v for x, v in zip(xp, vals) if x == "/mods/subject@ID" and v], "file": str(d / "save_body.json")}
+            log(f"저장 본문 준비(보내지 않음) {cnts}: 칸 {summary['fields']} · 경로 {summary['xpaths']} · 전거 {summary['name_ids']} · 주제명 {summary['subject_ids']}")
+            _note(wonbu, step="prepare_body", **summary)
+            out.append(summary)
+            mods.close()
+        return {"wonbu": wonbu, "rows": out}
+    finally:
+        b.close()
+
+
+# 저장 뒤 KOLIS 가 스스로 바꾸는 요소(10-01·10-03 관찰). 전·후 대조에서 "의도한 변화"로 친다.
+AUTO_CHANGED = ("internetMediaType", "digitalOrigin", "accessCondition", "recordChangeDate", "recordIdentifier", "useObjCode", "dateIssued", "publisher", "typeOfResource", "genre", "reformattingQuality")
+INTENDED = ("name", "subject", "identifier", "alternativeName", "displayForm", "namePart", "topic", "genre")
+
+
+def _mods_sig(xml_text: str) -> dict:
+    """XML → {경로+속성: 값} (대조용). 반복 요소는 순서 번호를 붙인다."""
+    import xml.etree.ElementTree as ET
+    out = {}
+    if not xml_text:
+        return out
+    root = ET.fromstring(xml_text)
+    def walk(e, path, counts):
+        tag = e.tag.split("}")[1]
+        n = counts.get((path, tag), 0); counts[(path, tag)] = n + 1
+        here = f"{path}/{tag}[{n}]"
+        for k, v in e.attrib.items():
+            out[f"{here}@{k}"] = v
+        if (e.text or "").strip():
+            out[here] = e.text.strip()
+        sub = {}
+        for c in e:
+            walk(c, here, sub)
+    walk(root, "", {})
+    return out
+
+
+def diff_xml(before: str, after: str) -> dict:
+    a, b = _mods_sig(before), _mods_sig(after)
+    changed = sorted(set(a) ^ set(b) | {k for k in a if k in b and a[k] != b[k]})
+    intended = [k for k in changed if any(f"/{t}[" in k for t in INTENDED)]
+    auto = [k for k in changed if k not in intended and any(f"/{t}[" in k or k.endswith(t) for t in AUTO_CHANGED)]
+    other = [k for k in changed if k not in intended and k not in auto]
+    return {"changed": len(changed), "intended": intended, "auto": auto, "other": [{"path": k, "before": a.get(k), "after": b.get(k)} for k in other]}
+
+
+def send_bodies(wonbu: str, rows: list[int], log=print, handle: dict | None = None, stop_on_other: bool = True) -> dict:
+    """「n건에 한 번에 넣기」(⑥): 미리 가로채 둔 저장 본문(save_body.json)을 콘텐츠마다 KOLIS 세션으로 보내고, 전·후 XML 을 대조한다.
+    첫 1건을 보내고 대조해 **의도하지 않은 변화(other)가 있으면 멈춘다**(stop_on_other). 되돌릴 수 없으므로 사람이 단추를 눌렀을 때만 부른다."""
+    from urllib.parse import urlencode
+    mb._LOG[0] = log
+    b = Browser(log); b.login()
+    out = []
+    try:
+        pg = b.page
+        for i, row in enumerate(rows, 1):
+            if (handle or {}).get("cancel"):
+                break
+            ep = next((e for e in json.loads((wdir(wonbu) / "episodes.json").read_text(encoding="utf-8")) if e.get("row") == row), None)
+            job_eps = {e["row"]: e for e in (json.loads((wdir(wonbu) / "job.json").read_text(encoding="utf-8")).get("episodes") or [])}
+            cnts = (job_eps.get(row) or {}).get("contents_id")
+            d = WORK / str(cnts)
+            bp = d / "save_body.json"
+            if not cnts or not bp.exists():
+                out.append({"row": row, "ok": False, "error": "저장 본문이 준비되지 않았습니다(먼저 「저장 본문 준비」)"}); continue
+            body = json.loads(bp.read_text(encoding="utf-8"))
+            fields = body["fields"]
+            before = pg.request.post(BASE + "/online/contents/popup/getHarContentsXml.do", form={"contentsId": cnts}).json().get("mods_xml") or ""
+            (d / "mods_before.xml").write_text(before, encoding="utf-8")
+            flat = {k: (v[0] if isinstance(v, list) else v) for k, v in fields.items()}
+            log(f"── {cnts} ({i}/{len(rows)}) 저장 요청 보냄(updateHarContents, 칸 {len(flat)})")
+            b._rec("http", method="POST", url="/online/contents/updateHarContents.do", post=urlencode(flat), approved=True, changes=True, note="한 번에 입력")
+            r = pg.request.post(BASE + "/online/contents/updateHarContents.do", form=flat, headers={"X-Requested-With": "XMLHttpRequest"})
+            txt = r.text(); ok = r.ok and '"sttus":"success"' in txt
+            after = pg.request.post(BASE + "/online/contents/popup/getHarContentsXml.do", form={"contentsId": cnts}).json().get("mods_xml") or ""
+            (d / "mods_after.xml").write_text(after, encoding="utf-8")
+            dv = diff_xml(before, after)
+            xml_ok = "KSH2016000049" in after and "KSH1998022212" in after
+            st_p = d / "state.json"; st = json.loads(st_p.read_text(encoding="utf-8")) if st_p.exists() else {"wonbu": wonbu, "row": row, "contents_id": cnts}
+            st.update({"saved_at": f"{datetime.datetime.now():%Y-%m-%d %H:%M}" if ok else st.get("saved_at"), "xml_ok": xml_ok, "save_mode": "request", "diff": {"changed": dv["changed"], "other": len(dv["other"])}})
+            st_p.write_text(json.dumps(st, ensure_ascii=False, indent=1), encoding="utf-8")
+            rec = {"row": row, "contents_id": cnts, "ok": ok, "status": r.status, "response": txt[:200], "xml_ok": xml_ok, "diff": dv}
+            _note(wonbu, step="send_body", **{k: v for k, v in rec.items() if k != "diff"}, changed=dv["changed"], other=len(dv["other"]))
+            log(f"   응답 {r.status} {'성공' if ok else '실패'} · 바뀐 요소 {dv['changed']}(의도 {len(dv['intended'])} · KOLIS 자동 {len(dv['auto'])} · 그 밖 {len(dv['other'])}) · 주제명 2묶음 {'확인' if xml_ok else '없음!'}")
+            out.append(rec)
+            if not ok or (stop_on_other and dv["other"]):
+                log("!!! 멈춥니다: " + ("저장 실패" if not ok else f"의도하지 않은 변화 {len(dv['other'])}곳 — {dv['other'][:3]}"))
+                break
+        return {"wonbu": wonbu, "rows": out}
+    finally:
+        b.close()
+

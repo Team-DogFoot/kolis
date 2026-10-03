@@ -35,6 +35,7 @@ def main(argv=None):
     a = sub.add_parser("check-build", help="(에이전트용) MODS 구축 판단 파일(build.json)의 형식·근거 검사"); a.add_argument("result"); a.add_argument("--job")
     a = sub.add_parser("check-build-work", help="(에이전트용) 작품 단위 MODS 구축 판단 파일 검사"); a.add_argument("result"); a.add_argument("--job")
     a = sub.add_parser("check-dup", help="(에이전트용) 복본 판정 파일 검사"); a.add_argument("result"); a.add_argument("--job")
+    a = sub.add_parser("authority", help="(에이전트용) 저자 전거 후보 조회(요청만, 읽기)"); a.add_argument("name")
     a = sub.add_parser("unzip", help="한글 파일명 깨짐 없이 zip 풀기(cp949)"); a.add_argument("zip"); a.add_argument("-o", "--out", required=True)
     a = sub.add_parser("inspect"); a.add_argument("root"); a.add_argument("-o", "--out", default="out")
     a = sub.add_parser("ids", help="전체출력 파일(.xls/HTML)에서 콘텐츠ID 목록 추출"); a.add_argument("export_file"); a.add_argument("-o", "--out", default="work/ids.txt")
@@ -50,6 +51,9 @@ def main(argv=None):
     elif ns.cmd == "check-research":
         from .checks import main_check_research
         sys.exit(main_check_research(ns.result, ns.job))
+    elif ns.cmd == "authority":
+        from .authority import main as main_authority
+        sys.exit(main_authority(ns.name))
     elif ns.cmd == "check-dup":
         from .checks import main_check_dup
         sys.exit(main_check_dup(ns.result, ns.job))

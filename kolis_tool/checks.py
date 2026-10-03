@@ -196,6 +196,10 @@ def check_build(result: Path, job: Path | None = None) -> list[str]:
         if not str(a.get("reason") or "").strip():
             out.append(f"저자 '{name}': reason(이유)이 없습니다")
         cands = {c.get("AC_CONTROL_NO") for c in (want.get(name) or {}).get("candidates") or []}
+        if dec == "link" and a.get("source") == "staff":
+            if not str(a.get("ac_control_no") or "").strip():
+                out.append(f"저자 '{name}': 직원 결정(staff)인데 전거 번호가 없습니다")
+            continue      # 직원이 정한 연결은 후보·확신 검사를 하지 않는다(2026-10-03 계획 6절)
         if dec == "link":
             no = a.get("ac_control_no")
             if cands and no not in cands:
@@ -264,6 +268,10 @@ def check_build_work(result: Path, job: Path | None = None) -> list[str]:
         if not str(a.get("reason") or "").strip():
             out.append(f"저자 '{name}': reason(이유)이 없습니다")
         cands = {c.get("AC_CONTROL_NO") for c in (want.get(name) or {}).get("candidates") or []}
+        if dec == "link" and a.get("source") == "staff":
+            if not str(a.get("ac_control_no") or "").strip():
+                out.append(f"저자 '{name}': 직원 결정(staff)인데 전거 번호가 없습니다")
+            continue      # 직원이 정한 연결은 후보·확신 검사를 하지 않는다(2026-10-03 계획 6절)
         if dec == "link":
             if cands and a.get("ac_control_no") not in cands:
                 out.append(f"저자 '{name}': ac_control_no {a.get('ac_control_no')!r} 가 전거 검색 후보에 없습니다")

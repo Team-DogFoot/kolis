@@ -39,7 +39,6 @@ CONSTANTS: dict[Key, str] = {
     ("/mods/note[@type]", 1): "target audience",
     ("/mods/note[@type]", 2): "acquisition",
     ("/mods/subject/topic", 0): "만화",
-    ("/mods/subject/topic", 1): "웹툰",
     ("/mods/classification", 0): 810,
     ("/mods/classification[@authority]", 0): "KDC",
     ("/mods/classification[@edition]", 0): "6",
@@ -60,8 +59,21 @@ FIELDS: dict[str, Key] = {
     "acquisition_note": ("/mods/note", 2), "identifier": ("/mods/identifier", 0), "identifier_type": ("/mods/identifier[@type]", 0),
     "url_main": ("/mods/location/url", 0), "url_work": ("/mods/location/url", 1), "licenseType": ("/mods/accessCondition/licenseType", 0),
     "price": ("contents_price", 0), "compensation": ("compensation", 0), "reward_yn": ("reward_yn", 0),
+    "edition": ("/mods/originInfo/edition", 0),
 }
-NAME_KEYS = [{"name": ("/mods/name/namePart", i), "type": ("/mods/name[@type]", i), "role": ("/mods/name/role/roleTerm", i)} for i in range(3)]
+# 반복·묶음 항목(값이 있으면 양식에 열을 그만큼 늘려 쓴다 — 완료 사례 88열: 저자 4묶음, 발행처 2칸)
+#   names: [{name,type,role}] 상한 없음 / publishers: 첫 출처정보의 추가 발행처(제작처·유통사, 가이드 5 순서) / notes_extra: [{text,type}] 넷째 주기부터(수상 등)
+#   origin2: {"type","issuance","publisher","dateIssued"} 둘째 출처정보(발행지가 다른 제작처가 있을 때만, 가이드 5.2)
+REPEAT_FIELDS = ("names", "publishers", "notes_extra", "origin2")
+ORIGIN2_KEYS = {"type": ("/mods/originInfo[@type]", 0), "issuance": ("/mods/originInfo/issuance", 1), "dateIssued": ("/mods/originInfo/dateIssued", 1)}   # publisher 는 첫 출처정보의 발행처 수에 따라 번째가 달라져 write 에서 계산
+NAME_GROUP = ["/mods/name", "/mods/name/namePart", "/mods/name[@type]", "/mods/name/role", "/mods/name/role/roleTerm"]     # 둘째 이후 저자 묶음의 열(예시 88열)
+
+
+def name_keys(i: int) -> dict:
+    return {"name": ("/mods/name/namePart", i), "type": ("/mods/name[@type]", i), "role": ("/mods/name/role/roleTerm", i)}
+
+
+NAME_KEYS = [name_keys(i) for i in range(3)]
 COMPUTED = {"extent": ("/mods/physicalDescription/extent", 0), "format": ("/mods/physicalDescription/internetMediaType", 0), "thumb_file": ("thum_files", 0)}
 REQUIRED = ["title", "publisher", "place", "place_code", "dateIssued", "targetAudience", "audience_note", "acquisition_note", "identifier",
             "url_main", "url_work", "licenseType", "price", "reward_yn"]
@@ -75,15 +87,17 @@ KOREAN = {"title": "본표제", "title_parallel": "대등표제", "subTitle": "�
           "publisher": "발행처", "dateIssued": "발행일", "targetAudience": "이용대상자", "other_note": "주기", "audience_note": "이용대상자 주기",
           "acquisition_note": "입수처 주기", "identifier": "식별기호", "identifier_type": "식별기호 유형", "url_main": "원문주소(작품이 들어 있는 목록 페이지)",
           "url_work": "원문주소(작품의 회차 목록 페이지)", "licenseType": "접근제한유형", "price": "정가", "compensation": "보상금", "reward_yn": "보상여부",
-          "names": "저자명", "color": "수량(크기)의 색", "thumb_file": "썸네일 파일명", "extent": "수량(크기)", "format": "디지털 자료유형"}
+          "names": "저자명", "color": "수량(크기)의 색", "thumb_file": "썸네일 파일명", "extent": "수량(크기)", "format": "디지털 자료유형",
+          "edition": "판사항", "publishers": "발행처(둘째 이후)", "notes_extra": "주기(넷째 이후)", "origin2": "둘째 출처정보"}
+ROLE_BAD = ("지은", "그린", "엮은", "옮긴", "쓴", "펴낸")      # 관형형 역할어(가이드 2.3: 명사형으로)
 
 
 def column_label(name: str) -> str:
     """사람에게 보여 줄 칸 이름: 반입용 엑셀의 열 이름(MODS) 기준, 한글은 괄호 안. 같은 열 이름이 여러 번 나오면 몇 번째인지 붙인다."""
-    key = FIELDS.get(name) or COMPUTED.get(name) or {"names": NAME_KEYS[0]["name"], "color": COMPUTED["extent"]}.get(name)
+    key = FIELDS.get(name) or COMPUTED.get(name) or {"names": NAME_KEYS[0]["name"], "color": COMPUTED["extent"], "publishers": ("/mods/originInfo/publisher", 1), "notes_extra": ("/mods/note", 3), "origin2": ("/mods/originInfo[@type]", 0)}.get(name)
     if not key:
         return name
-    repeated = sum(1 for k in list(FIELDS.values()) + list(COMPUTED.values()) + [n["name"] for n in NAME_KEYS] if k[0] == key[0]) > 1
+    repeated = sum(1 for k in list(FIELDS.values()) + list(COMPUTED.values()) + [n["name"] for n in NAME_KEYS] if k[0] == key[0]) > 1 or name in ("publishers", "notes_extra")
     head = key[0] + (f" #{key[1] + 1}" if repeated else "")
     return f"{head} ({KOREAN.get(name, name)})"
 
@@ -98,7 +112,7 @@ def _columns(ws) -> dict[Key, int]:
 
 
 def field_names() -> list[str]:
-    return [*FIELDS, "names", "color", "thumb_file"]
+    return [*FIELDS, *REPEAT_FIELDS, "color", "thumb_file"]
 
 
 def check(data: dict, folder: Path) -> list[str]:
@@ -159,11 +173,37 @@ def check(data: dict, folder: Path) -> list[str]:
         ns = [n for n in v.get("names") or [] if str(n.get("name") or "").strip()]
         if not ns and "names" not in confirm:
             out.append(f"{i}행: 저자(names)가 없습니다")
-        if len(ns) > 3:
-            out.append(f"{i}행: 저자가 {len(ns)}명입니다. 반입 양식은 3명까지입니다(나머지는 구축 단계에서 추가하도록 confirm 에 적으세요)")
+        src = r.get("from") or {}
         for n in ns:
             if n.get("type") not in ("개인명", "단체명"):
                 out.append(f"{i}행 저자 '{n.get('name')}': type 은 '개인명' 또는 '단체명'")
+            if re.search(r"[\[\]]", str(n.get("name") or "")) and "플랫폼" not in str(src.get("names") or ""):
+                out.append(f"{i}행 저자 '{n.get('name')}': 각괄호는 플랫폼 화면에서만 확인한 저자에만 씁니다(가이드 2 채택 순서). 원고·출판사 엑셀에 있는 이름이면 각괄호를 빼고, 플랫폼에서만 봤으면 from.names 에 '플랫폼'을 적으세요")
+            role = str(n.get("role") or "").strip()
+            if role and any(role == b or role.endswith(b) for b in ROLE_BAD):
+                out.append(f"{i}행 저자 '{n.get('name')}': 역할어 '{role}' 는 관형형입니다. 명사형으로 적습니다(가이드 2.3, 예: 지은 → 지음)")
+        for k, pubs in (("publishers", v.get("publishers") or []),):
+            if not isinstance(pubs, list) or any(not isinstance(x, str) for x in pubs):
+                out.append(f"{i}행: {k} 는 문자열 목록이어야 합니다")
+            elif pubs and not str(v.get("other_note") or "").strip() and "other_note" not in confirm:
+                out.append(f"{i}행: 발행처가 둘 이상({v.get('publisher')}, {', '.join(pubs)})인데 관계를 설명하는 일반 주기(other_note)가 없습니다. 가이드 9: 임프린트·브랜드 관계는 일반 주기에 적습니다(예: 'A은 B의 임프린트임'). 모르면 other_note 를 confirm 에 넣으세요")
+        pub = str(v.get("publisher") or "").strip()
+        if re.fullmatch(r"[A-Z][A-Z0-9&\s]{3,}", pub) and "publisher" not in confirm:
+            out.append(f"{i}행: publisher '{pub}' 가 전부 대문자입니다. 가이드 5.2: 머리글자 약어가 아니면 각 단어 첫 글자만 대문자로 정규화합니다(예: KWBOOKS → Kwbooks). 약어가 맞으면 confirm 에 이유를 적으세요")
+        um = str(v.get("url_main") or "").strip()
+        if um and re.fullmatch(r"https?://[^/]+/?", um) and "url_main" not in confirm:
+            out.append(f"{i}행: url_main '{um}' 은 사이트 첫 화면입니다. 가이드 14.1·3절: 그 작품이 들어 있는 목록 페이지(예 https://www.mrblue.com/comic, https://ridibooks.com/comics/ebook)를 적으세요")
+        pn = str(v.get("partNumber") or "").strip()
+        if pn.isdigit() and "partNumber" not in confirm and "원고" not in str(src.get("partNumber") or ""):
+            out.append(f"{i}행: partNumber '{pn}' 는 단위 없는 숫자입니다. 가이드 1.3: 원고 표기 그대로('1화', '01회', '1권' …). 원고에 정말 숫자만 있으면 from.partNumber 에 '원고'를 적고, 아니면 표기를 맞추거나 confirm 에 넣으세요")
+        o2 = v.get("origin2") or {}
+        if o2 and not isinstance(o2, dict):
+            out.append(f"{i}행: origin2 는 {{type, issuance, publisher, dateIssued}} 꼴이어야 합니다")
+        elif o2 and str(o2.get("dateIssued") or "") and not re.fullmatch(r"\d{8}|\d{4}-{4}|\d{6}-{2}", str(o2.get("dateIssued"))):
+            out.append(f"{i}행: origin2.dateIssued '{o2.get('dateIssued')}' 는 YYYYMMDD(모르는 자리는 -)")
+        for x in v.get("notes_extra") or []:
+            if not isinstance(x, dict) or not str(x.get("text") or "").strip():
+                out.append(f"{i}행: notes_extra 항목은 {{text, type}} 꼴이고 text 가 있어야 합니다")
         d = str(v.get("dateIssued") or "")
         if d and not re.fullmatch(r"\d{8}", d):
             out.append(f"{i}행: dateIssued '{d}' 는 숫자 8자리(YYYYMMDD)여야 합니다")
@@ -240,17 +280,62 @@ def _isbn13_ok(s: str) -> bool:
     return (10 - total % 10) % 10 == int(s[12])
 
 
-def write(data: dict, folder: Path, out_xlsx: Path, template: Path = TEMPLATE_83) -> dict:
-    """반입용 엑셀을 쓴다. 돌려주는 것: {'rows', 'confirm'(노란 칸 수), 'out'}."""
+def _header(ws) -> list[str]:
+    return [(c.value or "").strip() if isinstance(c.value, str) else "" for c in ws[1]]
+
+
+def _insert_after(ws, after_idx: int, names: list[str]) -> None:
+    """1행 머리글 기준 after_idx(1부터) 열 뒤에 열을 끼워 넣고 머리글을 쓴다."""
+    ws.insert_cols(after_idx + 1, len(names))
+    for k, n in enumerate(names):
+        ws.cell(row=1, column=after_idx + 1 + k).value = n
+
+
+def _grow_columns(ws, data: dict) -> dict:
+    """값이 요구하는 만큼 양식 열을 늘린다(완료 사례 88열의 자리와 순서). 돌려주는 것: 반복 수 {names, publishers, notes}.
+    - 저자 묶음: 템플릿 3묶음 → 필요한 수만큼, 마지막 저자 묶음 뒤에 [/mods/name, namePart, [@type], role, roleTerm] 을 반복
+    - 첫 출처정보 발행처: 첫 /mods/originInfo/publisher 바로 뒤에 반복
+    - 주기: 셋째 쌍 뒤에 [/mods/note, /mods/note[@type]] 반복
+    - 주제명: 템플릿의 둘째 /mods/subject/topic 열은 지운다(가이드 10 — 반입에는 일반주제명 '만화'만)"""
+    rows = data.get("rows") or []
+    need_names = max([len([n for n in (r.get("values") or {}).get("names") or [] if str(n.get("name") or "").strip()]) for r in rows] + [0])
+    need_pubs = 1 + max([len((r.get("values") or {}).get("publishers") or []) for r in rows] + [0])
+    need_notes = 3 + max([len((r.get("values") or {}).get("notes_extra") or []) for r in rows] + [0])
+    h = _header(ws)
+    topics = [i + 1 for i, x in enumerate(h) if x == "/mods/subject/topic"]
+    if len(topics) > 1:
+        ws.delete_cols(topics[1]); h = _header(ws)
+    name_groups = [i + 1 for i, x in enumerate(h) if x == "/mods/name"]
+    for _ in range(max(0, need_names - len(name_groups))):
+        h = _header(ws)
+        last_role = max(i + 1 for i, x in enumerate(h) if x == "/mods/name/role/roleTerm")
+        _insert_after(ws, last_role, NAME_GROUP)
+    h = _header(ws)
+    pubs = [i + 1 for i, x in enumerate(h) if x == "/mods/originInfo/publisher"]
+    first_pub = pubs[0]
+    for k in range(max(0, need_pubs - 1)):
+        _insert_after(ws, first_pub + k, ["/mods/originInfo/publisher"])
+    h = _header(ws)
+    note_types = [i + 1 for i, x in enumerate(h) if x == "/mods/note[@type]"]
+    for _ in range(max(0, need_notes - len(note_types))):
+        h = _header(ws)
+        last = max(i + 1 for i, x in enumerate(h) if x == "/mods/note[@type]")
+        _insert_after(ws, last, ["/mods/note", "/mods/note[@type]"])
+    return {"names": max(need_names, 3), "publishers": need_pubs, "notes": need_notes}
+
+
+def write(data: dict, folder: Path | None, out_xlsx: Path, template: Path = TEMPLATE_83) -> dict:
+    """반입용 엑셀을 쓴다. 돌려주는 것: {'rows', 'confirm'(노란 칸 수), 'out', 'columns'}. folder 가 None 이면 수량·파일 형식 칸을 비운다(양식 시험용)."""
     out_xlsx = Path(out_xlsx)
     out_xlsx.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy(template, out_xlsx)
     wb = openpyxl.load_workbook(out_xlsx)
     ws = wb["Contents"]
-    col = _columns(ws)
     if ws.max_row >= 2:
         ws.delete_rows(2, ws.max_row - 1)
-    vw = arrange.View(folder, data)
+    rep_n = _grow_columns(ws, data)
+    col = _columns(ws)
+    vw = arrange.View(folder, data) if folder is not None else None
     nconfirm = 0
     for r in data["rows"]:
         v = r.get("values") or {}
@@ -261,17 +346,34 @@ def write(data: dict, folder: Path, out_xlsx: Path, template: Path = TEMPLATE_83
                 cells[key] = int(val) if name in NUMERIC and re.fullmatch(r"\d+", str(val).strip()) else str(val).strip()
         if str(v.get("title_parallel") or "").strip():
             cells[("/mods/titleInfo[@type]", 1)] = "parallel"
-        for i, n in enumerate([n for n in v.get("names") or [] if str(n.get("name") or "").strip()][:3]):
-            cells[NAME_KEYS[i]["name"]] = str(n["name"]).strip()
-            cells[NAME_KEYS[i]["type"]] = n.get("type") or "개인명"
+        for i, n in enumerate([n for n in v.get("names") or [] if str(n.get("name") or "").strip()]):
+            nk = name_keys(i)
+            cells[nk["name"]] = str(n["name"]).strip()
+            cells[nk["type"]] = n.get("type") or "개인명"
             if str(n.get("role") or "").strip():
-                cells[NAME_KEYS[i]["role"]] = str(n["role"]).strip()
+                cells[nk["role"]] = str(n["role"]).strip()
             if i == 0:
                 cells[("/mods/name[@usage]", 0)] = "primary"
-        imgs = vw.images(f"{data['manuscripts_root']}/{r['folder']}")
-        cells[COMPUTED["extent"]] = extent_string(len(imgs), sum(p.stat().st_size for p in imgs), v.get("color") or "천연색")
-        exts = {p.suffix.lower().lstrip(".") for p in imgs}
-        cells[COMPUTED["format"]] = "JPG" if exts <= {"jpg"} else "JPEG" if exts <= {"jpeg", "jpg"} else sorted(exts)[0].upper()
+        for k, pub in enumerate([x for x in v.get("publishers") or [] if str(x).strip()], start=1):
+            cells[("/mods/originInfo/publisher", k)] = str(pub).strip()
+        o2 = v.get("origin2") or {}
+        if isinstance(o2, dict) and any(str(o2.get(k) or "").strip() for k in ("publisher", "dateIssued", "type", "issuance")):
+            for k, key in ORIGIN2_KEYS.items():
+                if str(o2.get(k) or "").strip():
+                    cells[key] = str(o2[k]).strip()
+            if str(o2.get("publisher") or "").strip():
+                cells[("/mods/originInfo/publisher", rep_n["publishers"])] = str(o2["publisher"]).strip()     # 둘째 출처정보의 발행처 = 첫 출처정보 발행처들 다음 번째
+            if not str(o2.get("issuance") or "").strip():
+                cells[ORIGIN2_KEYS["issuance"]] = "단행자료"
+        for k, x in enumerate([x for x in v.get("notes_extra") or [] if isinstance(x, dict) and str(x.get("text") or "").strip()], start=3):
+            cells[("/mods/note", k)] = str(x["text"]).strip()
+            if str(x.get("type") or "").strip():
+                cells[("/mods/note[@type]", k)] = str(x["type"]).strip()
+        if vw is not None:
+            imgs = vw.images(f"{data['manuscripts_root']}/{r['folder']}")
+            cells[COMPUTED["extent"]] = extent_string(len(imgs), sum(p.stat().st_size for p in imgs), v.get("color") or "천연색")
+            exts = {p.suffix.lower().lstrip(".") for p in imgs}
+            cells[COMPUTED["format"]] = "JPG" if exts <= {"jpg"} else "JPEG" if exts <= {"jpeg", "jpg"} else sorted(exts)[0].upper()
         if str(r.get("thumb_file") or "").strip():
             cells[COMPUTED["thumb_file"]] = str(r["thumb_file"]).strip()
         ws.append([None] * ws.max_column)
@@ -285,7 +387,7 @@ def write(data: dict, folder: Path, out_xlsx: Path, template: Path = TEMPLATE_83
                     ws.cell(row=rn, column=col[key]).number_format = "@"
         for c in r.get("confirm") or []:
             name = str(c.get("field"))
-            key = FIELDS.get(name) or COMPUTED.get(name) or {"names": NAME_KEYS[0]["name"], "color": COMPUTED["extent"]}.get(name)
+            key = FIELDS.get(name) or COMPUTED.get(name) or {"names": NAME_KEYS[0]["name"], "color": COMPUTED["extent"], "publishers": ("/mods/originInfo/publisher", 1), "notes_extra": ("/mods/note", 3), "origin2": ("/mods/originInfo[@type]", 0)}.get(name)
             if key in col:
                 cell = ws.cell(row=rn, column=col[key])
                 cell.fill = YELLOW
@@ -296,7 +398,7 @@ def write(data: dict, folder: Path, out_xlsx: Path, template: Path = TEMPLATE_83
         if name not in ("Sample", "Contents"):
             del wb[name]
     wb.save(out_xlsx)
-    return {"rows": len(data["rows"]), "confirm": nconfirm, "out": str(out_xlsx)}
+    return {"rows": len(data["rows"]), "confirm": nconfirm, "out": str(out_xlsx), "columns": ws.max_column}
 
 
 def marks(xlsx: Path) -> int:

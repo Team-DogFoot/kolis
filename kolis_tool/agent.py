@@ -113,7 +113,7 @@ def collect_knowledge(log=None) -> list[str]:
 def job_tools() -> list[str]:
     """작업 공간에서 일하는 에이전트에게 허용하는 도구. 명령은 페이지 읽기와 자기 검사 두 가지뿐."""
     py = python_exe()
-    cmds = [f"{py} -m kolis_tool render", f"{py} -m kolis_tool check-research", f"{py} -m kolis_tool write-import", f"{py} -m kolis_tool check-build", f"{py} -m kolis_tool check-build-work", f"{py} -m kolis_tool check-dup"]
+    cmds = [f"{py} -m kolis_tool render", f"{py} -m kolis_tool check-research", f"{py} -m kolis_tool write-import", f"{py} -m kolis_tool check-build", f"{py} -m kolis_tool check-build-work", f"{py} -m kolis_tool check-dup", f"{py} -m kolis_tool authority"]
     rules = [f"{shell}({c}:*)" for c in cmds for shell in ("Bash", "PowerShell")]
     return ["Read", "Write", "Edit", "Glob", "Grep", "WebSearch", "WebFetch", "Agent", "Task", "Skill", *rules]
 

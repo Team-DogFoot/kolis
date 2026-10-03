@@ -14,7 +14,7 @@ import os
 
 HERE = Path(__file__).parent
 MAX_AGENTS = max(1, int(os.environ.get("KOLIS_MAX_AGENTS", "3")))      # 에이전트 동시 실행 한도
-KOLIS_KINDS = ("flow", "kolis", "kolis_submit", "export", "upload_open", "upload", "thumbs_register", "register", "register_export", "build", "build_save", "prep_dupexmin", "prep_complete", "prep_batch", "prep_uselimit", "ledger_status", "ledger_dup", "ledger_complete", "ledger_process", "kolis_show", "kolis_show", "build_collect", "build_fill")
+KOLIS_KINDS = ("flow", "kolis", "kolis_submit", "export", "upload_open", "upload", "thumbs_register", "register", "register_export", "build", "build_save", "prep_dupexmin", "prep_complete", "prep_batch", "prep_uselimit", "ledger_status", "ledger_dup", "ledger_complete", "ledger_process", "kolis_show", "mods_compare", "build_prepare", "build_send", "build_collect", "build_fill")
 
 
 class Api:
@@ -847,13 +847,15 @@ class Api:
             pass
         return True
 
-    def ledger_status(self, text: str) -> dict:
+    def ledger_status(self, text: str, tab: str = "") -> dict:
+        """원부 상태 조회(읽기만). tab 을 주면 그 작품 탭의 일로 돈다(3-1 준비 상태 읽기), 없으면 원부 일괄 처리 탭."""
         from . import ledger_batch
         ws = ledger_batch.parse(text or "")
         if not ws:
             return {"error": "원부번호를 넣으십시오(엑셀 한 열을 붙여 넣어도 됩니다)"}
-        self._names[self.LEDGER_TAB] = "원부 일괄 처리"
-        return self._run("ledger_status", lambda: ledger_batch.status(ws, self._tab_log(self.LEDGER_TAB)), tab=self.LEDGER_TAB, screen=False, nokolis=True)
+        tab = tab or self.LEDGER_TAB
+        self._names.setdefault(self.LEDGER_TAB, "복본조사")
+        return self._run("ledger_status", lambda: ledger_batch.status(ws, self._tab_log(tab)), tab=tab, screen=False, nokolis=True)
 
     def ledger_dup(self, text: str, yes: str = "") -> dict:
         from . import ledger_batch
@@ -862,7 +864,7 @@ class Api:
             return {"error": "원부번호를 넣으십시오"}
         if (yes or "").strip() != "YES":
             return {"error": "확인 뒤 실행하십시오"}
-        self._names[self.LEDGER_TAB] = "원부 일괄 처리"
+        self._names[self.LEDGER_TAB] = "복본조사"
         handle = self._jobs[self.LEDGER_TAB] = {"cancel": False}
         def job():
             try:
@@ -878,7 +880,7 @@ class Api:
             return {"error": "완료 처리할 원부를 고르십시오"}
         if (yes or "").strip() != "YES":
             return {"error": "확인 뒤 실행하십시오"}
-        self._names[self.LEDGER_TAB] = "원부 일괄 처리"
+        self._names[self.LEDGER_TAB] = "복본조사"
         handle = self._jobs[self.LEDGER_TAB] = {"cancel": False}
         def job():
             try:
@@ -904,7 +906,7 @@ class Api:
             return {"error": "처리할 원부를 고르십시오"}
         if (yes or "").strip() != "YES":
             return {"error": "확인 뒤 실행하십시오"}
-        self._names[self.LEDGER_TAB] = "원부 일괄 처리"
+        self._names[self.LEDGER_TAB] = "복본조사"
         handle = self._jobs[self.LEDGER_TAB] = {"cancel": False}
         def job():
             try:
@@ -913,10 +915,61 @@ class Api:
                 self._jobs.pop(self.LEDGER_TAB, None)
         return self._run("ledger_process", job, tab=self.LEDGER_TAB, screen=False, nokolis=True)
 
+    def build_set_author(self, wonbu: str, name: str, ac_control_no: str, signpost: str = "", reason: str = "") -> dict:
+        """직원 결정: 저자 전거 연결을 바꾼다(작품 판단 build.json, source staff)."""
+        from . import mods_batch
+        try:
+            return {"ok": True, "author": mods_batch.set_author_decision((wonbu or "").strip(), name, (ac_control_no or "").strip(), signpost, reason)}
+        except SystemExit as e:
+            return {"error": str(e)}
+
+    def build_prepare_bodies(self, tab: str, wonbu: str, rows: list) -> dict:
+        """「한 번에 입력」 앞 절반: 회차마다 화면을 열어 채우고 저장 본문을 가로채 둔다(보내지 않음)."""
+        from . import mods_batch
+        w = (wonbu or "").strip(); rr = [int(x) for x in (rows or [])]
+        if not w.isdigit() or not rr:
+            return {"error": "원부번호와 회차를 고르십시오"}
+        handle = self._jobs[tab] = {"cancel": False}
+        def job():
+            try:
+                return mods_batch.prepare_bodies(w, rr, self._tab_log(tab), handle=handle)
+            finally:
+                self._jobs.pop(tab, None)
+        return self._run("build_prepare", job, tab=tab, screen=True)
+
+    def build_send_bodies(self, tab: str, wonbu: str, rows: list, yes: str = "") -> dict:
+        """⑥ 「n건에 한 번에 넣기」: 준비된 저장 본문을 보내고 전·후 XML 대조. 되돌릴 수 없음 — 사람이 확인 뒤 누른다. 첫 1건에서 의도하지 않은 변화가 있으면 멈춘다."""
+        from . import mods_batch
+        w = (wonbu or "").strip(); rr = [int(x) for x in (rows or [])]
+        if not w.isdigit() or not rr:
+            return {"error": "원부번호와 회차를 고르십시오"}
+        if (yes or "").strip() != "YES":
+            return {"error": "확인 뒤 실행하십시오"}
+        handle = self._jobs[tab] = {"cancel": False}
+        def job():
+            try:
+                return mods_batch.send_bodies(w, rr, self._tab_log(tab), handle=handle)
+            finally:
+                self._jobs.pop(tab, None)
+        return self._run("build_send", job, tab=tab, screen=True)
+
+    def mods_compare(self, tab: str, wonbu: str) -> dict:
+        """3-2 반입값 대조(요청, 읽기만): 콘텐츠마다 MODS 를 읽어 반입용 엑셀과 칸 대조(없으면 회차끼리 공통 칸 대조)."""
+        from . import mods_compare
+        w = (wonbu or "").strip()
+        if not w.isdigit():
+            return {"error": "원부번호를 숫자로 넣으십시오"}
+        def job():
+            r = mods_compare.compare(w, self._tab_log(tab))
+            d = mods_compare.mb.WORK / f"wonbu_{w}"; d.mkdir(parents=True, exist_ok=True)
+            (d / "compare.json").write_text(json.dumps(r, ensure_ascii=False, indent=1), encoding="utf-8")
+            return r
+        return self._run("mods_compare", job, tab=tab, screen=False, nokolis=True)
+
     def kolis_show(self, what: str, arg: str) -> dict:
         """사람이 KOLIS 에서 직접 보려고: what=dupexmin(원부번호) → 일괄복본조사 화면에 후보 목록, species(종 번호) → 종 상세 화면."""
         from . import build_prep
-        self._names[self.LEDGER_TAB] = "원부 일괄 처리"
+        self._names[self.LEDGER_TAB] = "복본조사"
         fn = (lambda: build_prep.show_dupexmin(str(arg), self._tab_log(self.LEDGER_TAB))) if what == "dupexmin" else (lambda: build_prep.show_species(str(arg), self._tab_log(self.LEDGER_TAB)))
         return self._run("kolis_show", fn, tab=self.LEDGER_TAB, screen=True)
 

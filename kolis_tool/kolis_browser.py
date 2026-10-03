@@ -114,7 +114,7 @@ class Browser:
             body = ""
         self.n += 1
         post = r.request.post_data or ""
-        self._rec("http", n=self.n, method=r.request.method, url=u.replace(BASE, ""), post=post[:20000], status=r.status, chars=len(body), response=body[:50000])
+        self._rec("http", n=self.n, method=r.request.method, url=u.replace(BASE, ""), post=post[:400000], status=r.status, chars=len(body), response=body[:50000])      # 저장 요청 본문은 20,000자를 넘는다(1화 저장 본문이 잘려 기록됐었음, 2026-10-03) — 자동화 재료이므로 통째로
         if r.request.method == "POST":
             self.log(f"  [{self.n}] {r.request.method} {u.replace(BASE, '')} → {r.status} {len(body):,}자")
 

@@ -235,6 +235,9 @@ def apply_authors(b: Browser, mods, build: dict, job: dict) -> list[str]:
             notes.append(f"{a['name']}: 화면의 저자와 짝이 안 맞음"); continue
         if a.get("decision") == "link":
             cand = next((c for c in next(j for j in job["authors"] if j["name"] == a["name"])["candidates"] if c["AC_CONTROL_NO"] == a["ac_control_no"]), None)
+            if cand is None and a.get("source") == "staff" and a.get("ac_control_no"):
+                # 직원 결정(2026-10-03 계획 6절): 후보 목록에 없어도 직원이 적은 번호·채택표목을 그대로 쓴다
+                cand = {"AC_CONTROL_NO": a["ac_control_no"], "CHOICE_SIGNPOST": a.get("choice_signpost") or a["name"], "CHI_NAME": "", "AC_TYPE": a.get("ac_type") or "0"}
             if cand is None:
                 notes.append(f"{a['name']}: 후보에 없는 전거 번호 {a.get('ac_control_no')} — 넣지 않음"); continue
             # 화면의 찾기 버튼(popSearchNameKolis2)이 숨은 칸 kolisBean.classCode/dataCode/dataCodeName/type 에 대상 칸 id 를 적어 두고,
@@ -313,6 +316,69 @@ def apply(b: Browser, mods, build_path: Path) -> dict:
 
 
 # ---------------------------------------------------------------- save
+def capture_save_body(b: Browser, mods) -> dict:
+    """KOLIS 화면의 저장 함수(lf_update)를 그대로 돌리되, 보내는 부분($.ajax → updateHarContents.do)만 가로채 요청 본문을 돌려준다. **보내지 않는다.**
+    화면 스크립트가 만드는 것과 같은 본문(평행 배열, 쉼표는 ▲COMMA▲, 칸 id 목록)을 얻는 가장 확실한 길이다(2026-10-03 계획 6절 7번)."""
+    b._dialog_answer = True            # '필수 항목 중 입력하지 않은 값이 있습니다. 삭제?' 류 확인창은 화면과 같게 예
+    cap = mods.evaluate("""(()=>{
+        const orig = $.ajax; window.__cap = null;
+        $.ajax = function(o){ if(o && typeof o.url === 'string' && o.url.indexOf('updateHarContents.do') > -1){ window.__cap = {url: o.url, data: o.data}; return {done(){}, fail(){}}; } return orig.apply(this, arguments); };
+        try { lf_update(); } catch(e) { window.__cap = {error: String(e)}; }
+        $.ajax = orig;
+        return window.__cap;
+    })()""")
+    b._dialog_answer = None
+    if not cap:
+        raise RuntimeError("저장 본문을 가로채지 못했습니다(lf_update 가 요청을 만들기 전에 멈춤 — 필수 칸 비었거나 확인창)")
+    if cap.get("error"):
+        raise RuntimeError(f"lf_update 오류: {cap['error']}")
+    data = cap.get("data") or {}
+    b._rec("capture", what="저장 본문(보내지 않음)", url=cap.get("url"), fields=len(data), xpaths=len(str(data.get("inputedXpath", "")).split(",")))
+    return data
+
+
+def capture_save_body(b: Browser, mods) -> dict:
+    """KOLIS 화면의 저장 함수(lf_update)를 그대로 돌리되, 보내는 부분($.ajax → updateHarContents.do)만 가로채 요청 본문을 돌려준다. **보내지 않는다.**
+    화면 스크립트가 만드는 것과 같은 본문(평행 배열, 쉼표는 ▲COMMA▲, 칸 id 목록)을 얻는 가장 확실한 길이다(2026-10-03 계획 6절 7번)."""
+    b._dialog_answer = True            # '필수 항목 중 입력하지 않은 값이 있습니다. 삭제?' 류 확인창은 화면과 같게 예
+    cap = mods.evaluate("""(()=>{
+        const orig = $.ajax; window.__cap = null;
+        $.ajax = function(o){ if(o && typeof o.url === 'string' && o.url.indexOf('updateHarContents.do') > -1){ window.__cap = {url: o.url, data: o.data}; return {done(){}, fail(){}}; } return orig.apply(this, arguments); };
+        try { lf_update(); } catch(e) { window.__cap = {error: String(e)}; }
+        $.ajax = orig;
+        return window.__cap;
+    })()""")
+    b._dialog_answer = None
+    if not cap:
+        raise RuntimeError("저장 본문을 가로채지 못했습니다(lf_update 가 요청을 만들기 전에 멈춤 — 필수 칸 비었거나 확인창)")
+    if cap.get("error"):
+        raise RuntimeError(f"lf_update 오류: {cap['error']}")
+    data = cap.get("data") or {}
+    b._rec("capture", what="저장 본문(보내지 않음)", url=cap.get("url"), fields=len(data), xpaths=len(str(data.get("inputedXpath", "")).split(",")))
+    return data
+
+
+def capture_save_body(b: Browser, mods) -> dict:
+    """KOLIS 화면의 저장 함수(lf_update)를 그대로 돌리되, 보내는 부분($.ajax → updateHarContents.do)만 가로채 요청 본문을 돌려준다. **보내지 않는다.**
+    화면 스크립트가 만드는 것과 같은 본문(평행 배열, 쉼표는 ▲COMMA▲, 칸 id 목록)을 얻는 가장 확실한 길이다(2026-10-03 계획 6절 7번)."""
+    b._dialog_answer = True            # '필수 항목 중 입력하지 않은 값이 있습니다. 삭제?' 류 확인창은 화면과 같게 예
+    cap = mods.evaluate("""(()=>{
+        const orig = $.ajax; window.__cap = null;
+        $.ajax = function(o){ if(o && typeof o.url === 'string' && o.url.indexOf('updateHarContents.do') > -1){ window.__cap = {url: o.url, data: o.data}; return {done(){}, fail(){}}; } return orig.apply(this, arguments); };
+        try { lf_update(); } catch(e) { window.__cap = {error: String(e)}; }
+        $.ajax = orig;
+        return window.__cap;
+    })()""")
+    b._dialog_answer = None
+    if not cap:
+        raise RuntimeError("저장 본문을 가로채지 못했습니다(lf_update 가 요청을 만들기 전에 멈춤 — 필수 칸 비었거나 확인창)")
+    if cap.get("error"):
+        raise RuntimeError(f"lf_update 오류: {cap['error']}")
+    data = cap.get("data") or {}
+    b._rec("capture", what="저장 본문(보내지 않음)", url=cap.get("url"), fields=len(data), xpaths=len(str(data.get("inputedXpath", "")).split(",")))
+    return data
+
+
 def fetch_xml(mods, cnts: str) -> str:
     r = mods.request.post(BASE + "/online/contents/popup/getHarContentsXml.do", form={"contentsId": cnts})
     return (json.loads(r.text()).get("mods_xml") or "") if r.ok else ""
