@@ -39,6 +39,26 @@ def _close_popups(b: Browser):
     b.wait(0.4)
 
 
+def _rd_json(p: Path) -> dict:
+    try:
+        return json.loads(Path(p).read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _import_for(wonbu: str) -> dict | None:
+    """탭 상태(작업 폴더 ↔ 원부번호)로 1단계 결과를 찾는다: {"path": import.json 경로, "observations_dir": …}. 2026-10-04 반입값이 정본."""
+    d = _rd_json(Path("work/tabs.json"))
+    for t in d.get("tabs") or []:
+        if str(t.get("wonbu") or "").strip() == str(wonbu) and t.get("folder"):
+            from . import prepare
+            w = prepare.load(Path(t["folder"]), Path("work")) or {}
+            jd = Path((w.get("run") or {}).get("job_dir") or "")
+            if jd.is_dir() and (jd / "import.json").exists():
+                return {"path": str(jd / "import.json"), "observations_dir": str(jd / "observations") if (jd / "observations").is_dir() else None}
+    return None
+
+
 def collect_work(wonbu: str, log=print, manuscript: str | None = None, instructions: str = "", rows: list[int] | None = None) -> Path:
     """디지털콘텐츠관리 목록의 회차 전부(또는 rows)를 돌며 MODS 수정 화면 값을 읽는다. 전거 후보는 저자 이름마다 한 번만 조회."""
     mb._LOG[0] = log
@@ -85,7 +105,10 @@ def collect_work(wonbu: str, log=print, manuscript: str | None = None, instructi
             log(f"  {i + 1}/{n} {cnts} 읽음 ({time.time() - t1:.0f}초)")
         _close_popups(b)
         first = episodes[0] if episodes else {}
+        imp = _import_for(wonbu)
+        diffs = _rd_json(wdir(wonbu) / "compare.json").get("diffs") if (wdir(wonbu) / "compare.json").exists() else None
         job = {"wonbu": wonbu, "title": first.get("title", ""), "count": len(episodes), "project": mb.settings(), "instructions": instructions, "manuscript": manuscript,
+               "import_json": imp.get("path") if imp else None, "observations_dir": imp.get("observations_dir") if imp else None, "diffs": diffs,
                "authors": authors_all,
                "common": {"publisher": first.get("publisher", ""), "place": first.get("place", ""), "dates": sorted({e["date"] for e in episodes if e["date"]}),
                           "subject_topics": first.get("subject_topics", []), "urls": first.get("urls", [])},

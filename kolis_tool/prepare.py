@@ -1,17 +1,19 @@
-"""납품 폴더 → 반입용 엑셀. 버튼 하나로 끝까지(유저 확정 2026-09-29).
+"""납품 폴더 → 반입용 엑셀. 버튼 하나로 끝까지(유저 확정 2026-09-29). 2026-10-04 개선안: 반입에서 모든 것을 끝낸다.
 
 프로그램이 하는 일은 셋뿐이다.
   1. 납품 폴더의 zip 을 풀고, 폴더 구성과 엑셀의 모든 칸을 있는 그대로 글로 옮긴다(snapshot). 양식을 가정하지 않는다.
-  2. 에이전트를 한 번 실행한다(스킬 `prepare-import`). 에이전트가 읽기 → 조사 → 값 결정 → 반입용 엑셀 쓰기 → 검사 → 검수까지 스스로 돈다.
-     끝난 뒤 같은 검사를 돌려, 걸리면 같은 대화를 이어서 알려 준다.
-  3. 마무리: 반입용 엑셀을 최종 값으로 다시 쓰고, 원고 파일명을 8자리 일련번호로, 썸네일 파일명을 반입용 엑셀의 값으로 바꾼다(되돌리기 가능).
-중간 엑셀은 만들지 않는다. 직원이 보는 파일은 출판사 엑셀과 반입용 엑셀 둘뿐이다.
+  2. 에이전트를 한 번 실행한다(스킬 `prepare-import`). 에이전트가 원문 전체 관찰(회차마다 하위 에이전트 observe-episode) → 조사 → 전거·UCI·발행지 조회
+     → MODS 트리로 값 결정 → 반입용 엑셀 쓰기(열은 값에 맞춰) → 검사 → 검수까지 스스로 돈다. 끝난 뒤 같은 검사를 돌려, 걸리면 같은 대화를 이어서 알려 준다.
+     제한 시간은 이미지 수에 비례한다(agent.timeout_for). 실행기가 에이전트의 Read/look 호출을 기록해 "관찰 파일에 봤다고 적은 장을 실제로 열었는지" 검사한다.
+  3. 마무리: 반입용 엑셀을 최종 값으로 다시 쓰고, 원고 파일명을 8자리 일련번호로, 썸네일 파일명을 반입용 엑셀의 값으로 바꾼다(되돌리기 가능). look 조각을 지운다.
+중간 엑셀은 만들지 않는다. 직원이 보는 파일은 출판사 엑셀과 반입용 엑셀 둘뿐이다. 결과 파일(import.json)의 꼴은 import_check 모듈 머리 참조.
 """
 from __future__ import annotations
 import json, os, re, time, zipfile
 from pathlib import Path
 import openpyxl
-from . import agent, checks, import_writer
+import shutil
+from . import agent, checks, import_check
 from .common import IMAGE_EXT_ACCEPTED, natural_key, manifest_path, find_manifest, migrate_legacy
 
 SKILL = "prepare-import"
@@ -111,7 +113,7 @@ def snapshot(folder: Path) -> str:
 
 
 def _check_all(import_json: Path) -> list[str]:
-    """프로그램이 끝에 돌리는 검사. 에이전트가 작업 중에 돌리는 두 명령과 같은 검사다."""
+    """프로그램이 끝에 돌리는 검사. 에이전트가 작업 중에 돌리는 두 명령과 같은 검사다(+ 실행기의 Read/look 기록 대조)."""
     jd = import_json.parent
     job = json.loads((jd / "job.json").read_text(encoding="utf-8"))
     out = [f"[조사] {f}" for f in checks.check_research(jd / "research.json", jd / "job.json")]
@@ -121,7 +123,19 @@ def _check_all(import_json: Path) -> list[str]:
         data = json.loads(import_json.read_text(encoding="utf-8"))
     except json.JSONDecodeError as e:
         return out + [f"[반입용] import.json 이 JSON 으로 읽히지 않습니다: {e}"]
-    return out + [f"[반입용] {f}" for f in import_writer.check(data, Path(job["folder"]))]
+    data["_job_dir"] = str(jd)
+    reads = None
+    rf = jd / "_reads.json"
+    if rf.exists():
+        try:
+            reads = set(json.loads(rf.read_text(encoding="utf-8")))
+        except json.JSONDecodeError:
+            reads = None
+    return out + [f"[반입용] {f}" for f in import_check.check(data, Path(job["folder"]), reads)]
+
+
+def count_images(folder: Path) -> int:
+    return sum(1 for p in Path(folder).rglob("*") if p.is_file() and p.suffix.lower() in IMAGE_EXT_ACCEPTED and "_kolis" not in p.parts)
 
 
 def output_name(title: str, batch_note: str) -> str:
@@ -153,11 +167,17 @@ def run(folder: Path, work_dir: Path, output_xlsx: Path | None = None, instructi
             (jd / old).unlink()
     (jd / "snapshot.txt").write_text(snapshot(folder), encoding="utf-8")
     common = Path(work_dir) / "research_prompt.txt"      # 직원이 프로그램에서 적은 '모든 작품에 적용할 지시'
+    settings = project_settings(work_dir)
+    n_images = count_images(folder)
     job = {"task": "납품 폴더 → 반입용 엑셀", "folder": str(folder), "snapshot": f"jobs/{name}/snapshot.txt", "output_xlsx": str(output_xlsx),
-           "instructions": (instructions or "").strip(), "instructions_for_all_works": common.read_text(encoding="utf-8").strip() if common.exists() else "", "batch_note": (batch_note or "").strip()}
-    log(f"에이전트에게 맡김: {folder.name}" + (f" / 지시: {job['instructions'][:80]}" if job["instructions"] else ""))
+           "observations_dir": str(jd / "observations"), "image_count": n_images,
+           "instructions": (instructions or "").strip(), "instructions_for_all_works": common.read_text(encoding="utf-8").strip() if common.exists() else "",
+           "batch_note": (batch_note or "").strip(), "project": settings}
+    (jd / "observations").mkdir(exist_ok=True)
+    t_out = max(int(timeout), agent.timeout_for(n_images))
+    log(f"에이전트에게 맡김: {folder.name} (이미지 {n_images}장, 제한 {t_out}초)" + (f" / 지시: {job['instructions'][:80]}" if job["instructions"] else ""))
     data, fails, _ = agent.run_job(SKILL, name, job, "import.json", _check_all, log, handle, add_dirs=[folder],
-                                   model=os.environ.get("KOLIS_AGENT_MODEL") or None, timeout=timeout)
+                                   model=os.environ.get("KOLIS_AGENT_MODEL") or None, timeout=t_out)
     blocking = [f for f in fails if "검수" not in f]
     if any(f.startswith("[반입용]") for f in blocking):
         raise SystemExit("반입용 값이 검사를 통과하지 못해 엑셀을 만들지 않았습니다: " + "; ".join(blocking[:5]))
@@ -165,18 +185,52 @@ def run(folder: Path, work_dir: Path, output_xlsx: Path | None = None, instructi
         draft, output_xlsx = output_xlsx, work_dir / output_name(str(data.get("title") or stem(folder)), batch_note)
         if draft.exists() and draft != output_xlsx:
             draft.unlink()
-    written = import_writer.write(data, folder, output_xlsx)
+    data["_job_dir"] = str(jd)
+    written = import_check.write_xlsx(data, folder, output_xlsx)
     research = json.loads((jd / "research.json").read_text(encoding="utf-8")) if (jd / "research.json").exists() else {}
     done = finalize(folder, data, log)
+    shutil.rmtree(jd / "_look", ignore_errors=True)
     result = {"folder": str(folder), "title": data.get("title"), "unit": data.get("unit"), "output_xlsx": str(output_xlsx), "rows": written["rows"],
+              "columns": written["columns"], "unknown_columns": written.get("unknown") or [],
               "confirm_cells": written["confirm"], "manuscripts": str(folder / data["manuscripts_root"]),
               "thumbs": str(folder / data["thumbs_dir"]) if data.get("thumbs_dir") else "", "import": data, "research": research,
+              "observations_dir": str(jd / "observations"), "adult": bool(data.get("adult")), "adult_reason": data.get("adult_reason") or "",
               "remaining": fails, "finalize": done,
-              "run": {"seconds": int(time.time() - t0), "turns": handle.get("turns"), "session_id": handle.get("session_id"), "job_dir": str(jd)}}
+              "run": {"seconds": int(time.time() - t0), "turns": handle.get("turns"), "session_id": handle.get("session_id"), "job_dir": str(jd), "images": n_images}}
     result_path(folder, work_dir).parent.mkdir(parents=True, exist_ok=True)
     result_path(folder, work_dir).write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
     log(f"반입용 엑셀: {output_xlsx.name} — {written['rows']}행, 사람이 확인할 칸 {written['confirm']}개" + (f", 검사에 남은 항목 {len(fails)}건" if fails else ""))
     return result
+
+
+def project_settings(work_dir: Path) -> dict:
+    """사업 고정값(에이전트에게 주는 기본값. 자료마다 다른 값은 에이전트가 정한다). 파일이 없으면 기본값."""
+    p = Path(work_dir) / "build_settings.json"
+    base = {"acquisition_note": "한국웹툰산업협회를 통해 수집한 자료임", "classification": "810", "classification_authority": "KDC", "classification_edition": "6",
+            "physical_location": "국립중앙도서관", "region": "한국", "type_of_resource": "텍스트", "genre": "만화", "form": "전자자료(Image)",
+            "reformatting_quality": "access", "digital_origin": "BornDigital", "language_default": "kor", "currency_code": "\\",
+            "subjects": [{"kind": "topic", "term": "만화[漫畵]", "id": "KSH1998022212", "authority": "국립중앙도서관주제명표목표"},
+                         {"kind": "genre", "term": "웹툰[webtoon]", "id": "KSH2016000049", "authority": "국립중앙도서관주제명표목표"}],
+            "author_authority": "국립중앙도서관전거데이터"}
+    if p.exists():
+        try:
+            base.update(json.loads(p.read_text(encoding="utf-8")))
+        except json.JSONDecodeError:
+            pass
+    return base
+
+
+def rewrite_xlsx(folder: Path, work_dir: Path) -> dict:
+    """직원 결정(전거 번호 등)으로 import.json 이 바뀐 뒤 반입용 엑셀을 다시 쓴다(확인 완료 전에만)."""
+    w = load(folder, work_dir)
+    if not w:
+        raise SystemExit("작업 기록이 없습니다")
+    data = w["import"]
+    data["_job_dir"] = w.get("run", {}).get("job_dir") or data.get("_job_dir")
+    written = import_check.write_xlsx(data, Path(folder), Path(w["output_xlsx"]))
+    w["confirm_cells"] = written["confirm"]; w["columns"] = written["columns"]; w["confirmed"] = False
+    result_path(Path(folder), work_dir).write_text(json.dumps(w, ensure_ascii=False, indent=1), encoding="utf-8")
+    return written
 
 
 def finalize(folder: Path, data: dict, log=None) -> dict:

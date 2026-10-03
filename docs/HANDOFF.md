@@ -1,4 +1,4 @@
-# HANDOFF — 세션 시작용 (최신화 2026-10-03 밤, 도서관 PC)
+# HANDOFF — 세션 시작용 (최신화 2026-10-04, 맥북)
 
 ## 0. 세션이 곧바로 수행할 지시 (유저가 "시작"이라고 하면 이 절을 그대로 실행)
 
@@ -98,7 +98,7 @@
 | 기능 | 코드 | 상태 |
 |---|---|---|
 | KOLIS 계정 로그인 | `app.py` kolis_login, `kolis_http.py` | 확인됨(09-30). KOLIS 에 실제로 한 번 로그인해 보고 되면 프로그램의 환경변수에 둠 |
-| 1 납품 폴더 → 반입용 엑셀 | `prepare.py` + 에이전트(`agent_home/`). zip 풀기 → 폴더·엑셀을 글로 옮김 → 에이전트 1회 실행(읽기·조사·값 결정·`write-import`·검사·검수·지식 기록) → 프로그램이 같은 검사 → 원고 파일명 8자리 정리(되돌리기) | 확인됨(개발용 3작품 + 10-01 옆집 기러기 아빠 구워 먹기 2회: 값이 같음. 작품당 10~13분) |
+| 1 납품 폴더 → 반입용 엑셀 | **(2026-10-04 갈아엎음, 개선안 `PLAN-2026-10-04-IMPORT-ALL.md`)** `prepare.py` + 에이전트(`agent_home/`). zip 풀기 → 폴더·엑셀을 글로 옮김 → 에이전트 1회 실행(회차마다 하위 에이전트 `observe-episode` 가 원고 **전체** 관찰 → 조사 → 전거·UCI·발행지 조회 → **MODS 트리**로 값 결정(전거 연결·다른이름·디스플레이형식·주제명·UCI·출처정보까지) → `write-import`(검사 + 열을 값에 맞춰 만드는 직렬화기 `mods_sheet.py`) → 검수 → 지식 기록) → 프로그램이 같은 검사(+ 실행기의 Read/look 호출 기록 대조) → 원고 파일명 8자리 정리(되돌리기). 제한 시간 = 3600 + 이미지 장당 10초 | 맥북에서 KOLIS 없는 시험만(직렬화기 역변환·배치 재현·확장 3/3, 검사 끝까지 1건). **실작품 실행은 도서관 PC 에서 아직**(개선안 4절 ⑤) |
 | (사람) 반입용 엑셀 확인 | 화면의 '직원이 확인할 것'(칸·행·넣은 값·출판사 값·왜·근거 주소·직원이 정할 것)과 엑셀의 노란 칸·메모를 보고 직원이 고친다 → **확인 완료 버튼**(`Api.confirm_import`, `import_writer.clear_marks`)이 노란색·메모를 지우고 기록. 누르기 전에는 2번이 막힘(화면 + `kolis_flow` 의 첫 확인) | 창으로 확인됨(10-01). 실제 직원 검수는 타임머신 대소동만 받음 |
 | **2 KOLIS 등록** | `kolis_flow.py`(순서·확인·목록) + `kolis_http.py`(로그인·접속) + `kolis_request.py`(요청) + `journal.py`(기록). 로그인 → 일괄반입 → 콘텐츠ID 받기 → 원고 폴더명 → 원문일괄등록(전송·정보입력·원문등록) → 썸네일(동봉된 납품만) → 등록대상처리 → 가원부번호 → 가원부 파일(KOLIS 에서 받은 `.xls`) | **확인됨**(타임머신 대소동 약 25~40초 / 옆집 기러기 아빠 구워 먹기 11건·149장·414MB·썸네일 11장: 99.5초, 확인 165개, 요청 342건). 여러 작품 동시 실행 가능(10-01 두 작품 동시 성공) |
 | 원문 동시 전송 | `kolis_http.py` 의 `UPLOADS`(연결 상한 `KOLIS_UPLOAD_CONNECTIONS`=8, 가장 먼저 건 작품 몫 `KOLIS_UPLOAD_PRIORITY`=4) + `Client.upload`(예상 응답을 바로 돌려줌)·`Client.drain`(전부 끝나기를 기다려 실제 응답과 대조) | 확인됨(접수 988·989·990·991·992). 큰 작품 둘이 4 + 4 로 나뉘는 것, 전송 중 중단은 아직 실제로 보지 않음 |
@@ -125,7 +125,8 @@
 - 썸네일(건마다): 값 읽기 `…/modifyInputOnlineDepstRecet/selectModifyInputOnlineDepstRecetData.do`, 파일 표 `/online/cmmn/retrieveComContentsFileList.do`, 전송 `dext5handler.jsp`, 저장 `…/onlineDepstRecet/popupUpdateOnlineDepstRecet.do`(서지 146칸을 함께 보냄: 자리 행 삭제 → 썸네일 행 추가)
 - 등록대상처리 `…/onlineDepstRecet/updateTargetProcessing.do`, 가원부번호 `/online/reg/bo/accrecmake/onlineAccRecMake/popup/insertTempAccessionRecNo.do`, 가원부 목록 `/online/reg/bo/accrecmng/onlineAccRecMng/selectAccRecMngListWithParam.do`, 가원부 파일 `POST /main/save.do`
 
-**에이전트 구성** (`kolis_tool/agent_home/`, 실행 시 `%LOCALAPPDATA%\kolis_tool\agent\` 에 펼침)
+**에이전트 구성** (`kolis_tool/agent_home/`, 실행 시 `%LOCALAPPDATA%\kolis_tool\agent\` 에 펼침. 환경변수 `KOLIS_AGENT_HOME` 으로 바꿀 수 있음 — 맥북은 상위에 `~/CLAUDE.md` 가 있어 필요)
+- (2026-10-04) 하위 에이전트 `observe-episode`(회차 폴더 이미지 전부 관찰, 웹 도구 없음), 명령 `look`(이미지 조각·축소·확대)·`inspect-folder`(장별 색 비율·이상). 결과 파일 `import.json` 은 MODS 트리(`import_check.py` 머리 참조). 스킬 `build-mods-work` 는 보정 전용.
 - `CLAUDE.md` 역할·금지(KOLIS 접근, 지어내기)·일하는 순서. 스킬 `prepare-import`(전체 절차와 칸별 기준), `research-work`(조사 기준·결과 형식). 하위 에이전트 `reviewer`(검수).
 - `knowledge/platform-notes.md` 플랫폼·출판사·납품 자료·도구별 요령. 에이전트가 고치고, 실행이 끝나면 저장소로 되가져온다(**작업 폴더의 것이 원본이라 저장소에서만 고치면 다음 실행 때 사라진다 — 손으로 고칠 때는 `%LOCALAPPDATA%\kolis_tool\agent\knowledge\` 도 같이**). `knowledge/corrections.md` 직원이 고친 내용(09-29 타임머신 대소동 5건을 클로드가 손으로 적음. 프로그램의 기록 기능은 아직 없음). `knowledge/rules/` 도서관 매뉴얼 원문.
 - 검사 도구는 판단하지 않는다: `checks.py`(조사 결과의 형식·근거), `import_writer.py`(반입용 값의 형식·파일 증거 + 83열 쓰기 + 10-01 규칙의 형식: 발행처 각괄호, ISBN 숫자만, 보상금=정가, 유료 Y·무료 N, 같은 ISBN 여러 행, 확인할 칸의 질문 유무), `arrange.py`(정리 계획의 형식·옮기기·되돌리기).
@@ -147,6 +148,8 @@
 - 원문일괄등록: 전송 완료는 결과표에 폴더 행이 생겼는지로 판정. 일괄정보입력이 끝나면 알림 "정보입력이 되었습니다."(정상). 전송 후 폴더별 결과표(정보입력결과·원문등록결과)는 가상 스크롤이라 11행만 읽힘. 일괄정보입력 ~0.5초/건, 원문등록 ~2초/건, alert "원문이 등록되었습니다".
 
 ## 4. 다음 세션 순서 (2026-10-03 밤 기준)
+**(2026-10-04, 맥북) 유저 결정으로 1단계를 갈아엎었고 개선안 4절 순서의 ①~④(직렬화기·검사·이미지 도구·실행기·스킬·화면)를 끝냈다. 이 절보다 `docs/PLAN-2026-10-04-IMPORT-ALL.md` 가 우선이다**(반입에서 모든 것을 끝낸다 / MODS 헤더 고정 안 함, n묶음 / 하위호환 무시). 아래 ⑥(1614 한 번에 넣기)·"이어서 만들 것"의 A-1 재시험·3-2 연결은 폐기·대체. **다음 세션(도서관 PC)이 할 일 = 개선안 4절 ⑤**: `.venv` 에 의존성 설치 뒤 `tools/import_sheet_tests.py` 실행 → 원시인 삼촌으로 1단계 전체 실행(프로그램 창, 이미지 수에 비례한 제한 시간) → 확인 완료 → 2번 등록 → 단계마다 MODS XML 대조 → 접수 취소 요청. 미확인 열·반입값 생존·`FIELD-CHECKLIST.md` C-3 항목을 같은 건에서 본다. 1614 2화 이후 저장은 보정 경로(3-2 「보정 판단」→ 채우기 → 저장)로 하거나, 반입을 다시 하는 쪽을 유저가 정한다.
+
 계획서: `docs/PLAN-2026-10-03-RESTRUCTURE.md`(구조 — 1절 복본조사 탭은 끝, 2절 A-1 앞당기기는 품질 계획으로 대체) / `docs/PLAN-2026-10-03-IMPORT-QUALITY.md`(①~⑤ 끝, ⑥ 대기). 어디까지 했는지는 `docs/EXECUTION-LOG.md` 10-03 항목.
 
 **지금 상태**

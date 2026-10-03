@@ -52,6 +52,7 @@ def flatten(xml_text: str) -> dict:
     out["주제명"] = [{"글": "".join((c.text or "") for c in s), "종류": (s[0].tag.split("}")[1] if len(s) else ""), "전거": s.get("ID", ""), "전거출처": s.get("authority", "")} for s in root.findall("mods:subject", NS)]
     out["원문주소"] = [(e.text or "").strip() for e in root.findall("mods:location/mods:url", NS)]
     out["출처정보 수"] = len(root.findall("mods:originInfo", NS))
+    out["둘째 발행처"] = [(e.text or "").strip() for o in root.findall("mods:originInfo", NS)[1:] for e in o.findall("mods:publisher", NS)]
     return out
 
 
@@ -77,7 +78,8 @@ def fetch_xml(c: kolis_http.Client, cnts: str) -> str:
 
 
 def import_rows(wonbu: str) -> list[dict] | None:
-    """이 프로그램이 만든 반입용 엑셀이 있으면(탭 상태의 작업 폴더 ↔ 원부번호 짝) 행을 돌려준다. 없으면 None."""
+    """이 프로그램이 만든 반입용 엑셀이 있으면(탭 상태의 작업 폴더 ↔ 원부번호 짝) 행을 flatten() 과 같은 칸으로 돌려준다. 없으면 None.
+    2026-10-04: 열을 번째로 짐작하지 않고 mods_sheet.read_sheet(역직렬화)로 트리를 읽는다."""
     tabs = Path("work/tabs.json")
     if not tabs.exists():
         return None
@@ -85,33 +87,35 @@ def import_rows(wonbu: str) -> list[dict] | None:
         d = json.loads(tabs.read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001
         return None
-    t = next((t for t in d.get("tabs") or [] if str(t.get("wonbu") or "") == str(wonbu) and t.get("folder")), None)
+    t = next((t for t in d.get("tabs") or [] if str(t.get("wonbu") or (t.get("v") or {}).get("b-wonbu") or "") == str(wonbu) and (t.get("folder") or (t.get("v") or {}).get("folder"))), None)
     if not t:
         return None
-    from . import prepare
-    work = prepare.load(Path(t["folder"]), Path("work"))
+    from . import prepare, mods_sheet as ms
+    work = prepare.load(Path(t.get("folder") or t["v"]["folder"]), Path("work"))
     xlsx = work and work.get("output_xlsx")
     if not xlsx or not Path(xlsx).exists():
         return None
-    import openpyxl
-    ws = openpyxl.load_workbook(xlsx, read_only=True)["Contents"]
-    rows = list(ws.iter_rows(values_only=True))
-    h = [(x or "").strip() if isinstance(x, str) else "" for x in rows[0]]
-    keys, seen = [], {}
-    for x in h:
-        keys.append((x, seen.get(x, 0))); seen[x] = seen.get(x, 0) + 1
     out = []
-    for r in rows[1:]:
-        if not any(c not in (None, "") for c in r):
-            continue
-        m = dict(zip(keys, r)); g = lambda k, n=0: ("" if m.get((k, n)) is None else str(m.get((k, n)))).strip()
-        out.append({"본표제": g("/mods/titleInfo/title"), "권차": g("/mods/titleInfo/partNumber"), "권차표제": g("/mods/titleInfo/partName"), "표제관련정보": g("/mods/titleInfo/subTitle"),
-                    "발행지": g("/mods/originInfo/place/placeTerm"), "발행국 부호": g("/mods/originInfo/place/placeTerm", 1), "발행일": g("/mods/originInfo/dateIssued"), "판사항": g("/mods/originInfo/edition"),
-                    "이용대상자": g("/mods/targetAudience"), "접근제한": g("/mods/accessCondition/licenseType"), "ISBN": g("/mods/identifier"),
-                    "저자": [{"이름": g("/mods/name/namePart", i), "유형": g("/mods/name[@type]", i), "역할": g("/mods/name/role/roleTerm", i)} for i in range(6) if g("/mods/name/namePart", i)],
-                    "발행처": [g("/mods/originInfo/publisher", i) for i in range(4) if g("/mods/originInfo/publisher", i)],
-                    "주기": [{"유형": g("/mods/note[@type]", i), "글": g("/mods/note", i)} for i in range(5) if g("/mods/note", i)],
-                    "원문주소": [g("/mods/location/url", i) for i in range(3) if g("/mods/location/url", i)]})
+    for r in ms.read_sheet(Path(xlsx)):
+        m = r["mods"]
+        ti = ms._lst(m.get("titleInfo")); t0 = ms._node(ti[0]) if ti else {}
+        oi = [ms._node(o) for o in ms._lst(m.get("originInfo"))]; o0 = oi[0] if oi else {}
+        terms = [ms._node(ms._node(pl).get("placeTerm")) for pl in ms._lst(o0.get("place"))]
+        idents = [ms._node(i) for i in ms._lst(m.get("identifier"))]
+        out.append({"본표제": ms._text(t0.get("title")), "권차": ms._text(t0.get("partNumber")), "권차표제": ms._text(t0.get("partName")), "표제관련정보": ms._text(t0.get("subTitle")),
+                    "발행지": next((ms._text(x) for x in terms if str(x.get("@type") or "") == "text"), ""), "발행국 부호": next((ms._text(x) for x in terms if str(x.get("@type") or "") == "code"), ""),
+                    "발행일": ms._text(o0.get("dateIssued")), "판사항": ms._text(o0.get("edition")), "발행연속성": ms._text(o0.get("issuance")),
+                    "이용대상자": ms._text(m.get("targetAudience")), "접근제한": ms._text(ms._node(m.get("accessCondition") or {}).get("licenseType")),
+                    "ISBN": next((ms._text(i) for i in idents if str(i.get("@type") or "").lower() == "isbn"), ""), "UCI": next((ms._text(i) for i in idents if str(i.get("@type") or "").lower() == "uci"), ""),
+                    "저자": [{"이름": ms._text(ms._node(n).get("namePart")), "유형": str(ms._node(n).get("@type") or ""), "역할": ms._text(ms._node(ms._node(n).get("role") or {}).get("roleTerm")),
+                             "전거": str(ms._node(n).get("@ID") or ""), "전거출처": str(ms._node(n).get("@authority") or ""), "주저자": str(ms._node(n).get("@usage") or "") == "primary",
+                             "다른이름": [ms._text(ms._node(a).get("namePart")) for a in ms._lst(ms._node(n).get("alternativeName")) if ms._text(ms._node(a).get("namePart"))],
+                             "디스플레이": ms._text(ms._node(n).get("displayForm"))} for n in ms._lst(m.get("name")) if ms._text(ms._node(n).get("namePart"))],
+                    "발행처": [ms._text(x) for x in ms._lst(o0.get("publisher")) if ms._text(x)],
+                    "주기": [{"유형": str(ms._node(n).get("@type") or ""), "글": ms._text(n)} for n in ms._lst(m.get("note")) if ms._text(n)],
+                    "주제명": [{"글": ms._text(ms._node(x).get("topic")) or ms._text(ms._node(x).get("genre")), "종류": "topic" if ms._node(x).get("topic") else "genre", "전거": str(ms._node(x).get("@ID") or ""), "전거출처": str(ms._node(x).get("@authority") or "")} for x in ms._lst(m.get("subject")) if ms._node(x)],
+                    "원문주소": [ms._text(u) for u in ms._lst(ms._node(m.get("location") or {}).get("url")) if ms._text(u)],
+                    "출처정보 수": len(oi), "둘째 발행처": [ms._text(x) for o in oi[1:] for x in ms._lst(o.get("publisher")) if ms._text(x)]})
     return out
 
 
@@ -141,9 +145,17 @@ def compare(wonbu: str, log=print) -> dict:
                     a, b = re.sub(r"\D", "", a), re.sub(r"\D", "", b)
                 if a != b:
                     diffs.append({"contents_id": it["contents_id"], "vol": it["vol"], "칸": k, "반입값": a, "KOLIS": b})
-            ra = [(x["이름"], x["역할"]) for x in r["저자"]]; ma = [(x["이름"], x["역할"]) for x in m["저자"]]      # 전거 번호·유형 표기는 구축에서 더해지므로 이름·역할만 대조
-            if ra != ma:
-                diffs.append({"contents_id": it["contents_id"], "vol": it["vol"], "칸": "저자", "반입값": " / ".join(f"{n}({ro})" for n, ro in ra), "KOLIS": " / ".join(f"{n}({ro})" for n, ro in ma)})
+            ra = [(x["이름"], x["역할"], x["전거"], tuple(x["다른이름"]), x["디스플레이"]) for x in r["저자"]]; ma = [(x["이름"], x["역할"], x["전거"], tuple(x["다른이름"]), x["디스플레이"]) for x in m["저자"]]
+            if ra != ma:      # 2026-10-04: 전거 번호·다른이름·디스플레이형식도 반입에서 넣으므로 같이 대조
+                diffs.append({"contents_id": it["contents_id"], "vol": it["vol"], "칸": "저자", "반입값": " / ".join(f"{n}({ro}){' 전거 ' + ac if ac else ''}{' 다른이름 ' + '·'.join(al) if al else ''}{' 표시 ' + df if df else ''}" for n, ro, ac, al, df in ra),
+                              "KOLIS": " / ".join(f"{n}({ro}){' 전거 ' + ac if ac else ''}{' 다른이름 ' + '·'.join(al) if al else ''}{' 표시 ' + df if df else ''}" for n, ro, ac, al, df in ma)})
+            rs = [(x["글"], x["전거"]) for x in r["주제명"]]; msb = [(x["글"], x["전거"]) for x in m["주제명"]]
+            if rs != msb:
+                diffs.append({"contents_id": it["contents_id"], "vol": it["vol"], "칸": "주제명", "반입값": " / ".join(f"{g} {a}" for g, a in rs), "KOLIS": " / ".join(f"{g} {a}" for g, a in msb)})
+            if (r.get("UCI") or "") != (m.get("UCI") or ""):
+                diffs.append({"contents_id": it["contents_id"], "vol": it["vol"], "칸": "UCI", "반입값": r.get("UCI") or "", "KOLIS": m.get("UCI") or ""})
+            if r.get("출처정보 수") != m.get("출처정보 수"):
+                diffs.append({"contents_id": it["contents_id"], "vol": it["vol"], "칸": "출처정보 수", "반입값": str(r.get("출처정보 수")), "KOLIS": str(m.get("출처정보 수"))})
             if r["발행처"] != m["발행처"]:
                 diffs.append({"contents_id": it["contents_id"], "vol": it["vol"], "칸": "발행처", "반입값": " · ".join(r["발행처"]), "KOLIS": " · ".join(m["발행처"])})
             rn = [(x["유형"], x["글"]) for x in r["주기"]]; mn = [(x["유형"], x["글"]) for x in m["주기"]]

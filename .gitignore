@@ -13,3 +13,4 @@ samples/
 !kolis_tool/templates/*.xlsx
 !docs/source/**/*.xlsm
 kolis.json
+.venv-mac/

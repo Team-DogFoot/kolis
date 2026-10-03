@@ -1,17 +1,24 @@
-"""개발용: index.html 을 가짜 pywebview.api(Proxy)로 띄워 상태별·너비별로 캡처한다(UI 리뷰·회귀 확인). 실행: .venv/Scripts/python.exe -X utf8 tools/ui_shots.py → work/captures/ui_review/"""
-import json
+"""개발용: index.html 을 가짜 pywebview.api(Proxy)로 띄워 상태별·너비별로 캡처한다(UI 리뷰·회귀 확인).
+실행: python -X utf8 tools/ui_shots.py [--out 폴더] → work/captures/ui_review/ (저장소 기준 상대 경로. 어느 PC 에서나 돈다. playwright + chromium 필요: pip install playwright && playwright install chromium)
+work/build/<CNTS>/build.json 이 없으면 작은 가짜 판단으로 대신한다."""
+import json, sys, argparse
 from pathlib import Path
 from playwright.sync_api import sync_playwright
-html = Path(r"C:\Users\User\dataclip\kolis\kolis_tool\ui\index.html").resolve().as_uri()
-OUT = Path(r"C:\Users\User\dataclip\kolis\work\captures\ui_review"); OUT.mkdir(parents=True, exist_ok=True)
-build = json.loads(Path(r"C:\Users\User\dataclip\kolis\work\build\CNTS-00135368140\build.json").read_text(encoding="utf-8"))
-job = json.loads(Path(r"C:\Users\User\dataclip\kolis\work\build\CNTS-00135368140\job.json").read_text(encoding="utf-8"))
-import sys; sys.path.insert(0, r"C:\Users\User\dataclip\kolis")
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+_ap = argparse.ArgumentParser(); _ap.add_argument("--out", default=str(ROOT / "work" / "captures" / "ui_review")); _ns = _ap.parse_args()
+html = (ROOT / "kolis_tool" / "ui" / "index.html").resolve().as_uri()
+OUT = Path(_ns.out); OUT.mkdir(parents=True, exist_ok=True)
+_bp = ROOT / "work" / "build" / "CNTS-00135368140"
+build = json.loads((_bp / "build.json").read_text(encoding="utf-8")) if (_bp / "build.json").exists() else {"authors": [{"name": "김성모", "role": "글", "decision": "link", "ac_control_no": "KAC201418251", "confidence": "high", "reason": "시험용"}], "subjects": [{"term": "만화[漫畵]"}, {"term": "웹툰[webtoon]"}], "publisher": {"current": "KOCN"}, "place": {"current": "[서울]"}, "adult": False, "episodes": [], "review": {"done": True}}
+job = json.loads((_bp / "job.json").read_text(encoding="utf-8")) if (_bp / "job.json").exists() else {"title": "시험 작품", "authors": []}
 from kolis_tool.mods_build import summary
 summ = summary(build, job); summ.update({"remaining": [], "apply": {"shots": ["work/captures/browser/x.png"]}, "build_path": "work/build/CNTS-00135368140/build.json"})
 work = {"title": "옆집 기러기 아빠 구워 먹기", "output_xlsx": r"C:\Users\User\dataclip\kolis\work\기초메타데이터(26웹툰대행5차-484)_코리스 반입용_옆집기러기아빠구워먹기.xlsx", "rows": 11, "confirm_cells": 68,
         "manuscripts": r"C:\Users\User\Downloads\484_미스터블루_옆집 기러기 아빠 구워먹기\원고", "thumbs": "", "run": {"seconds": 640}, "finalize": {"manuscript_files": 192},
-        "confirmed": None, "remaining": [], "summary": [["제목", "옆집 기러기 아빠 구워 먹기", ""], ["저자", "글·그림 김작가", ""], ["발행처", "미스터블루", "출판사 엑셀"], ["발행일", "20240409", "미스터블루 등록일"]],
+        "confirmed": None, "remaining": [], "columns": 91, "unknown_columns": [], "adult": False, "adult_reason": "",
+        "authors": [{"index": 0, "name": "김작가", "role": "글·그림", "ac_control_no": "KAC201418251", "display_form": "", "alt": ["Kim, Jakga"], "staff": False, "sources": [{"from": "전거 KAC201418251", "quote": "만화가, 1970년생, 데뷔작 …"}, {"from": "원문 00000001.jpg", "quote": "글·그림 김작가 (Kim, Jakga)"}]}],
+        "summary": [["제목", "옆집 기러기 아빠 구워 먹기", ""], ["저자", "글·그림: 김작가 [전거 KAC201418251]", ""], ["발행처 / 발행지", "미스터블루 / [서울] ulk", ""], ["발행일", "20240409", "미스터블루 등록일"], ["주제명", "만화[漫畵] · 웹툰[webtoon]", ""], ["UCI", "0/11건에 있음", ""]],
         "confirm": [{"field": "발행일", "rows": [1, 2, 3], "parts": ["1화", "2화", "3화"], "values": ["20240409"], "publisher_says": "E5 '20240410'", "reason": "출판사 엑셀의 발행일(20240410)과 플랫폼 공개일(20240409)이 하루 다릅니다.", "evidence": "https://www.mrblue.com/comic/C000075511 — 등록일 2024.04.09", "ask": "발행일을 플랫폼 공개일(20240409)로 둘까요, 출판사 엑셀 값(20240410)으로 바꿀까요?"}],
         "platforms": [{"name": "미스터블루", "status": "서비스 중", "start_date": "20240409", "url": "https://www.mrblue.com/comic/C000075511"}], "searched": 5, "conflicts": [], "not_found": [], "issues": [], "review": {"done": True, "findings": ["x"], "resolved": ["y"]}}
 state = {"register": {"record_no": "2026-1687", "file": r"C:\...\가원부번호 2026-1687(접수번호 991).xlsx", "count": 11, "done_at": "2026-10-01 20:15", "receipt": "991"}, "export": {"file": "x.xls", "receipt": "991", "count": 11, "done_at": "2026-10-01 20:12"}}
@@ -30,7 +37,7 @@ document.addEventListener('DOMContentLoaded', () => setTimeout(() => window.disp
                {"folder": "C:/Users/User/Downloads/484_미스터블루_옆집 기러기 아빠 구워먹기", "title": "옆집 기러기 아빠 구워 먹기", "when": "", "status": "가원부번호 2026-1687", "exists": True},
                {"folder": "C:/x/2. 추풍낙엽", "title": "추풍낙엽", "when": "", "status": "반입용 엑셀 있음 · 확인 전", "exists": False}], "output_name": "기초메타데이터(26웹툰대행5차-484)_코리스 반입용_옆집기러기아빠구워먹기.xlsx",
     "flow_ledger": {"rows": [{"작품": "옆집 기러기 아빠 구워 먹기", "처리": "취소 요청", "접수번호": "990", "가원부번호": "", "건수": "11", "결과": "원문 등록에서 멈춤", "반입 시각": "2026-10-01 19:50"}, {"작품": "옆집 기러기 아빠 구워 먹기", "처리": "유지", "접수번호": "991", "가원부번호": "2026-1687", "건수": "11", "결과": "완료", "반입 시각": "2026-10-01 20:12"}], "file": "work/취소요청_목록.csv"},
-    "tabs_save": True, "build_status": {"items": [{"row": 0, "title": "마음휴가", "part": "1", "contents_id": "CNTS-00135368140", "applied_at": "2026-10-03 13:22", "saved_at": None}]},
+    "tabs_save": True, "set_author": {"error": "가짜 백엔드"}, "build_status": {"items": [{"row": 0, "title": "마음휴가", "part": "1", "contents_id": "CNTS-00135368140", "applied_at": "2026-10-03 13:22", "saved_at": None}]},
     "status": {"steps": [{"key": "prepare", "label": "반입용 엑셀", "done": True, "evidence": "11행, 사람이 확인할 칸 68개", "when": "2026-10-01 18:30"}, {"key": "manuscript", "label": "원고 파일명(8자리)", "done": True, "evidence": "11/11 폴더", "when": ""}, {"key": "kolis_submit", "label": "KOLIS 반입", "done": True, "evidence": "성공", "when": "2026-10-01 20:12"}, {"key": "export", "label": "전체출력", "done": True, "evidence": "접수번호 991 11건", "when": ""}, {"key": "cnts", "label": "폴더명 CNTS", "done": True, "evidence": "11/11 폴더", "when": ""}, {"key": "upload", "label": "원문일괄등록", "done": True, "evidence": "원문이 등록되었습니다.", "when": ""}, {"key": "register", "label": "가원부번호", "done": True, "evidence": "2026-1687", "when": "2026-10-01 20:15"}], "warnings": [], "memo": ""},
     "open_folder": {"folder": r"C:\Users\User\Downloads\484_미스터블루_옆집 기러기 아빠 구워먹기", "state": state, "work": work, "log": []},
     "load_state": state, "diagnose": {"env": {"claude": True, "claude_login": True, "edge": True, "playwright": True}, "running": {}, "max_agents": 3, "log_path": "C:/x/log.txt", "log_tail": []}, "save_state": state, "log_save": True,
@@ -45,7 +52,10 @@ def shot(pg, path, anchor=None):
     pg.screenshot(path=str(path), full_page=False)
 
 with sync_playwright() as p:
-    b = p.chromium.launch(channel="msedge", headless=True)
+    try:
+        b = p.chromium.launch(channel="msedge", headless=True)
+    except Exception:  # noqa: BLE001 — 맥북 등 Edge 가 없는 PC
+        b = p.chromium.launch(headless=True)
     for W in (1280, 1024):
         pg = b.new_page(viewport={"width": W, "height": 900})
         pg.add_init_script(MOCK); pg.goto(html); pg.wait_for_timeout(1800)

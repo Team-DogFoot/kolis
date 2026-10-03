@@ -42,6 +42,7 @@ class FileResult:
     mode: str | None = None
     md5: str | None = None
     dhash: int | None = None
+    color_ratio: float | None = None
     problems: list[str] = field(default_factory=list)
 
 
@@ -52,6 +53,7 @@ class FolderResult:
     total_bytes: int = 0
     extent: str = ""
     color: str = "천연색"
+    color_pages: int = 0
     files: list[FileResult] = field(default_factory=list)
     problems: list[str] = field(default_factory=list)
     exact_duplicates: list[list[str]] = field(default_factory=list)
@@ -62,7 +64,26 @@ class FolderResult:
         return bool(self.problems) or any(not f.ok for f in self.files)
 
 
-def inspect_folder(folder: Path, near_threshold: int = 4) -> FolderResult:
+COLOR_THRESHOLD = 0.01     # 채도 있는 화소(S>0.2, V>0.15)가 1% 를 넘으면 그 장은 색이 있다
+
+
+def color_ratio(im: Image.Image) -> float:
+    """무채색이 아닌 화소의 비율(0~1). 매뉴얼 7.4: 무채색 외 색이 하나라도 있으면 천연색. RGB 로 저장된 흑백 스캔은 0 에 가깝다."""
+    if im.mode in ("L", "1"):
+        return 0.0
+    small = im.convert("RGB")
+    small.thumbnail((256, 256))
+    hsv = small.convert("HSV")
+    px = hsv.getdata()
+    n = 0; colored = 0
+    for h, s_, v in px:
+        n += 1
+        if s_ > 51 and v > 38:       # S > 0.2, V > 0.15
+            colored += 1
+    return colored / n if n else 0.0
+
+
+def inspect_folder(folder: Path, near_threshold: int = 4, no_dup: bool = False) -> FolderResult:
     res = FolderResult(folder=str(folder))
     images = list_images(folder)
     others = [p for p in folder.iterdir() if p.is_file() and not p.name.startswith(".") and p not in images]
@@ -89,8 +110,9 @@ def inspect_folder(folder: Path, near_threshold: int = 4) -> FolderResult:
             with Image.open(p) as im:
                 im.load()
                 fr.width, fr.height, fr.mode = im.width, im.height, im.mode
-                fr.dhash = dhash(im)
-                if im.mode not in ("L", "1"):
+                fr.dhash = dhash(im) if not no_dup else None
+                fr.color_ratio = color_ratio(im)
+                if fr.color_ratio > COLOR_THRESHOLD:
                     grayscale_all = False
             if fr.width and fr.height and (fr.width < 100 or fr.height < 100):
                 fr.problems.append(f"해상도 작음 {fr.width}x{fr.height}")
@@ -104,12 +126,13 @@ def inspect_folder(folder: Path, near_threshold: int = 4) -> FolderResult:
             hashes.append((p.name, fr.dhash))
     res.count = len(images)
     res.total_bytes = sum(f.size for f in res.files)
-    res.color = "단색" if grayscale_all else "천연색"
+    res.color = "흑백" if grayscale_all else "천연색"
+    res.color_pages = sum(1 for f in res.files if (f.color_ratio or 0) > COLOR_THRESHOLD)
     res.extent = extent_string(res.count, res.total_bytes, res.color)
     res.exact_duplicates = [names for names in md5map.values() if len(names) > 1]
-    # near duplicates (O(n^2) but n은 화당 수십~수백 장)
+    # near duplicates (O(n^2) but n은 화당 수십~수백 장). no_dup 이면 건너뛴다
     seen: set[tuple[str, str]] = set()
-    for i in range(len(hashes)):
+    for i in range(0 if not no_dup else len(hashes), len(hashes)):
         for j in range(i + 1, len(hashes)):
             a, b = hashes[i], hashes[j]
             if hamming(a[1], b[1]) <= near_threshold and a[0] != b[0]:
@@ -128,17 +151,27 @@ def inspect_folder(folder: Path, near_threshold: int = 4) -> FolderResult:
     return res
 
 
-def inspect_root(root: Path, recursive: bool = True) -> list[FolderResult]:
+def inspect_root(root: Path, recursive: bool = True, no_dup: bool = False) -> list[FolderResult]:
     root = Path(root)
     if list_images(root):
-        return [inspect_folder(root)]
+        return [inspect_folder(root, no_dup=no_dup)]
     results = []
     for sub in sorted(p for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")):
         if list_images(sub):
-            results.append(inspect_folder(sub))
+            results.append(inspect_folder(sub, no_dup=no_dup))
         elif recursive:
-            results.extend(inspect_root(sub, recursive))
+            results.extend(inspect_root(sub, recursive, no_dup))
     return results
+
+
+def agent_json(folder: Path, no_dup: bool = False) -> dict:
+    """에이전트용 출력: 절대 경로, 장마다 색 비율·이상, 폴더 색 판정(장 단위 값으로 표지 천연색+본문 흑백도 가릴 수 있게)."""
+    r = inspect_folder(Path(folder).resolve(), no_dup=no_dup)
+    return {"folder": r.folder, "count": r.count, "total_bytes": r.total_bytes, "color": r.color, "color_pages": r.color_pages,
+            "color_rule": "무채색 외 색이 든 장이 하나라도 있으면 천연색(매뉴얼 7.4). 표지만 색이 있고 내용이 흑백이면 흑백(직원 규칙 2026-10-01) — 장별 color_ratio 로 가린다",
+            "problems": r.problems, "exact_duplicates": r.exact_duplicates, "near_duplicates": r.near_duplicates,
+            "files": [{"name": f.name, "path": str(Path(r.folder) / f.name), "bytes": f.size, "width": f.width, "height": f.height, "color_ratio": round(f.color_ratio or 0, 4),
+                       "ok": f.ok, "problems": f.problems} for f in r.files]}
 
 
 def write_reports(results: list[FolderResult], out_dir: Path) -> tuple[Path, Path]:

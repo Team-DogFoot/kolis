@@ -17,3 +17,5 @@
 - [kolis-roadmap-abstraction](kolis-roadmap-abstraction.md) — 프로그램 장기 구조: 자료 종류(최대 32종) › 작품 › 단계 A/B › 하위 단계; 내부 로직은 당장 안 바꾸되 종류별로 갈라질 지점(양식·스킬·코드·고정값)과 공통 지점을 알고 개발; 회차별 원문 관찰 기록
 - [no-translationese-korean](no-translationese-korean.md) — 화면·에이전트 글·브리핑에 번역체 금지(~에 대해, ~되었습니다, 진행 중, 영어 낱말, 제3자 시점 '직원 입회'); 동사로 짧게, 다음 행동으로
 - [import-quality-by-guide-only](import-quality-by-guide-only.md) — 반입용 엑셀 에이전트 품질은 지침·가이드·예시 하나로만; 채점 틀 금지; 전거·주제명 번호를 엑셀에 안 끼움(10-03)
+- [import-finishes-everything](import-finishes-everything.md) — 2026-10-04 확정: 반입에서 모든 것을 끝낸다, MODS 헤더 고정 안 함(트리 직렬화), 하위호환 무시
+- [briefing-format-that-worked](briefing-format-that-worked.md) — 브리핑·개선안 쓰는 꼴(읽은 것 → 1부 사정·상태 → 2부 설계(버림·살림·손볼 것, 미확인 절, 순서) → 3부 유저 말 원문 1:1 대응). 요약·축약·누락 금지

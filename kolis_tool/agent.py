@@ -21,6 +21,15 @@ class Cancelled(Exception):
     pass
 
 
+class AgentTimeout(SystemExit):
+    pass
+
+
+def timeout_for(image_count: int, base: int = 3600, per_image: int = 10, cap: int = 7200) -> int:
+    """원문 전체를 읽는 에이전트의 제한 시간: 기본 + 이미지 1장당 per_image 초, 상한 cap(2026-10-04 리뷰 2-1)."""
+    return min(cap, base + per_image * max(0, int(image_count)))
+
+
 def claude_exe() -> str | None:
     return shutil.which("claude") or shutil.which("claude.cmd") or shutil.which("claude.exe")
 
@@ -39,11 +48,11 @@ def friendly_error(stderr: str, returncode: int) -> str:
 def agent_dir() -> Path:
     """에이전트 작업 폴더. 반드시 저장소 **밖**이어야 한다: 클로드코드는 작업 폴더와 그 상위 폴더의 CLAUDE.md 를 읽으므로,
     저장소 안(work/agent)에 두면 프로젝트 지침(세션 시작 시 문서 읽기 등)을 따라 하느라 시간과 토큰을 쓴다(2026-09-29 확인)."""
-    base = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "kolis_tool" / "agent"
+    base = Path(os.environ["KOLIS_AGENT_HOME"]) if os.environ.get("KOLIS_AGENT_HOME") else Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "kolis_tool" / "agent"
     base.mkdir(parents=True, exist_ok=True)
     for p in base.parents:
         if (p / "CLAUDE.md").exists():
-            raise SystemExit(f"에이전트 작업 폴더의 상위에 CLAUDE.md 가 있습니다: {p}")
+            raise SystemExit(f"에이전트 작업 폴더의 상위에 CLAUDE.md 가 있습니다: {p}. 환경변수 KOLIS_AGENT_HOME 으로 CLAUDE.md 가 없는 곳(예: /private/tmp/kolis_agent)을 지정하세요")
     return base
 
 
@@ -113,7 +122,8 @@ def collect_knowledge(log=None) -> list[str]:
 def job_tools() -> list[str]:
     """작업 공간에서 일하는 에이전트에게 허용하는 도구. 명령은 페이지 읽기와 자기 검사 두 가지뿐."""
     py = python_exe()
-    cmds = [f"{py} -m kolis_tool render", f"{py} -m kolis_tool check-research", f"{py} -m kolis_tool write-import", f"{py} -m kolis_tool check-build", f"{py} -m kolis_tool check-build-work", f"{py} -m kolis_tool check-dup", f"{py} -m kolis_tool authority"]
+    cmds = [f"{py} -m kolis_tool render", f"{py} -m kolis_tool check-research", f"{py} -m kolis_tool write-import", f"{py} -m kolis_tool check-build", f"{py} -m kolis_tool check-build-work", f"{py} -m kolis_tool check-dup", f"{py} -m kolis_tool authority",
+            f"{py} -m kolis_tool look", f"{py} -m kolis_tool inspect-folder"]
     rules = [f"{shell}({c}:*)" for c in cmds for shell in ("Bash", "PowerShell")]
     return ["Read", "Write", "Edit", "Glob", "Grep", "WebSearch", "WebFetch", "Agent", "Task", "Skill", *rules]
 
@@ -134,7 +144,19 @@ def run_job(skill: str, name: str, job: dict, result_name: str, check, log=None,
     (jd / "job.json").write_text(json.dumps(job, ensure_ascii=False, indent=1), encoding="utf-8")
     rel = jd.relative_to(home).as_posix()
     prompt = f"/{skill} {rel}/job.json\n\n맡은 일: `{rel}/job.json`. 결과는 `{rel}/{result_name}` 에 저장하세요. 스킬의 순서대로 검사와 검수까지 끝내세요."
-    run(prompt, job_tools(), log, handle, add_dirs, model, timeout, label="에이전트")
+    handle.setdefault("reads", set())
+    reads_file = jd / "_reads.json"
+    ex_env = {"KOLIS_LOOK_DIR": str(jd / "_look")}       # look 조각은 작업 폴더 안 _look/ 에(끝나면 지운다)
+    try:
+        run(prompt, job_tools(), log, handle, add_dirs, model, timeout, label="에이전트", extra_env=ex_env)
+    except AgentTimeout:
+        # 제한 시간을 넘겨도 지금까지의 대화(관찰 파일·조사 결과)는 작업 폴더에 남아 있다. 같은 대화를 한 번 이어서 끝내게 한다.
+        if not handle.get("session_id"):
+            raise
+        log(f"  제한 시간 {timeout}초를 넘겨 중단됨 — 같은 대화를 이어서 마무리하게 함")
+        run("제한 시간이 지나 중단됐습니다. 지금까지 만든 관찰 파일·조사 결과를 그대로 쓰고, 남은 단계만 이어서 끝내세요(처음부터 다시 하지 않습니다).",
+            job_tools(), log, handle, add_dirs, model, timeout, label="에이전트", resume=handle["session_id"], extra_env=ex_env)
+    reads_file.write_text(json.dumps(sorted(handle["reads"]), ensure_ascii=False), encoding="utf-8")
     fails = check(result)
     for i in range(1, max_resume + 1):
         if not fails or not handle.get("session_id"):
@@ -142,7 +164,8 @@ def run_job(skill: str, name: str, job: dict, result_name: str, check, log=None,
         log(f"  검사에 걸린 항목 {len(fails)}건 — 같은 대화를 이어서 알려 줌({i}/{max_resume}): " + "; ".join(fails)[:300])
         msg = ("프로그램이 결과 파일을 검사했더니 아래 항목이 걸렸습니다. 이어서 처리하고, 검사 명령으로 통과를 확인한 뒤 끝내세요.\n"
                + "\n".join(f"- {f}" for f in fails))
-        run(msg, job_tools(), log, handle, add_dirs, model, timeout, label="에이전트", resume=handle["session_id"])
+        run(msg, job_tools(), log, handle, add_dirs, model, timeout, label="에이전트", resume=handle["session_id"], extra_env=ex_env)
+        reads_file.write_text(json.dumps(sorted(handle["reads"]), ensure_ascii=False), encoding="utf-8")
         fails = check(result)
     collect_knowledge(log)
     if not result.exists():
@@ -164,6 +187,19 @@ def render_tool() -> tuple[str, list[str]]:
     return cmd, [f"Bash({cmd}:*)", f"PowerShell({cmd}:*)"]
 
 
+def _record_read(handle: dict, name: str, inp: dict) -> None:
+    """에이전트(하위 에이전트 포함)가 실제로 연 이미지 경로를 모은다. 검사가 관찰 파일의 '봤다'와 대조한다(2026-10-04 리뷰 4-3)."""
+    reads = handle.setdefault("reads", set())
+    if name == "Read" and inp.get("file_path"):
+        reads.add(str(inp["file_path"]))
+    elif name in ("Bash", "PowerShell"):
+        cmd = str(inp.get("command") or "")
+        if "-m kolis_tool look" in cmd:
+            m = re.search(r"-m kolis_tool look\s+(\"[^\"]+\"|'[^']+'|\S+)", cmd)
+            if m:
+                reads.add(m.group(1).strip("\"'"))
+
+
 def _describe(name: str, inp: dict) -> str:
     what = inp.get("query") or inp.get("url") or inp.get("file_path") or inp.get("command") or inp.get("pattern") or ""
     what = what or inp.get("description") or inp.get("skill") or ""
@@ -175,7 +211,8 @@ def _describe(name: str, inp: dict) -> str:
 
 
 def run(prompt: str, tools: list[str], log=None, handle: dict | None = None, add_dirs: list[Path] | None = None,
-        model: str | None = None, timeout: int = 1200, label: str = "클로드", _retried: bool = False, resume: str | None = None) -> str:
+        model: str | None = None, timeout: int = 1200, label: str = "클로드", _retried: bool = False, resume: str | None = None,
+        extra_env: dict | None = None) -> str:
     """claude -p 를 돌리고 마지막 답변 글을 돌려준다. handle['proc'] 에 프로세스를 두어 취소 가능.
     handle['session_id'] 에 대화 번호를 남긴다. resume 에 그 번호를 주면 같은 대화를 이어 간다(앞에서 본 것을 기억한 채로)."""
     log = log or (lambda m: None)
@@ -193,6 +230,7 @@ def run(prompt: str, tools: list[str], log=None, handle: dict | None = None, add
     env = {k: v for k, v in os.environ.items() if k not in SECRET_ENV}
     env["PYTHONPATH"] = str(REPO) + os.pathsep + env.get("PYTHONPATH", "")
     env["PYTHONIOENCODING"] = "utf-8"
+    env.update(extra_env or {})
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8",
                             errors="replace", creationflags=NO_WINDOW, cwd=str(cwd), env=env)
     if handle is not None:
@@ -216,6 +254,8 @@ def run(prompt: str, tools: list[str], log=None, handle: dict | None = None, add
             for b in (ev.get("message") or {}).get("content", []):
                 if b.get("type") == "tool_use":
                     log(f"  [{int(time.time() - t0)}s] {who} › {_describe(b.get('name', ''), b.get('input') or {})}")
+                    if handle is not None:
+                        _record_read(handle, b.get("name", ""), b.get("input") or {})
                 elif b.get("type") == "text" and b.get("text", "").strip():
                     log(f"  [{int(time.time() - t0)}s] {who}: {b['text'].strip()[:160]}")
         elif ev.get("type") == "result":
@@ -232,11 +272,11 @@ def run(prompt: str, tools: list[str], log=None, handle: dict | None = None, add
     if rc != 0:
         err = "".join(err_buf)
         if time.time() - t0 >= timeout:
-            raise SystemExit(f"{label}: 제한 시간 {timeout}초를 넘겨 중단했습니다.")
+            raise AgentTimeout(f"{label}: 제한 시간 {timeout}초를 넘겨 중단했습니다.")
         if any(k in err.lower() for k in TRANSIENT) and not _retried:
             log(f"  일시적 오류로 보여 30초 뒤 1회 재시도: {err[-120:]}")
             time.sleep(30)
-            return run(prompt, tools, log, handle, add_dirs, model, timeout, label, True, resume)
+            return run(prompt, tools, log, handle, add_dirs, model, timeout, label, True, resume, extra_env)
         raise SystemExit(friendly_error(err, rc))
     log(f"  {label} 완료 ({int(time.time() - t0)}초)")
     return text

@@ -437,7 +437,7 @@ class Api:
     def confirm_import(self, folder: str) -> dict:
         """반입 전 확인 완료(사람 판정 지점): 직원이 반입용 엑셀을 다 봤다는 표시. 엑셀의 노란색·메모를 지우고 기록한다. 이걸 눌러야 KOLIS 등록을 할 수 있다."""
         import datetime
-        from . import prepare, import_writer
+        from . import prepare, mods_sheet
         f = Path(folder)
         w = prepare.load(f, self._work_dir)
         if not w or not w.get("output_xlsx"):
@@ -446,7 +446,7 @@ class Api:
         if not x.is_file():
             return {"error": f"반입용 엑셀이 없습니다: {x}"}
         try:
-            n = import_writer.clear_marks(x)
+            n = mods_sheet.clear_marks(x)
         except PermissionError:
             return {"error": "반입용 엑셀이 열려 있어 고칠 수 없습니다. 엑셀에서 저장하고 닫은 뒤 다시 누르세요"}
         except Exception as e:  # noqa: BLE001
@@ -484,44 +484,84 @@ class Api:
 
     @staticmethod
     def _view(w: dict) -> dict:
-        """화면에 보여 줄 요약: 값 표, 사람이 확인할 칸, 엇갈림, 찾지 못한 값, 검수."""
-        from . import import_writer
+        """화면에 보여 줄 요약: 값 표, 사람이 확인할 칸(경로 기준), 엇갈림, 찾지 못한 값, 검수. 2026-10-04: import.json 은 MODS 트리."""
+        from . import import_check, mods_sheet as ms
         imp, res = w.get("import") or {}, w.get("research") or {}
-        rows = imp.get("rows") or []
-        v0 = (rows[0].get("values") or {}) if rows else {}
-        names = "; ".join(f"{n.get('role') or ''}: {n.get('name')}".strip(": ") for n in v0.get("names") or [])
-        dates = [str((r.get("values") or {}).get("dateIssued") or "") for r in rows]
+        try:
+            rows = import_check.materialize(imp, None)
+        except Exception:  # noqa: BLE001
+            rows = []
+        cols = ms.layout(rows) if rows else []
+        try:
+            labels = ms.sample_labels()
+        except Exception:  # noqa: BLE001
+            labels = {}
+        g = lambda r, path: (ms.get(r.get("mods") or {}, path) if r else None)
+        r0 = rows[0] if rows else {}
+        names = "; ".join(f"{ms._text(ms._node(n).get('role', {}).get('roleTerm') if isinstance(ms._node(n).get('role'), dict) else '')}: {ms._text(ms._node(n).get('namePart'))}".strip(": ")
+                          + (f" [전거 {ms._node(n).get('@ID')}]" if ms._node(n).get("@ID") else "") for n in ms._lst((r0.get("mods") or {}).get("name")))
+        dates = [str(g(r, "originInfo[0].dateIssued") or "") for r in rows]
+        o0 = ms._lst((r0.get("mods") or {}).get("originInfo"))
+        o0 = ms._node(o0[0]) if o0 else {}
+        pubs = " · ".join(ms._text(x) for x in ms._lst(o0.get("publisher")))
+        place = " ".join(ms._text(ms._node(pl).get("placeTerm")) for pl in ms._lst(o0.get("place")))
+        notes = [ms._node(n) for n in ms._lst((r0.get("mods") or {}).get("note"))]
+        aud_note = next((ms._text(n) for n in notes if str(n.get("@type") or "") == "target audience"), "")
+        subs = " · ".join(ms._text(ms._node(x).get("topic")) or ms._text(ms._node(x).get("genre")) for x in ms._lst((r0.get("mods") or {}).get("subject")))
+        ucis = sum(1 for r in rows if any(str(ms._node(i).get("@type") or "") == "uci" and ms._text(i) for i in ms._lst((r.get("mods") or {}).get("identifier"))))
+        urls = ms._lst(ms._node((r0.get("mods") or {}).get("location") or {}).get("url"))
+        x0 = r0.get("extra") or {}
         summary = [
-            ["작품 / 건수", f"{imp.get('title') or ''} / {len(rows)}{imp.get('unit') or '건'}", ""],
-            ["표제", v0.get("title", ""), ""],
-            ["권차", ", ".join(str((r.get("values") or {}).get("partNumber") or "") for r in rows[:12]) + (" …" if len(rows) > 12 else ""), ""],
+            ["작품 / 건수", f"{imp.get('title') or ''} / {len(rows)}{imp.get('unit') or '건'}", f"열 {w.get('columns') or ''}개" if w.get("columns") else ""],
+            ["표제", str(g(r0, "titleInfo[0].title") or ""), str(g(r0, "titleInfo[1].title") or "")],
+            ["권차", ", ".join(str(g(r, "titleInfo[0].partNumber") or "") for r in rows[:12]) + (" …" if len(rows) > 12 else ""), ""],
             ["저자", names, ""],
-            ["발행처 / 발행지", f"{v0.get('publisher', '')} / {v0.get('place', '')} {v0.get('place_code', '')}", ""],
+            ["발행처 / 발행지", f"{pubs} / {place}", f"출처정보 {len(ms._lst((r0.get('mods') or {}).get('originInfo')))}묶음" if len(ms._lst((r0.get('mods') or {}).get('originInfo'))) > 1 else ""],
             ["발행일", f"{min(d for d in dates if d)} ~ {max(dates)}" if any(dates) else "", f"{sum(1 for d in dates if d)}/{len(rows)}건"],
             ["최초 연재 플랫폼", res.get("platform_first", ""), res.get("platform_first_reason", "")],
-            ["이용대상", f"{v0.get('targetAudience', '')} / {v0.get('audience_note', '')}", ""],
-            ["정가 / 보상", f"{v0.get('price', '')} / {v0.get('reward_yn', '')} {v0.get('compensation', '')}", ""],
-            ["원문주소", v0.get("url_work", ""), ""],
+            ["이용대상", f"{g(r0, 'targetAudience') or ''} / {aud_note}", ("성인물 — 등록 뒤 이용제한을 넣습니다. " + str(imp.get("adult_reason") or "")) if imp.get("adult") else ""],
+            ["주제명", subs, ""],
+            ["UCI", f"{ucis}/{len(rows)}건에 있음" if rows else "", ""],
+            ["정가 / 보상", f"{x0.get('contents_price', '')} / {x0.get('reward_yn', '')} {x0.get('compensation', '')}", ""],
+            ["원문주소", str(urls[1] if len(urls) > 1 else (urls[0] if urls else "")), ""],
             ["썸네일", "있음" if imp.get("thumbs_dir") else "없음(등록하지 않음)", ""],
         ]
         confirm = []
-        for r in rows:
+        for r, mr in zip(imp.get("rows") or [], rows):
             for c in r.get("confirm") or []:
-                v = r.get("values") or {}
-                name = str(c.get("field"))
-                special = {"names": "; ".join(f"{n.get('name')} ({n.get('type') or ''}, {n.get('role') or '역할 없음'})" for n in v.get("names") or []), "thumb_file": r.get("thumb_file")}
-                val = special[name] if name in special else v.get(name)
-                part = " ".join(str(v.get(k) or "") for k in ("partNumber", "partName")).strip()
-                confirm.append({"no": r.get("no"), "part": part, "value": "(빈칸)" if val in (None, "") else str(val), "field": import_writer.column_label(name),
+                path = str(c.get("path") or "")
+                try:
+                    ci = ms.column_index(cols, path) if cols else None
+                except ValueError:
+                    ci = None
+                field = ms.column_label(cols, ci, labels) if ci else path
+                val = None
+                try:
+                    val = (mr.get("extra") or {}).get(path.split(".", 1)[1]) if path.startswith("extra.") else ms.get(mr.get("mods") or {}, path)
+                except Exception:  # noqa: BLE001
+                    val = None
+                if isinstance(val, (dict, list)):
+                    val = json.dumps(val, ensure_ascii=False)
+                part = " ".join(str(g(mr, k) or "") for k in ("titleInfo[0].partNumber", "titleInfo[0].partName")).strip()
+                confirm.append({"no": r.get("no"), "part": part, "value": "(빈칸)" if val in (None, "") else str(val), "field": field, "path": path,
                                 "reason": c.get("reason"), "ask": c.get("ask") or "", "evidence": c.get("evidence") or "", "publisher_says": c.get("publisher_says") or ""})
         grouped: dict = {}
         for c in confirm:      # 같은 칸·같은 내용은 행을 모아 한 묶음으로
             grouped.setdefault((c["field"], c["reason"], c["ask"], c["evidence"]), []).append(c)
+        authors = []
+        for i, n in enumerate(ms._lst(((imp.get("common") or {}).get("mods") or {}).get("name"))):
+            nd = ms._node(n)
+            srcs = [s for r in imp.get("rows") or [] for s in r.get("sources") or [] if str(s.get("path") or "").startswith(f"name[{i}]")]
+            authors.append({"index": i, "name": ms._text(nd.get("namePart")), "role": ms._text(ms._node(nd.get("role") or {}).get("roleTerm")) if isinstance(nd.get("role"), (dict, str)) else "",
+                            "ac_control_no": str(nd.get("@ID") or ""), "display_form": ms._text(nd.get("displayForm")),
+                            "alt": [ms._text(ms._node(a).get("namePart")) for a in ms._lst(nd.get("alternativeName")) if ms._text(ms._node(a).get("namePart"))],
+                            "staff": any("직원" in str(s.get("from") or "") for s in srcs), "sources": [{"from": s.get("from"), "quote": s.get("quote")} for s in srcs][:6]})
         rv = imp.get("review") or {}
         return {"folder": w.get("folder"), "title": imp.get("title"), "output_xlsx": w.get("output_xlsx"), "rows": w.get("rows"), "confirmed": w.get("confirmed"),
-                "confirm_cells": w.get("confirm_cells"), "manuscripts": w.get("manuscripts"), "thumbs": w.get("thumbs"),
-                "summary": summary,
-                "confirm": [{"field": k[0], "reason": k[1], "ask": k[2], "evidence": k[3], "rows": [c["no"] for c in v],
+                "confirm_cells": w.get("confirm_cells"), "manuscripts": w.get("manuscripts"), "thumbs": w.get("thumbs"), "columns": w.get("columns"),
+                "unknown_columns": w.get("unknown_columns") or [], "adult": bool(imp.get("adult")), "adult_reason": imp.get("adult_reason") or "",
+                "summary": summary, "authors": authors,
+                "confirm": [{"field": k[0], "reason": k[1], "ask": k[2], "evidence": k[3], "rows": [c["no"] for c in v], "path": v[0]["path"],
                              "publisher_says": (lambda ps: ps[0] if len(ps) == 1 else " / ".join(ps[:3]) + (f" … ({len(ps)}가지)" if len(ps) > 3 else ""))(list(dict.fromkeys(c["publisher_says"] for c in v if c["publisher_says"])) or [""]),
                              "parts": [c["part"] for c in v], "values": list(dict.fromkeys(c["value"] for c in v))} for k, v in grouped.items()],
                 "conflicts": res.get("conflicts") or [], "not_found": res.get("not_found") or [], "issues": imp.get("issues") or [],
@@ -529,6 +569,44 @@ class Api:
                 "remaining": w.get("remaining") or [], "finalize": w.get("finalize") or {}, "run": w.get("run") or {},
                 "platforms": [{"name": p.get("name"), "status": p.get("status"), "start_date": p.get("start_date"), "url": p.get("url_work")} for p in res.get("platforms") or []],
                 "searched": len(res.get("searched") or [])}
+
+    def set_author(self, folder: str, index: int, ac_control_no: str, reason: str = "") -> dict:
+        """1단계 직원 결정: 저자 전거 연결을 바꾼다(import.json 의 common.mods.name[index], 출처 '직원 결정'). 확인 완료 전에만. 엑셀을 다시 쓴다."""
+        from . import prepare
+        f = Path(folder)
+        w = prepare.load(f, self._work_dir)
+        if not w:
+            return {"error": "이 폴더의 작업 기록이 없습니다"}
+        if w.get("confirmed"):
+            return {"error": "확인 완료 뒤에는 바꿀 수 없습니다. 엑셀에서 직접 고치십시오"}
+        imp = w["import"]; names = ((imp.get("common") or {}).get("mods") or {}).get("name") or []
+        i = int(index)
+        if i >= len(names):
+            return {"error": "그 저자가 없습니다"}
+        n = names[i] if isinstance(names[i], dict) else {"_": names[i]}
+        no = (ac_control_no or "").strip()
+        if no and not re.fullmatch(r"KAC\d+", no):
+            return {"error": "전거 번호는 KAC 로 시작하는 숫자입니다(예: KAC202574425)"}
+        if no:
+            n["@ID"] = no; n["@authority"] = prepare.project_settings(self._work_dir)["author_authority"]
+        else:
+            n.pop("@ID", None); n.pop("@authority", None); n.pop("displayForm", None)
+        names[i] = n
+        for r in imp.get("rows") or []:
+            srcs = [s for s in r.get("sources") or [] if str(s.get("path") or "") != f"name[{i}]"]
+            srcs.append({"path": f"name[{i}]", "from": "직원 결정", "quote": reason or ("전거 " + no if no else "연결 안 함")})
+            r["sources"] = srcs
+        try:
+            jd = Path((w.get("run") or {}).get("job_dir") or "")
+            if jd.is_dir():
+                (jd / "import.json").write_text(json.dumps({k: v for k, v in imp.items() if not k.startswith("_")}, ensure_ascii=False, indent=1), encoding="utf-8")
+            prepare.result_path(f, self._work_dir).write_text(json.dumps(w, ensure_ascii=False, indent=1), encoding="utf-8")
+            prepare.rewrite_xlsx(f, self._work_dir)
+        except PermissionError:
+            return {"error": "반입용 엑셀이 열려 있어 다시 쓰지 못했습니다. 닫은 뒤 다시 누르십시오"}
+        except Exception as e:  # noqa: BLE001
+            return {"error": "".join(traceback.format_exception_only(type(e), e)).strip()}
+        return self._view(prepare.load(f, self._work_dir))
 
     # ---------- 2. KOLIS 등록 전체(반입 → 원문 → 가원부번호)를 한 번에, 브라우저 없이 ----------
     def flow_run(self, tab: str, folder: str, note: str, yes: str) -> dict:
@@ -820,10 +898,30 @@ class Api:
         from . import ledger_batch
         prep = ledger_batch.prep_info(w)
         bj = ledger_batch._rd(d / "build.json")
-        judgment = {k: bj.get(k) for k in ("title", "count", "authors", "subjects", "publisher", "place", "adult", "adult_reason", "issues", "notes_for_staff", "review", "manuscript_seen")} if bj else None
+        judgment = {k: bj.get(k) for k in ("title", "count", "authors", "subjects", "publisher", "place", "adult", "adult_reason", "issues", "notes_for_staff", "review", "manuscript_seen", "fixes")} if bj else None
         if judgment is not None:
             judgment["episodes"] = {e.get("contents_id"): e for e in bj.get("episodes") or []}
+        else:
+            imp = self._import_for_wonbu(w)       # 2026-10-04: 성인물 여부는 1단계 반입값이 정본(이용제한 자동 실행의 방아쇠)
+            if imp is not None:
+                judgment = {"from_import": True, "adult": bool(imp.get("adult")), "adult_reason": imp.get("adult_reason") or "", "title": imp.get("title"), "count": len(imp.get("rows") or [])}
         return {"items": mods_batch.status(w), "has_job": (d / "job.json").exists(), "has_build": (d / "build.json").exists(), "prep": prep, "judgment": judgment}
+
+    def _import_for_wonbu(self, wonbu: str) -> dict | None:
+        """탭 상태(작업 폴더 ↔ 원부번호 짝)로 1단계 import.json 을 찾는다."""
+        from . import prepare
+        tabs = self._work_dir / "tabs.json"
+        if not tabs.exists():
+            return None
+        try:
+            d = json.loads(tabs.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            return None
+        for t in d.get("tabs") or []:
+            if str(t.get("wonbu") or (t.get("v") or {}).get("b-wonbu") or "").strip() == str(wonbu) and (t.get("folder") or (t.get("v") or {}).get("folder")):
+                w = prepare.load(Path(t.get("folder") or t["v"]["folder"]), self._work_dir)
+                return (w or {}).get("import")
+        return None
 
     # ---------- 원부 일괄 처리(과장님용, 2026-10-03 설계서 1절) ----------
     LEDGER_TAB = "ledger"
