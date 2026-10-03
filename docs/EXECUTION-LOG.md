@@ -243,3 +243,8 @@
 - 22:20~22:40 ⑥ 보내는 단계 코드만: `mods_batch.send_bodies`(준비된 본문을 KOLIS 세션으로 보내고 전·후 XML 대조 `diff_xml` — 의도한 칸(저자·주제명·식별기호·다른이름) / KOLIS 자동 변경(미디어타입·digitalOrigin·accessCondition·recordChangeDate 등) / 그 밖으로 분류, **그 밖이 있으면 첫 건에서 멈춤**), API `build_send_bodies`, 3-2 「준비된 회차에 한 번에 넣기」(확인 체크 + 대화상자). **누르지 않음.** 대조 분류를 1화 실제 전·후 XML 로 검증: 바뀐 21 = 의도 12 + 자동 9 + 그 밖 0.
 - 스킬 5절 보강: 표지의 `○○作品`·`○○ 제작` 은 제작처 → `publishers`.
 - 지금 1614 상태: 1화 저장됨, 2화 저장 본문 준비됨(보내지 않음), 3~8화 준비 전. 「준비된 회차에 한 번에 넣기」 단추는 체크 뒤 활성(준비 1건).
+
+## 2026-10-03 22:45~23:10 — MODS 칸의 모수 조사(유저 마지막 질문, 읽기만)
+- `tools/mods_fields_doc.py` → `docs/MODS-FIELDS.md`: 세 출처를 경로로 합침 — A 지침 0.5 요소 목록 55, **B KOLIS MODS 수정 화면 칸 174(저장이 받는 전부)**, C 반입 템플릿 Sample 시트 「필드설명」 50(도서관 공식 열 설명·값 규칙·언어 코드표) + 템플릿 83열·예시 88열(고유 경로 54) + 반입 직후 XML 에서 확인된 42.
+- 발견: Sample 필드설명에 없는 열(`name[@usage]`, `note[@type]`, `originInfo[@eventType]`, `classification[@edition]`, `edition`)이 승인 양식에 있고 반입 XML 에 들어가 있음 → 반입 파서는 "요소 뒤 속성" 일반 규칙. 따라서 전거 `name[@ID]`·`[@authority]`, `subject[@ID]`·`[@authority]`, `subject/genre`, `alternativeName[@altType]` 도 들어갈 **가능성 높음**, 다만 **반입 1회 없이는 확정 불가**(UCI 는 지침이 반입 오류라고 적음). KOLIS 화면에만 있고 반입 설명·양식에 없는 경로 117개(relatedItem·part·extension·recordInfo 대부분).
+- 커밋 fd5b7b9(세션 마무리) 뒤 추가.
