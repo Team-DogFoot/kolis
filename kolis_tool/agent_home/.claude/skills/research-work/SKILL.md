@@ -10,7 +10,7 @@ description: 웹툰·만화 작품 하나의 서지 정보를 웹에서 조사�
 
 ## 0. 시작하기 전에
 - `knowledge/platform-notes.md` 와 `knowledge/corrections.md` 를 읽는다. 같은 출판사·같은 플랫폼에서 이미 배운 것이 있다.
-- 판단 기준이 헷갈리면 `knowledge/rules/` 의 매뉴얼 원문을 찾아 읽는다(Grep 으로 항목 이름 검색).
+- 판단 기준이 헷갈리면 `knowledge/rules/INDEX.md` 를 보고 매뉴얼 원문을 찾아 읽는다(Grep 으로 항목 이름 검색, 그림은 Read 로).
 
 ## 1. 도구
 - WebSearch, WebFetch.

@@ -14,7 +14,7 @@ description: 출판사가 보낸 납품 폴더 하나(기초메타데이터 엑�
 
 ## 0. 시작하기 전에
 `knowledge/platform-notes.md`, `knowledge/corrections.md` 를 읽는다. 직원이 전에 고친 내용과 같은 상황이면 그 판단을 따른다.
-기준이 헷갈리면 `knowledge/rules/mods-input-guide.md`(태그별 입력 가이드), `웹툰대행사업_매뉴얼_v1.6.txt` 에서 항목 이름으로 찾아 읽는다.
+기준이 헷갈리면 `knowledge/rules/INDEX.md` 로 찾아 `MODS_입력가이드.md`(태그별 입력 가이드), `웹툰대행사업_매뉴얼_v1.6.md` 에서 항목 이름으로 찾아 읽는다.
 
 ## 1. 납품 자료 읽기
 1. `snapshot` 파일을 읽는다. 출판사마다 엑셀 양식(열 이름·열 수·머리글 위치)과 폴더 구성이 다르다. 열 이름이 달라도 뜻으로 판단한다.

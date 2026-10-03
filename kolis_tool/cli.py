@@ -5,6 +5,7 @@
   render          (에이전트용) 페이지를 Edge 로 열어 화면 글자 출력
   check-research  (에이전트용) 조사 결과 파일의 형식·근거 검사
   write-import    (에이전트용) 반입용 값 검사 + 반입용 엑셀 쓰기
+  check-build     (에이전트용) MODS 구축 판단 파일의 형식·근거 검사
   unzip     출판사 zip 풀기(한글 파일명 cp949 깨짐 방지)
   inspect   원문 폴더 검수(깨짐·형식·중복·용량) → out/inspect.xlsx
   ids       전체출력 파일에서 콘텐츠ID 목록 추출 → work/ids.txt
@@ -31,6 +32,9 @@ def main(argv=None):
     a.add_argument("--find", default="", help="'단어1|단어2' — 그 단어가 든 줄과 앞뒤만 출력")
     a = sub.add_parser("check-research", help="(에이전트용) 조사 결과 파일의 형식·근거 검사"); a.add_argument("result"); a.add_argument("--job")
     a = sub.add_parser("write-import", help="(에이전트용) 반입용 값 검사 + 반입용 엑셀 쓰기"); a.add_argument("import_json")
+    a = sub.add_parser("check-build", help="(에이전트용) MODS 구축 판단 파일(build.json)의 형식·근거 검사"); a.add_argument("result"); a.add_argument("--job")
+    a = sub.add_parser("check-build-work", help="(에이전트용) 작품 단위 MODS 구축 판단 파일 검사"); a.add_argument("result"); a.add_argument("--job")
+    a = sub.add_parser("check-dup", help="(에이전트용) 복본 판정 파일 검사"); a.add_argument("result"); a.add_argument("--job")
     a = sub.add_parser("unzip", help="한글 파일명 깨짐 없이 zip 풀기(cp949)"); a.add_argument("zip"); a.add_argument("-o", "--out", required=True)
     a = sub.add_parser("inspect"); a.add_argument("root"); a.add_argument("-o", "--out", default="out")
     a = sub.add_parser("ids", help="전체출력 파일(.xls/HTML)에서 콘텐츠ID 목록 추출"); a.add_argument("export_file"); a.add_argument("-o", "--out", default="work/ids.txt")
@@ -46,6 +50,15 @@ def main(argv=None):
     elif ns.cmd == "check-research":
         from .checks import main_check_research
         sys.exit(main_check_research(ns.result, ns.job))
+    elif ns.cmd == "check-dup":
+        from .checks import main_check_dup
+        sys.exit(main_check_dup(ns.result, ns.job))
+    elif ns.cmd == "check-build-work":
+        from .checks import main_check_build_work
+        sys.exit(main_check_build_work(ns.result, ns.job))
+    elif ns.cmd == "check-build":
+        from .checks import main_check_build
+        sys.exit(main_check_build(ns.result, ns.job))
     elif ns.cmd == "write-import":
         from .import_writer import main as write_main
         sys.exit(write_main(ns.import_json))

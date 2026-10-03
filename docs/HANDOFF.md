@@ -1,4 +1,4 @@
-# HANDOFF — 세션 시작용 (최신화 2026-10-01, 도서관 PC)
+# HANDOFF — 세션 시작용 (최신화 2026-10-03, 도서관 PC)
 
 ## 0. 세션이 곧바로 수행할 지시 (유저가 "시작"이라고 하면 이 절을 그대로 실행)
 
@@ -68,7 +68,18 @@
 - 유저는 개발자다. 기술 설명은 기술적으로 해도 된다. 질문에는 먼저 예/아니오와 방법을 답한다.
 - 세션이 다른 모델(Opus 등)로 넘어갈 수 있다. 계획과 지식은 문서에 자세히 남긴다.
 
-## 3. 프로그램·도구 상태 (2026-10-01)
+## 2-5. 2026-10-03 유저 확정(추가) — ③구간(원부번호 이후) 시작
+- **③구간은 실제 업무 건으로만**(테스트 요청이란 개념이 없다). 직원 입회 아래 한 단계씩. **비가역 요청(저장·실행·완료) 직전에 멈춰 가이드의 다음 단계를 설명하고 승인**을 받는다. 승인 뒤 실행하면 캡처와 KOLIS 재조회로 확인한다.
+- **방식: 유저가 보는 Edge(제어 포트 9222, 별도 프로필, 화면 오른쪽 절반)에 Playwright 로 붙는다**(`kolis_tool/kolis_browser.py`, `bin/edge_kolis.bat`). 로그인은 프로그램이 한다. 오가는 요청·응답을 전부 기록(`work/logs/browser-YYYYMMDD.jsonl`)한다. 반자동을 먼저 완성하고, 기록으로 자동(요청 방식)을 만든 뒤 **자동 기본·반자동 대체**. 2-3절의 "브라우저 없이"는 ①구간 규칙으로 남는다.
+- **가이드 순서대로 메뉴를 눌러** 이동한다(주소 직접 열기 금지). **가이드 그림을 먼저 본다**(`docs/source/images/guide/NN.png`, 파일 번호 = 그림 번호 − 1). 화면을 바꾸는 실행 뒤에는 캡처를 보고 말한다. 질문에는 먼저 답한다.
+- 원부번호 ≠ 가원부번호 ≠ 접수번호(번호 체계가 따로). 등록원부관리 조회 `rec_no_yn=Y` 가 원부번호 기준.
+- **사람 확인 지점(개발 방향):** (a) 반입용 기초메타데이터 — AI 작성 → 직원 확인, (b) MODS 구축(5.3) — AI 작성 → 직원 확인, (c) 점검(5.8) — 직원 확인, (d) 나머지는 완전 자동. AI 가 믿을 만해지면 a~c 도 각각 판단해 자동으로 옮긴다.
+- **구축 판단 기준은 직원 답변**(`docs/rulebook/build-judgment-rules.md`, 10-03 현장 답변 21개)이 가이드·지침서보다 우선. 요점: 전거는 후보 상세정보 + 웹 검색으로 **강한 확신**일 때만, "요청하기" 안 씀, 글·그림 각각 / 다른이름은 **원문에 있을 때만**(영문 '성, 이름') / 주제명은 만화[漫畵]·웹툰[webtoon] 두 묶음만 / 발행처는 제작사 기본 / UCI 는 서지정보유통지원시스템 검색 / 발행지는 문체부 출판사 검색 / 값의 정보원 순위 원문(표제면>판권기>표지) > 출판사 엑셀 > 플랫폼(각괄호).
+- **지침 원문을 에이전트가 찾아 읽게**: `tools/build_rules.py` 가 `docs/source/2_지침` 의 PDF·DOCX 를 쪽 머리·그림 링크·표가 있는 md 로 바꿔 `docs/source/text/`(+`INDEX.md`)에 두고, `agent.deploy()` 가 `knowledge/rules/`·`knowledge/images/` 로 복사한다. 벡터 검색은 쓰지 않는다(Grep + Read).
+- **헤드리스 에이전트 `build-mods`**(5.3 판단): 프로그램이 MODS 수정 화면 값과 전거 후보를 떠서 job.json 을 주면, 에이전트가 연결/미연결·다른이름·UCI·발행처를 근거와 함께 정하고(`check-build` 자체 검사, 검수 포함) 프로그램이 화면에 넣는다. 저장은 사람. 코드 `kolis_tool/mods_build.py`(open/collect/agent/apply/save).
+- **원문을 에이전트가 직접 봐야 하는 일이 늘었다**(유저 10-03): 다른이름·저자 표기·역할·발행처 표기가 전부 원문 기준이 됐다. ①단계에서 원문을 읽을 때 회차마다 표제면·판권기·표지의 글자를 **관찰 기록**으로 남겨 ③단계(구축)가 다시 보지 않고 쓰게 한다(할 일). 남이 등록한 작품(1607 처럼 원문이 로컬에 없음)은 "원문 없음"으로 보고하고 직원이 확인한다.
+
+## 3. 프로그램·도구 상태 (2026-10-03)
 **프로그램** `bin\app.vbs` — 창 하나, 작품 탭. 위에서부터: **KOLIS 계정**(로그인), **1 납품 폴더 → 반입용 엑셀**(결과에 '직원이 확인할 것' 표와 **확인 완료** 버튼), **2 KOLIS 등록**(버튼 하나. 확인 완료 전에는 실행되지 않음), 그 아래 접어 둔 단계별 버튼(2-1 ~ 2-4, 옛 화면 방식). 왼쪽(단계)과 오른쪽(로그)이 각자 스크롤. 상태는 `work\` 에 자동 저장·복원.
 
 | 기능 | 코드 | 상태 |
@@ -83,6 +94,12 @@
 | 썸네일 등록 | `kolis_modify.py`(요청만으로, 건마다 한 장: 전송 → 자리 행 삭제 저장 → 썸네일 행 저장. 건마다 전·후 확인). 옛 화면 방식 `kolis_thumbs.py` 는 접어 둔 단계별 버튼에만 남음 | **확인됨**(10-01 옆집 기러기 아빠 구워 먹기 11건 23~30초, 접수 984·985·989·991. KOLIS 에서 내려받은 파일이 원본과 같음). 상세 `docs/REQUEST-AUTOMATION.md` 6절 |
 | 1번의 폴더 정리 | `arrange.py` + 스킬 `prepare-import` 1-5절. 에이전트가 정리 계획, 프로그램이 옮김·되돌리기 | 확인됨(10-01 같은 작품, 12건 옮김). 되돌리기는 프로그램 창으로 아직 눌러 보지 않음 |
 | 단계별 버튼(접힘) | `kolis_ui.py`, `kolis_upload.py`, `kolis_register.py` — Edge 화면을 누르는 옛 방식. `kolis_request.Page` 는 Edge 화면 안에서 요청을 보내는 중간 방식 | 예비용. 기본 경로가 아님 |
+| **3 구축(원부번호 이후, 10-03 신설)** | `mods_build.py`(open/collect/agent/apply/save, 프로그램용 run/save_run/status) + `kolis_browser.py`(유저 Edge 에 Playwright) + 에이전트 스킬 `build-mods` + 검사 `checks.check_build`. 화면 카드 3번: 원부번호·회차 순번 → 화면 열기·판단·넣기(저장 안 함) → 결과 표 → YES+저장 → XML 전·후 | 10-03 원부 1607 1화로 명령줄·`run()` 경로 확인(저장 전까지). 프로그램 창 버튼으로는 아직 시험 안 함. 5.1(`tools/keyset_step.py`·`dupexmin_run.py`·`dupexmin_complete.py`)·5.2(`tools/batchchange_step.py`·`batchchange_set.py`)는 도구 스크립트로 1회 수행 — 프로그램 카드에 넣는 것은 할 일 |
+| 화면(UI) | `kolis_tool/ui/index.html` 단일 파일(10-03 설계서 `docs/UI-DESIGN-2026-10-03.md` 대로 새로 씀). 구조: 상단 띠(`웹툰 ▾` 선택 단추 = 제목, KOLIS 계정·진행 기록·프로그램 상태 단추, 계정·상태는 `<dialog>`) › 작품 탭 › `#tab-body` 안에 단계 A 반입 / handoff 띠(주무관에게 가원부번호 전달 → 원부번호) / 단계 B 구축 › 접히는 카드(`.fold`, 애니메이션). 상태 체계 `ST`(○ ◐ ✓ ! ✕) + 알약 `pill()`, 카드 띠 `cardState`, 되돌릴 수 없는 실행은 체크 상자(`.ack`) + `ask()` 대화상자(백엔드에는 'YES' 를 보냄). 문구 규칙: 합니다체, 주체는 프로그램/귀하, 영어·식별자·경로는 툴팁과 상세 기록에만. 렌더 확인은 가짜 백엔드 스크립트 `tools/ui_shots.py` | 10-03 UI/UX 리뷰 3회 반영. 3-1(단계 상태만)·3-2(작품 판단 근거 + 회차 표 줄 선택 → 회차 근거 + 채우기·저장) 는 제어 포트로 실제 버튼을 눌러 확인(캡처 `work/captures/ui_review/B_1610_*.png`, `CD_1614_done.png`) |
+| 3-1 복본조사·일괄변경(프로그램) | `build_prep.py` dupexmin(KEY → 실행 → 후보가 있으면 **에이전트 판정** `dup_judge.gather/run`(종 상세·권 목록 조회만 → 스킬 `judge-duplicates` → `dup_build.json`) → 복본 짝 체크까지. **완료는 프로그램이 누르지 않고** 3-1 「복본조사 완료」 버튼 → `dup_complete`) / batch_change(→ `getOnSpecView` data 로 확인). 규칙 `build-judgment-rules.md` 26(10-03 개정) | 10-03 1610·1614 실행. 1610 후보 64짝은 옛 고정 규칙으로 완료 처리됐고, 에이전트 사후 판정(5차, 안정화 뒤 2회 같음)은 아님 56·판단 불가 8(같은 권차, 단행본↔저스툰 수집본 내용 동일 여부) → **담당자 문의 필요** |
+| 성인물 이용제한 | `build_prep.use_limit_adult`(종마다: 종 화면 → 이용제한 팝업 → "1. 청소년 유해매체물" 선정 → 확인 → 종 저장 → 재조회) | 10-03 1610·1614 16종 확인. **MODS정리는 선택 행을 연다**(체크 아님) — `selectrow` 필수. 작품 판단에서 성인물이면 프로그램이 이어서 자동 실행(`app.build_judge` → `prep_run('uselimit')`, KOLIS 창이 바쁘면 기다림). 3-1 「다시 넣기」는 실패 때만 |
+| 3-2 작품 단위 판단 | `mods_batch.py`(collect_work 회차 화면 읽기 → run_work_agent 스킬 `build-mods-work` → episode_build/fill 회차별 채우기 → status 전체 회차) + 검사 `check_build_work` + 화면 「작품 전체 판단」·「이 회차 채우기」 | 10-03 프로그램 창에서 1607·1610·1614 세 작품 동시 판단 확인(1614 는 실제 버튼, 1607·1610 은 프로그램 API; 1차와 결과 같음). 채우기·저장은 아직 안 누름 |
+| 지침 변환 | `tools/build_rules.py` → `docs/source/text/*.md`+`INDEX.md`, 그림 `docs/source/images/{guideline-2025,manual-v1.6,mods-guide}` | 확인됨(10-03). 원본이 바뀌면 다시 돌린다 |
 | 요청 기록 도구 | `ie_dom.py`: Edge 의 KOLIS 화면에 기록용 스크립트를 넣음 | 새 화면(구축·점검)의 요청을 알아낼 때 씀 |
 | 점검 도구 | `mods-check` / `mods-fetch` / `ids` / `inspect` / `unzip` (명령줄) | `mods-fetch` 는 옛 주소를 쓰고 있어 **고쳐야 한다**(새 요청 `POST /online/contents/popup/getHarContentsXml.do`, contentsId — 10-01 확인, `BUILD-CHECK-RECON.md` 4-2절). 접수 상태의 MODS 는 KOLIS 등록 때 `work/xml/` 에 저장됨 |
 | 개발용 도구 | `tools/` — `recon.py`(화면 없는 Edge 로 KOLIS 화면을 띄워 소스·요소·요청 수집), `modify_truth.py`·`modify_screen_once.py`·`modify_spec_check.py`(수정 팝업 저장 본문 대조), `upload_speed.py`·`upload_speed_shared.py`(전송 속도), `parallel_flow_check.py`(동시 전송 확인) | 개발할 때만 쓴다. 프로그램은 브라우저를 쓰지 않는다 |

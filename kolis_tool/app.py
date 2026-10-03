@@ -14,7 +14,7 @@ import os
 
 HERE = Path(__file__).parent
 MAX_AGENTS = max(1, int(os.environ.get("KOLIS_MAX_AGENTS", "3")))      # 에이전트 동시 실행 한도
-KOLIS_KINDS = ("flow", "kolis", "kolis_submit", "export", "upload_open", "upload", "thumbs_register", "register", "register_export")
+KOLIS_KINDS = ("flow", "kolis", "kolis_submit", "export", "upload_open", "upload", "thumbs_register", "register", "register_export", "build", "build_save", "prep_dupexmin", "prep_complete", "prep_batch", "prep_uselimit", "ledger_status", "ledger_dup", "ledger_complete", "ledger_process", "kolis_show", "kolis_show", "build_collect", "build_fill")
 
 
 class Api:
@@ -61,7 +61,7 @@ class Api:
         if self._window:
             self._window.evaluate_js(f"onDone({json.dumps(kind)}, {json.dumps(payload, ensure_ascii=False, default=str)}, {json.dumps(tab)})")
 
-    def _run(self, kind: str, fn, capture: bool = False, tab: str = "", screen: bool | None = None) -> dict:
+    def _run(self, kind: str, fn, capture: bool = False, tab: str = "", screen: bool | None = None, nokolis: bool = False) -> dict:
         """스레드 작업 공통 틀: 시작·종료·소요시간·예외 스택을 파일에 남기고 onDone(kind, 결과, 탭)으로 알린다.
         fn() 은 결과 dict 를 돌려준다. Cancelled → {'cancelled': True}, 그 밖의 예외 → {'error': 문구}.
         capture=True(KOLIS 조작)면 실패 시 화면 캡처·창 목록을 저장한다. KOLIS 작업은 한 번에 하나만 받는다.
@@ -74,8 +74,8 @@ class Api:
         with self._lock:
             if key in self._running:
                 return {"error": f"이 작품의 '{kind}' 작업이 이미 진행 중입니다({self._running[key]} 시작)"}
-            kolis = (kind in KOLIS_KINDS) if screen is None else screen
-            if not kolis and screen is False and self._kolis_owner:
+            kolis = False if nokolis else ((kind in KOLIS_KINDS) if screen is None else screen)
+            if not kolis and not nokolis and screen is False and self._kolis_owner:   # nokolis: KOLIS 를 전혀 안 쓰는 일(에이전트 판단)은 화면 작업과 겹쳐도 된다
                 who = self._names.get(self._kolis_owner[0]) or "다른 작품"
                 return {"error": f"지금 '{who}' 작업({self._kolis_owner[1]})이 KOLIS 화면을 조작하고 있습니다. 끝난 뒤에 실행하세요"}
             if kolis:
@@ -303,13 +303,30 @@ class Api:
         p.write_text(json.dumps(items[:15], ensure_ascii=False, indent=1), encoding="utf-8")
 
     def recent(self) -> list:
+        """최근에 연 작품. 폴더 기준으로 하나씩만, 어디까지 했는지(status)를 붙인다. 날짜는 '마지막으로 연 때'라 뜻이 약해 화면에서 쓰지 않는다."""
+        from . import prepare
         p = self._work_dir / "recent.json"
         if not p.exists():
             return []
         try:
-            return json.loads(p.read_text(encoding="utf-8"))
+            items = json.loads(p.read_text(encoding="utf-8"))
         except Exception:  # noqa: BLE001
             return []
+        out, seen = [], set()
+        for i in items:
+            f = (i.get("folder") or "").rstrip("\\/")
+            if not f or f.lower() in seen:
+                continue
+            seen.add(f.lower())
+            st = self.load_state(f)
+            reg = (st.get("register") or {}).get("record_no")
+            try:
+                w = prepare.load(Path(f), self._work_dir)
+            except Exception:  # noqa: BLE001
+                w = None
+            status = f"가원부번호 {reg}" if reg else ("반입용 엑셀 있음" + (" · 확인 완료" if (w or {}).get("confirmed") else " · 확인 전") if w else "시작만 함")
+            out.append({"folder": f, "title": i.get("title") or Path(f).name, "when": i.get("when", ""), "status": status, "exists": Path(f).is_dir()})
+        return out
 
     # ---------- 1. 납품 폴더 → 반입용 엑셀 (에이전트가 한 번에) ----------
     def open_folder(self, folder: str) -> dict:
@@ -698,6 +715,211 @@ class Api:
                 self._jobs.pop(tab, None)
         return self._run("thumbs_register", job, capture=True, tab=tab)
 
+    # ---------- 3. 구축(원부번호 이후) — 유저 Edge 창 + 헤드리스 에이전트 (2026-10-03) ----------
+    def build_run(self, tab: str, wonbu: str, row: int = 0, instructions: str = "", manuscript: str = "") -> dict:
+        """원부번호의 n번째 회차: 가이드 메뉴로 MODS 수정 화면을 열고 → 값·전거 후보 읽기 → 에이전트 판단 → 화면에 넣기. **저장하지 않는다.**"""
+        from . import mods_build
+        wonbu = (wonbu or "").strip()
+        if not wonbu.isdigit():
+            return {"error": "원부번호(숫자)가 필요합니다"}
+        handle = self._jobs[tab] = {"cancel": False}
+        def job():
+            try:
+                return mods_build.run(wonbu, int(row or 0), self._tab_log(tab), manuscript or None, instructions or "", handle=handle)
+            finally:
+                self._jobs.pop(tab, None)
+        return self._run("build", job, tab=tab, screen=True)
+
+    def build_save(self, tab: str, wonbu: str, row: int, yes: str) -> dict:
+        """직원이 화면을 확인한 뒤: MODS 수정 화면의 '저장'을 누르고 MODS XML 전·후를 받는다(되돌릴 수 없음)."""
+        from . import mods_build
+        if (yes or "").strip() != "YES":
+            return {"error": "직원이 화면을 확인한 뒤 YES 를 넣으세요"}
+        return self._run("build_save", lambda: mods_build.save_run((wonbu or "").strip(), int(row or 0), self._tab_log(tab)), tab=tab, screen=True)
+
+    def prep_run(self, tab: str, step: str, wonbu: str, yes: str = "") -> dict:
+        """5.1 복본조사(KEY 저장 → 실행 → 0건이면 완료) / 5.2 일괄변경. YES 없이 누르면 바꾸는 요청 직전까지 가서 멈추고 다음 할 일을 알려 준다."""
+        from . import build_prep
+        wonbu = (wonbu or "").strip()
+        if not wonbu.isdigit():
+            return {"error": "원부번호(숫자)가 필요합니다"}
+        approved = (yes or "").strip() == "YES"
+        fn = {"dupexmin": build_prep.dupexmin, "complete": build_prep.dup_complete, "batch": build_prep.batch_change, "uselimit": build_prep.use_limit_adult}[step]
+        kind = {"dupexmin": "prep_dupexmin", "complete": "prep_complete", "batch": "prep_batch", "uselimit": "prep_uselimit"}[step]
+        def job():
+            try:
+                return fn(wonbu, self._tab_log(tab), approved)
+            except build_prep.NeedsApproval as e:
+                return {"needs_approval": str(e)}
+        return self._run(kind, job, tab=tab, screen=True)
+
+    def build_settings(self, patch: dict | None = None) -> dict:
+        """사업별 임시 고정값(입수처 주기 문장 등). patch 가 있으면 저장."""
+        from . import mods_build
+        return mods_build.save_settings(patch) if patch else mods_build.settings()
+
+    # ---------- 3-2 작품 단위 판단 (2026-10-03): 화면 값 읽기(Edge, 한 번에 하나) → AI 판단(Edge 안 씀, 작품끼리 동시) → 회차별 채우기 ----------
+    def build_collect(self, tab: str, wonbu: str, instructions: str = "", manuscript: str = "", then_judge: bool = True) -> dict:
+        """원부의 전체 회차 화면 값·전거 후보를 읽어 작업 파일 하나로 만들고, 이어서 AI 판단을 돌린다(then_judge). 읽기는 KOLIS 창을 쓰므로 한 번에 하나."""
+        from . import mods_batch
+        wonbu = (wonbu or "").strip()
+        if not wonbu.isdigit():
+            return {"error": "원부번호를 숫자로 넣으십시오"}
+        def job():
+            mods_batch.collect_work(wonbu, self._tab_log(tab), manuscript or None, instructions or "")
+            if then_judge:
+                self._done("build_collect", {"collected": True, "wonbu": wonbu}, tab)
+                r = self.build_judge(tab, wonbu)
+                if r.get("error"):
+                    raise SystemExit(r["error"])
+                return {"collected": True, "judging": True, "wonbu": wonbu}
+            return {"collected": True, "wonbu": wonbu}
+        return self._run("build_collect", job, tab=tab, screen=True)
+
+    def build_judge(self, tab: str, wonbu: str) -> dict:
+        """작품 단위 AI 판단만(화면 값은 이미 읽어 둔 것). KOLIS 창을 쓰지 않으므로 작품끼리 동시에 돈다(에이전트 한도 MAX_AGENTS)."""
+        from . import mods_batch
+        wonbu = (wonbu or "").strip()
+        handle = self._jobs[tab] = {"cancel": False}
+        def job():
+            with self._agents:
+                try:
+                    result, fails, out = mods_batch.run_work_agent(wonbu, self._tab_log(tab), handle=handle)
+                finally:
+                    self._jobs.pop(tab, None)
+            payload = {"wonbu": wonbu, "build_path": str(out), "remaining": fails, "authors": [(a.get("name"), a.get("decision"), a.get("confidence")) for a in result.get("authors") or []],
+                       "episodes": len(result.get("episodes") or []), "adult": result.get("adult"), "adult_reason": result.get("adult_reason"), "notes": result.get("notes_for_staff") or [], "issues": result.get("issues") or []}
+            # 성인물로 판단되면 이용제한(청소년 유해매체물)을 사람 요청 없이 이어서 한다(유저 확정 2026-10-03). 종마다 확인하며, 이미 GM 이면 건너뛴다.
+            if result.get("adult") and not (handle or {}).get("cancel"):
+                self._tab_log(tab)(f"성인물로 판단 → 이용제한구분(청소년 유해매체물)을 종마다 넣습니다. 근거: {result.get('adult_reason') or ''}")
+                self._done("build_judge", payload, tab)
+                import time as _t
+                r = {"error": "시작 못 함"}
+                for _ in range(1800):          # 다른 작품이 KOLIS 창을 쓰고 있으면 비기를 기다린다(최대 30분). 판단은 끝났으므로 이용제한만 늦어진다.
+                    if (handle or {}).get("cancel"):
+                        break
+                    r = self.prep_run(tab, "uselimit", wonbu, "YES")
+                    if not r.get("error") or "KOLIS 창은" not in r["error"]:
+                        break
+                    _t.sleep(1)
+                if r.get("error"):
+                    raise SystemExit(r["error"])
+                payload = {**payload, "uselimit": True}
+            return payload
+        return self._run("build_judge", job, tab=tab, screen=False, nokolis=True)
+
+    def build_fill(self, tab: str, wonbu: str, row: int) -> dict:
+        """회차 하나: 작품 판단에서 꺼내 KOLIS 화면을 열고 채운다(저장 안 함)."""
+        from . import mods_batch
+        return self._run("build_fill", lambda: mods_batch.fill((wonbu or "").strip(), int(row or 0), self._tab_log(tab)), tab=tab, screen=True)
+
+    def build_status(self, wonbu: str) -> dict:
+        from . import mods_batch
+        w = (wonbu or "").strip()
+        d = mods_batch.wdir(w)
+        from . import ledger_batch
+        prep = ledger_batch.prep_info(w)
+        bj = ledger_batch._rd(d / "build.json")
+        judgment = {k: bj.get(k) for k in ("title", "count", "authors", "subjects", "publisher", "place", "adult", "adult_reason", "issues", "notes_for_staff", "review", "manuscript_seen")} if bj else None
+        if judgment is not None:
+            judgment["episodes"] = {e.get("contents_id"): e for e in bj.get("episodes") or []}
+        return {"items": mods_batch.status(w), "has_job": (d / "job.json").exists(), "has_build": (d / "build.json").exists(), "prep": prep, "judgment": judgment}
+
+    # ---------- 원부 일괄 처리(과장님용, 2026-10-03 설계서 1절) ----------
+    LEDGER_TAB = "ledger"
+
+    def ledger_parse(self, text: str) -> dict:
+        from . import ledger_batch
+        ws = ledger_batch.parse(text or "")
+        return {"wonbus": ws, "count": len(ws)}
+
+    def ledger_table(self, text: str = "") -> dict:
+        from . import ledger_batch
+        ws = ledger_batch.parse(text or "") or (ledger_batch._rd(ledger_batch.LAST).get("wonbus") or [])
+        return {"wonbus": ws, "rows": ledger_batch.table(ws)}
+
+    def ledger_forget(self) -> bool:
+        """「비우기」: 마지막 원부 목록 기억만 지운다(원부별 기록·KOLIS 는 그대로)."""
+        from . import ledger_batch
+        try:
+            ledger_batch.LAST.unlink()
+        except FileNotFoundError:
+            pass
+        return True
+
+    def ledger_status(self, text: str) -> dict:
+        from . import ledger_batch
+        ws = ledger_batch.parse(text or "")
+        if not ws:
+            return {"error": "원부번호를 넣으십시오(엑셀 한 열을 붙여 넣어도 됩니다)"}
+        self._names[self.LEDGER_TAB] = "원부 일괄 처리"
+        return self._run("ledger_status", lambda: ledger_batch.status(ws, self._tab_log(self.LEDGER_TAB)), tab=self.LEDGER_TAB, screen=False, nokolis=True)
+
+    def ledger_dup(self, text: str, yes: str = "") -> dict:
+        from . import ledger_batch
+        ws = ledger_batch.parse(text or "")
+        if not ws:
+            return {"error": "원부번호를 넣으십시오"}
+        if (yes or "").strip() != "YES":
+            return {"error": "확인 뒤 실행하십시오"}
+        self._names[self.LEDGER_TAB] = "원부 일괄 처리"
+        handle = self._jobs[self.LEDGER_TAB] = {"cancel": False}
+        def job():
+            try:
+                return ledger_batch.run_dup(ws, self._tab_log(self.LEDGER_TAB), handle=handle, on_browser=self._to_browser)
+            finally:
+                self._jobs.pop(self.LEDGER_TAB, None)
+        return self._run("ledger_dup", job, tab=self.LEDGER_TAB, screen=False, nokolis=True)     # 요청 방식이 기본 — 창을 내리지 않는다. 화면 방식으로 넘어갈 때만 _to_browser
+
+    def ledger_complete(self, wonbus: list, yes: str = "") -> dict:
+        from . import ledger_batch
+        ws = [str(w) for w in (wonbus or []) if str(w).isdigit()]
+        if not ws:
+            return {"error": "완료 처리할 원부를 고르십시오"}
+        if (yes or "").strip() != "YES":
+            return {"error": "확인 뒤 실행하십시오"}
+        self._names[self.LEDGER_TAB] = "원부 일괄 처리"
+        handle = self._jobs[self.LEDGER_TAB] = {"cancel": False}
+        def job():
+            try:
+                return ledger_batch.complete(ws, self._tab_log(self.LEDGER_TAB), handle=handle, on_browser=self._to_browser)
+            finally:
+                self._jobs.pop(self.LEDGER_TAB, None)
+        return self._run("ledger_complete", job, tab=self.LEDGER_TAB, screen=False, nokolis=True)
+
+    def _to_browser(self):
+        """요청 방식이 실패해 화면 방식(Edge)으로 넘어갈 때: KOLIS 창을 쓰는 동안 프로그램 창이 덮지 않게 내린다."""
+        import time
+        self._tab_log(self.LEDGER_TAB)("화면 방식으로 넘어가므로 프로그램 창을 잠시 내립니다")
+        try:
+            self._window.minimize(); time.sleep(0.6)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def ledger_process(self, wonbus: list, force: list | None = None, yes: str = "") -> dict:
+        """「선택한 원부 처리」: 원부마다 다음 할 일(복본조사 → 후보 없으면 완료·일괄변경, 후보 있으면 멈춤; force 는 완료까지)."""
+        from . import ledger_batch
+        ws = [str(w) for w in (wonbus or []) if str(w).isdigit()]
+        if not ws:
+            return {"error": "처리할 원부를 고르십시오"}
+        if (yes or "").strip() != "YES":
+            return {"error": "확인 뒤 실행하십시오"}
+        self._names[self.LEDGER_TAB] = "원부 일괄 처리"
+        handle = self._jobs[self.LEDGER_TAB] = {"cancel": False}
+        def job():
+            try:
+                return ledger_batch.process(ws, [str(x) for x in (force or [])], self._tab_log(self.LEDGER_TAB), handle=handle, on_browser=self._to_browser)
+            finally:
+                self._jobs.pop(self.LEDGER_TAB, None)
+        return self._run("ledger_process", job, tab=self.LEDGER_TAB, screen=False, nokolis=True)
+
+    def kolis_show(self, what: str, arg: str) -> dict:
+        """사람이 KOLIS 에서 직접 보려고: what=dupexmin(원부번호) → 일괄복본조사 화면에 후보 목록, species(종 번호) → 종 상세 화면."""
+        from . import build_prep
+        self._names[self.LEDGER_TAB] = "원부 일괄 처리"
+        fn = (lambda: build_prep.show_dupexmin(str(arg), self._tab_log(self.LEDGER_TAB))) if what == "dupexmin" else (lambda: build_prep.show_species(str(arg), self._tab_log(self.LEDGER_TAB)))
+        return self._run("kolis_show", fn, tab=self.LEDGER_TAB, screen=True)
+
     def open_path(self, path: str) -> bool:
         import os
         os.startfile(path)  # noqa: S606
@@ -706,7 +928,7 @@ class Api:
 
 def main():
     api = Api()
-    window = webview.create_window("KOLIS 웹툰 납본 도우미", str(HERE / "ui" / "index.html"), js_api=api, width=1280, height=900, text_select=True)
+    window = webview.create_window("KOLIS 납본 도우미", str(HERE / "ui" / "index.html"), js_api=api, width=1280, height=900, text_select=True)
     api._window = window
     webview.start(debug=False)
 

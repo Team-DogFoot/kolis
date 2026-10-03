@@ -17,3 +17,5 @@ KOLIS 단계는 **브라우저를 띄우지 않고** 프로그램이 계정으�
 - 관련: [[kolis-automation-strategy]] [[say-unverified-and-blockers-first]] [[kolis-webtoon-project]]
 
 (2026-10-01 추가) 썸네일도 요청으로 옮겼다(`kolis_modify.py`). 요청 형식을 알아내는 방법은 [[headless-edge-for-kolis-recon]] — 화면 없는 Edge 는 개발할 때 대조용이고 프로그램에는 넣지 않는다. 파일 전송은 연결 여러 개로 동시에 한다(연결당 약 1.2~2MB/s, 로그인 하나의 쿠키를 같이 씀).
+
+**2026-10-03 보충:** 이 규칙은 ①구간(반입~가원부번호)에 해당한다. ③구간(원부번호 이후 구축·점검)은 유저가 보는 Edge 에 Playwright 로 붙어 반자동으로 먼저 하고(요청 기록), 그 기록으로 자동을 만든다. [[kolis-webtoon-project]]

@@ -48,10 +48,19 @@ def agent_dir() -> Path:
 
 
 HOME_SRC = Path(__file__).resolve().parent / "agent_home"       # 저장소 안의 원본(지침·스킬·검수 에이전트·지식)
-RULE_SOURCES = [REPO / "docs" / "rulebook", REPO / "docs" / "source" / "text"]   # 도서관 매뉴얼 원문(계정 정보 제외본)
+RULE_SOURCES = [REPO / "docs" / "rulebook", REPO / "docs" / "source" / "text"]   # 도서관 매뉴얼 원문(계정 정보 제외본). text/ 는 tools/build_rules.py 가 만든다
+RULE_IMAGES = REPO / "docs" / "source" / "images"                                   # 원문의 그림(text/*.md 가 ../images/… 로 링크)
+
+
+_DEPLOY_LOCK = threading.Lock()
 
 
 def deploy(log=None) -> Path:
+    with _DEPLOY_LOCK:
+        return _deploy(log)
+
+
+def _deploy(log=None) -> Path:
     """에이전트 작업 공간을 작업 폴더에 펼친다. 지침·스킬·검수 에이전트는 매번 원본으로 덮어쓰고(명령 경로를 이 PC 값으로 채움),
     지식(knowledge/*.md)은 작업 폴더의 것이 살아 있는 기록이므로 없을 때만 원본을 복사한다. 끝난 뒤 collect_knowledge 로 저장소에 되가져온다."""
     home = agent_dir()
@@ -69,10 +78,21 @@ def deploy(log=None) -> Path:
         dst.write_text(src.read_text(encoding="utf-8").replace("{PY}", py), encoding="utf-8")
     rules = home / "knowledge" / "rules"
     rules.mkdir(parents=True, exist_ok=True)
-    for d in RULE_SOURCES:
-        for f in d.glob("*") if d.exists() else []:
-            if f.suffix.lower() in (".md", ".txt") and "참고자료" not in f.name:
-                shutil.copy(f, rules / f.name)
+    srcs = [f for d in RULE_SOURCES for f in (d.glob("*") if d.exists() else []) if f.suffix.lower() in (".md", ".txt") and "참고자료" not in f.name]
+    names = {f.name for f in srcs}
+    for old in rules.glob("*"):          # 원본에서 빠진(대체된) 규칙 파일만 지운다. 전부 지웠다 다시 쓰면 동시에 도는 다른 작품의 에이전트가 빈 순간을 본다(2026-10-03 사고)
+        if old.is_file() and old.name not in names:
+            old.unlink()
+    for f in srcs:
+        dst = rules / f.name
+        if not dst.exists() or dst.read_bytes() != f.read_bytes():
+            tmp = dst.with_suffix(dst.suffix + ".tmp"); shutil.copy(f, tmp); tmp.replace(dst)     # 통째로 바꿔 끼움(읽는 쪽이 반쪽 파일을 보지 않게)
+    if RULE_IMAGES.exists():   # 그림은 바뀐 것만 복사(knowledge/images/<문서>/…, md 의 ../images 링크와 맞는 위치)
+        for f in RULE_IMAGES.rglob("*"):
+            if f.is_file():
+                dst = home / "knowledge" / "images" / f.relative_to(RULE_IMAGES)
+                if not dst.exists() or dst.stat().st_size != f.stat().st_size:
+                    dst.parent.mkdir(parents=True, exist_ok=True); shutil.copy(f, dst)
     (home / "jobs").mkdir(exist_ok=True)
     return home
 
@@ -93,7 +113,7 @@ def collect_knowledge(log=None) -> list[str]:
 def job_tools() -> list[str]:
     """작업 공간에서 일하는 에이전트에게 허용하는 도구. 명령은 페이지 읽기와 자기 검사 두 가지뿐."""
     py = python_exe()
-    cmds = [f"{py} -m kolis_tool render", f"{py} -m kolis_tool check-research", f"{py} -m kolis_tool write-import"]
+    cmds = [f"{py} -m kolis_tool render", f"{py} -m kolis_tool check-research", f"{py} -m kolis_tool write-import", f"{py} -m kolis_tool check-build", f"{py} -m kolis_tool check-build-work", f"{py} -m kolis_tool check-dup"]
     rules = [f"{shell}({c}:*)" for c in cmds for shell in ("Bash", "PowerShell")]
     return ["Read", "Write", "Edit", "Glob", "Grep", "WebSearch", "WebFetch", "Agent", "Task", "Skill", *rules]
 

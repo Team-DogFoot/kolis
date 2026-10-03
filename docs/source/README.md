@@ -9,7 +9,8 @@
 | `3_샘플양식/` | 반입용 예시(77열), 출판사용 예시, 완료 사례 출판사용·반입용(88열, 로맨스낫로맨틱 45화 — convert 의 정답지) |
 | `4_점검도구/` | 메타데이터 추출 파일(MODStoXL 출력 예시 61열), MODS_정리_V.2.0.xlsm(정리 매크로, VBA 포함), MODStoXL_samples.txt |
 | `images/guide/` | 프로세스 가이드 캡처 01~38(가이드 그림 번호와 대체로 1:1) |
-| `images/mods/` | MODS 입력가이드 캡처 01~59 |
-| `text/` | 위 문서들의 텍스트 변환본 |
+| `images/mods/` | MODS 입력가이드 캡처 01~59(옛 수동 추출) |
+| `images/guideline-2025/`, `images/manual-v1.6/`, `images/mods-guide/` | `tools/build_rules.py` 가 원본에서 뺀 그림(쪽 번호·순번 이름). `text/*.md` 가 링크한다 |
+| `text/` | 위 문서들의 글 변환본. `정리지침서_2025.md`·`웹툰대행사업_매뉴얼_v1.6.md`·`MODS_입력가이드.md` 는 `tools/build_rules.py` 가 만든다(쪽 머리 `## 쪽 N`, 그림 링크, 표). `INDEX.md` 가 색인. 에이전트 작업 공간의 `knowledge/rules/` 로 복사된다(`kolis_tool/agent.py deploy`) |
 
 넣지 않은 것: 샘플 원고 zip(5.7GB, 웹하드에서 받는다), MODStoXL 실행파일 압축본(108MB, 쓰지 않기로 함. 동작 주소는 `kolis_tool/mods_fetch.py` 상단에 기록).
