@@ -196,10 +196,13 @@ def run(folder: Path, work_dir: Path, output_xlsx: Path | None = None, instructi
               "thumbs": str(folder / data["thumbs_dir"]) if data.get("thumbs_dir") else "", "import": data, "research": research,
               "observations_dir": str(jd / "observations"), "adult": bool(data.get("adult")), "adult_reason": data.get("adult_reason") or "",
               "remaining": fails, "finalize": done,
-              "run": {"seconds": int(time.time() - t0), "turns": handle.get("turns"), "session_id": handle.get("session_id"), "job_dir": str(jd), "images": n_images}}
+              "run": {"seconds": int(time.time() - t0), "turns": handle.get("turns"), "session_id": handle.get("session_id"), "job_dir": str(jd), "images": n_images,
+                      "usage": handle.get("usage") or {}, "usage_text": agent.usage_line(handle)}}
     result_path(folder, work_dir).parent.mkdir(parents=True, exist_ok=True)
     result_path(folder, work_dir).write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
-    log(f"반입용 엑셀: {output_xlsx.name} — {written['rows']}행, 사람이 확인할 칸 {written['confirm']}개" + (f", 검사에 남은 항목 {len(fails)}건" if fails else ""))
+    log(f"반입용 엑셀: {output_xlsx.name} — {written['rows']}행, {written['columns']}열, 사람이 확인할 칸 {written['confirm']}개" + (f", 검사에 남은 항목 {len(fails)}건" if fails else ""))
+    if handle.get("usage"):
+        log(f"토큰 사용량(작품 전체, 하위 에이전트 포함): {agent.usage_line(handle)}")
     return result
 
 

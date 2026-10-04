@@ -164,14 +164,26 @@ def inspect_root(root: Path, recursive: bool = True, no_dup: bool = False) -> li
     return results
 
 
-def agent_json(folder: Path, no_dup: bool = False) -> dict:
-    """에이전트용 출력: 절대 경로, 장마다 색 비율·이상, 폴더 색 판정(장 단위 값으로 표지 천연색+본문 흑백도 가릴 수 있게)."""
+def agent_json(folder: Path, no_dup: bool = False, ocr: bool = False) -> dict:
+    """에이전트용 출력: 절대 경로, 장마다 색 비율·이상, 폴더 색 판정(장 단위 값으로 표지 천연색+본문 흑백도 가릴 수 있게). ocr=True 면 장마다 글자 힌트."""
+    from . import ocr_hint
     r = inspect_folder(Path(folder).resolve(), no_dup=no_dup)
+    texts, tiles_with_text, ntiles = {}, {}, {}
+    if ocr and ocr_hint.available():
+        for f in r.files:
+            try:
+                tl = ocr_hint.ocr_tiles(Path(r.folder) / f.name)
+                ntiles[f.name] = len(tl)
+                tiles_with_text[f.name] = [i for i, txt in tl if any(t.strip() for t in txt)]
+                texts[f.name] = " / ".join(t for _, txt in tl for t in txt if t.strip())[:600]
+            except Exception as e:  # noqa: BLE001
+                texts[f.name] = f"(OCR 실패: {type(e).__name__})"
     return {"folder": r.folder, "count": r.count, "total_bytes": r.total_bytes, "color": r.color, "color_pages": r.color_pages,
+            "ocr_available": ocr_hint.available(), "ocr_note": "ocr 는 힌트다. ocr_tiles = 글자가 잡힌 조각 번호(look --tiles 와 같은 번호). 그 조각과 장의 첫·끝 조각은 반드시 보고, 나머지 조각은 건너뛰어도 된다. 근거는 눈으로 본 조각이어야 한다" if ocr else "",
             "color_rule": "무채색 외 색이 든 장이 하나라도 있으면 천연색(매뉴얼 7.4). 표지만 색이 있고 내용이 흑백이면 흑백(직원 규칙 2026-10-01) — 장별 color_ratio 로 가린다",
             "problems": r.problems, "exact_duplicates": r.exact_duplicates, "near_duplicates": r.near_duplicates,
             "files": [{"name": f.name, "path": str(Path(r.folder) / f.name), "bytes": f.size, "width": f.width, "height": f.height, "color_ratio": round(f.color_ratio or 0, 4),
-                       "ok": f.ok, "problems": f.problems} for f in r.files]}
+                       "ok": f.ok, "problems": f.problems, **({"ocr": texts.get(f.name, ""), "ocr_tiles": tiles_with_text.get(f.name, []), "tiles": ntiles.get(f.name, 0)} if ocr else {})} for f in r.files]}
 
 
 def write_reports(results: list[FolderResult], out_dir: Path) -> tuple[Path, Path]:

@@ -187,6 +187,32 @@ def render_tool() -> tuple[str, list[str]]:
     return cmd, [f"Bash({cmd}:*)", f"PowerShell({cmd}:*)"]
 
 
+def _add_usage(handle: dict, ev: dict) -> None:
+    """결과 이벤트의 토큰 사용량을 모델별로 누적한다(하위 에이전트 포함 — claude -p 의 result 는 세션 전체 합). 금액은 보고하지 않는다(구독)."""
+    u = handle.setdefault("usage", {"input": 0, "output": 0, "cache_read": 0, "cache_create": 0, "by_model": {}, "runs": 0})
+    tot = ev.get("usage") or {}
+    u["input"] += int(tot.get("input_tokens") or 0); u["output"] += int(tot.get("output_tokens") or 0)
+    u["cache_read"] += int(tot.get("cache_read_input_tokens") or 0); u["cache_create"] += int(tot.get("cache_creation_input_tokens") or 0)
+    u["runs"] += 1
+    for model, mu in (ev.get("modelUsage") or {}).items():
+        m = u["by_model"].setdefault(model, {"input": 0, "output": 0, "cache_read": 0, "cache_create": 0})
+        m["input"] += int(mu.get("inputTokens") or 0); m["output"] += int(mu.get("outputTokens") or 0)
+        m["cache_read"] += int(mu.get("cacheReadInputTokens") or 0); m["cache_create"] += int(mu.get("cacheCreationInputTokens") or 0)
+    u["seconds"] = u.get("seconds", 0) + int((ev.get("duration_ms") or 0) / 1000)
+
+
+def usage_line(handle: dict) -> str:
+    u = (handle or {}).get("usage") or {}
+    if not u:
+        return ""
+    def k(n): return f"{n/1000:.0f}k" if n >= 1000 else str(n)
+    parts = [f"입력 {k(u.get('input', 0))} · 출력 {k(u.get('output', 0))} · 캐시 읽기 {k(u.get('cache_read', 0))} · 캐시 생성 {k(u.get('cache_create', 0))}"]
+    for model, m in (u.get("by_model") or {}).items():
+        short = re.sub(r"^claude-|-\d{8}$", "", model)
+        parts.append(f"{short}: 입력 {k(m['input'] + m['cache_read'] + m['cache_create'])} / 출력 {k(m['output'])}")
+    return " | ".join(parts)
+
+
 def _record_read(handle: dict, name: str, inp: dict) -> None:
     """에이전트(하위 에이전트 포함)가 실제로 연 이미지 경로를 모은다. 검사가 관찰 파일의 '봤다'와 대조한다(2026-10-04 리뷰 4-3)."""
     reads = handle.setdefault("reads", set())
@@ -263,6 +289,7 @@ def run(prompt: str, tools: list[str], log=None, handle: dict | None = None, add
             denied = len(ev.get("permission_denials") or [])
             if handle is not None:
                 handle["turns"] = handle.get("turns", 0) + int(ev.get("num_turns") or 0)
+                _add_usage(handle, ev)
     rc = proc.wait()
     killer.cancel()
     if handle is not None and handle.get("cancel"):
@@ -278,7 +305,7 @@ def run(prompt: str, tools: list[str], log=None, handle: dict | None = None, add
             time.sleep(30)
             return run(prompt, tools, log, handle, add_dirs, model, timeout, label, True, resume, extra_env)
         raise SystemExit(friendly_error(err, rc))
-    log(f"  {label} 완료 ({int(time.time() - t0)}초)")
+    log(f"  {label} 완료 ({int(time.time() - t0)}초)" + (f" — 토큰 {usage_line(handle)}" if handle and handle.get("usage") else ""))
     return text
 
 

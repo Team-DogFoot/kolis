@@ -20,7 +20,10 @@ def browser(headless: bool = True):
     from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
         # 화면 있는 실행은 창을 화면 밖에 둔다(KOLIS 조작 중인 화면을 가리지 않게)
-        b = p.chromium.launch(channel="msedge", headless=headless, args=[] if headless else ["--window-position=-2400,-2400"])
+        try:
+            b = p.chromium.launch(channel="msedge", headless=headless, args=[] if headless else ["--window-position=-2400,-2400"])
+        except Exception:  # noqa: BLE001 — Edge 가 없는 PC(맥북 임시): 설치된 chromium 으로
+            b = p.chromium.launch(headless=headless)
         ctx = b.new_context(viewport={"width": 1280, "height": 2400}, locale="ko-KR")
         try:
             yield ctx

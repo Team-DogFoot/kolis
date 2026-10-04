@@ -1072,8 +1072,11 @@ class Api:
         return self._run("kolis_show", fn, tab=self.LEDGER_TAB, screen=True)
 
     def open_path(self, path: str) -> bool:
-        import os
-        os.startfile(path)  # noqa: S606
+        import os, sys, subprocess
+        if hasattr(os, "startfile"):
+            os.startfile(path)  # noqa: S606
+        else:   # 맥북 임시(개발용). 도서관 PC 는 윈도
+            subprocess.Popen(["open" if sys.platform == "darwin" else "xdg-open", path])
         return True
 
 
