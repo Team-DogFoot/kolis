@@ -145,6 +145,8 @@ def run(work: dict, note: str, yes: str, work_dir: Path, log, handle: dict | Non
         done = work.get("confirmed") or {}
         check("반입용 엑셀 확인 완료(직원)", bool(done), done.get("at") or "없음", "1번 결과의 '확인 완료' 버튼을 누르지 않았습니다")
         from . import mods_sheet
+        if mods_sheet.korean_row_present(xlsx):
+            raise Stop("반입용 엑셀 1행에 한글 이름 행이 남아 있습니다. 엑셀에서 1행을 지우고 저장한 뒤 「확인을 마쳤습니다」를 다시 누르십시오")
         left = mods_sheet.marks(xlsx)
         check("반입용 엑셀에 확인 표시(노란색·메모)가 남아 있지 않음", left == 0, f"{left}칸", "확인 표시가 남아 있습니다 → '확인 완료'를 다시 누르세요")
         check("원고 폴더", root.is_dir(), str(root), f"원고 폴더가 없습니다: {root}")

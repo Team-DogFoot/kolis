@@ -179,7 +179,7 @@ def agent_json(folder: Path, no_dup: bool = False, ocr: bool = False) -> dict:
             except Exception as e:  # noqa: BLE001
                 texts[f.name] = f"(OCR 실패: {type(e).__name__})"
     return {"folder": r.folder, "count": r.count, "total_bytes": r.total_bytes, "color": r.color, "color_pages": r.color_pages,
-            "ocr_available": ocr_hint.available(), "ocr_note": "ocr 는 힌트다. ocr_tiles = 글자가 잡힌 조각 번호(look --tiles 와 같은 번호). 그 조각과 장의 첫·끝 조각은 반드시 보고, 나머지 조각은 건너뛰어도 된다. 근거는 눈으로 본 조각이어야 한다" if ocr else "",
+            "ocr_available": ocr_hint.available(), "ocr_note": "ocr 는 힌트다. ocr_tiles = 글자가 잡힌 조각 번호(look --tiles 와 같은 번호). 조각은 전부 본다(건너뛰지 않는다). ocr_tiles 는 어디에 글자가 있을지 미리 알려 줄 뿐이다. 근거는 눈으로 본 조각이어야 한다" if ocr else "",
             "color_rule": "무채색 외 색이 든 장이 하나라도 있으면 천연색(매뉴얼 7.4). 표지만 색이 있고 내용이 흑백이면 흑백(직원 규칙 2026-10-01) — 장별 color_ratio 로 가린다",
             "problems": r.problems, "exact_duplicates": r.exact_duplicates, "near_duplicates": r.near_duplicates,
             "files": [{"name": f.name, "path": str(Path(r.folder) / f.name), "bytes": f.size, "width": f.width, "height": f.height, "color_ratio": round(f.color_ratio or 0, 4),

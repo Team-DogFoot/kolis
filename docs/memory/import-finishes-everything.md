@@ -17,4 +17,6 @@ metadata:
 
 **상태(2026-10-04 맥북):** 개선안 `docs/PLAN-2026-10-04-IMPORT-ALL.md` 리뷰 48건 반영 + 4절 ①~④ 구현 끝(`mods_sheet.py` 직렬화기·`import_check.py`·`look.py`·observe-episode 에이전트·스킬 재작성·화면). 시험 `tools/import_sheet_tests.py` 3/3. 남은 것 = 도서관 PC 에서 ⑤(원시인 삼촌 실작품 1단계 → 반입 → XML 대조, FIELD-CHECKLIST C-3). `import_writer.py`·`import_probe.py`·`import_roundtrip.py` 는 삭제됨.
 
+**추가 확정(10-04 오후):** 작품 전체 = 회차 전체 × 장 전체 × 그림 전체(조각 건너뛰기 금지). B·C 는 기존 흐름을 버리고 새로(개선안 8절: B-1 상태 → B-2 대조 → B-3 보정(직원이 값 고름) → B-4 이용제한 / C-1 점검 시트(가이드 5.6~5.8 꼴, 형식=코드·판단=`check-mods`) → C-2 직원 확정·납품 파일명). 사실 층(검증된 요청·화면 조작)만 재사용. 반입용 엑셀 1행 = 한글 이름(직원이 지운 뒤 확인 완료 → 제출). 맥북 전용 처리는 전부 임시. 관찰은 Haiku·조각 폭 750·동시 4, 토큰 사용량은 `run.usage`.
+
 **How to apply:** 1단계 에이전트는 원문 전체를 읽고(회차별 하위 에이전트·관찰 파일) 지침의 모든 항목을 채운다. 양식 쓰기는 고정 FIELDS/CONSTANTS 가 아니라 트리 직렬화. 3-2 는 반입값 대조 + 직원 보정으로 축소. 관련: [[kolis-webtoon-project]] [[agent-first-fixed-output]]

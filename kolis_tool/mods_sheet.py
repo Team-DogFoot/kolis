@@ -475,8 +475,16 @@ def _normalize_keys(cols: list[Col], keys: tuple) -> tuple:
 
 
 def label(header: str, sample_labels: dict[str, str] | None = None) -> str:
-    base = header.split("[")[0] if "[@" in header else header
-    name = (sample_labels or {}).get(header) or LABELS_EXTRA.get(header) or (sample_labels or {}).get(base) or ""
+    """한글 이름 우선순위: 매크로 이름표(mods_labels.json, 점검 시트와 같은 말) → 보충 사전 → Sample 시트."""
+    try:
+        from .mods_xml import LABELS as _L
+    except Exception:  # noqa: BLE001
+        _L = {}
+    name = _L.get(header) or LABELS_EXTRA.get(header) or (sample_labels or {}).get(header) or ""
+    if not name and "[@" in header:
+        base = header.split("[")[0]
+        parent = _L.get(base) or LABELS_EXTRA.get(base) or (sample_labels or {}).get(base) or base.rsplit("/", 1)[-1]
+        name = f"{parent} {header.split('[@')[1].rstrip(']')}"
     name = re.sub(r"\(사용안함\)", "", name).strip()
     return name
 
@@ -516,7 +524,16 @@ def write(data: dict, out_xlsx: Path, confirm_text=None, template: Path = TEMPLA
     wb = openpyxl.load_workbook(out_xlsx)
     ws = wb["Contents"]
     ws.delete_rows(1, ws.max_row)
+    # 1행 = 한글 이름(직원용. 확인을 마치면 직원이 이 행을 지운다 — 2026-10-04 유저 지시), 2행 = MODS 머리글, 3행부터 값
+    try:
+        labels = sample_labels(template)
+    except Exception:  # noqa: BLE001
+        labels = {}
+    ws.append([korean_header(cols, i, labels) for i in range(1, len(cols) + 1)])
     ws.append([c.header for c in cols])
+    from openpyxl.styles import Font as _Font
+    for cell in ws[1]:
+        cell.font = _Font(color="1F4E79", bold=True); cell.fill = PatternFill("solid", fgColor="DDEBF7")
     nconfirm = 0
     for r in rows:
         values = [cell_value(r, c) for c in cols]
@@ -544,7 +561,42 @@ def write(data: dict, out_xlsx: Path, confirm_text=None, template: Path = TEMPLA
             del wb[name]
     wb.save(out_xlsx)
     return {"rows": len(rows), "confirm": nconfirm, "out": str(out_xlsx), "columns": len(cols), "headers": [c.header for c in cols],
-            "unknown": sorted({c.header for c in cols if c.unknown})}
+            "unknown": sorted({c.header for c in cols if c.unknown}), "korean_row": True}
+
+
+def korean_header(cols: list[Col], index: int, labels: dict[str, str] | None = None) -> str:
+    """1행(직원용) 한글 이름: 같은 열 이름이 여럿이면 '저자명 2' 처럼 번호. 부모 열은 '저자정보(묶음)'."""
+    c = cols[index - 1]
+    same = [i for i, x in enumerate(cols) if x.header == c.header]
+    n = same.index(index - 1) + 1
+    kor = label(c.header, labels)
+    if not kor:
+        try:
+            from .mods_xml import LABELS as _L
+            kor = _L.get(c.header, "")
+        except Exception:  # noqa: BLE001
+            kor = ""
+    kor = kor or c.header.rsplit("/", 1)[-1]
+    if c.keys is None:
+        kor = f"{kor}(묶음)"
+    return f"{kor} {n}" if len(same) > 1 else kor
+
+
+def header_row_index(ws) -> int:
+    """Contents 시트에서 MODS 머리글 행 번호(1 또는 2). 1행이 한글 이름 행이면 2."""
+    r1 = [c.value for c in ws[1]]
+    if any(isinstance(v, str) and v.startswith("/mods") for v in r1):
+        return 1
+    r2 = [c.value for c in ws[2]] if ws.max_row >= 2 else []
+    return 2 if any(isinstance(v, str) and v.startswith("/mods") for v in r2) else 1
+
+
+def korean_row_present(xlsx: Path) -> bool:
+    wb = openpyxl.load_workbook(xlsx, read_only=True)
+    try:
+        return header_row_index(wb["Contents"]) == 2
+    finally:
+        wb.close()
 
 
 # ---------------------------------------------------------------- 읽기(역직렬화): 반입용 엑셀 → 행 트리
@@ -553,7 +605,8 @@ def read_sheet(xlsx: Path) -> list[dict]:
     wb = openpyxl.load_workbook(xlsx, data_only=True)
     try:
         ws = wb["Contents"]
-        rows = list(ws.iter_rows(values_only=True))
+        hr = header_row_index(ws)
+        rows = list(ws.iter_rows(min_row=hr, values_only=True))
     finally:
         wb.close()
     if not rows:
@@ -681,7 +734,7 @@ def sheet_value_cells(xlsx: Path, skip: set[str] = frozenset()) -> set[tuple]:
     wb = openpyxl.load_workbook(xlsx, data_only=True)
     try:
         ws = wb["Contents"]
-        rows = list(ws.iter_rows(values_only=True))
+        rows = list(ws.iter_rows(min_row=header_row_index(ws), values_only=True))
     finally:
         wb.close()
     headers = [(h or "").strip() if isinstance(h, str) else "" for h in rows[0]]
@@ -710,7 +763,8 @@ def marks(xlsx: Path) -> int:
     """반입용 엑셀에 남아 있는 확인 표시(노란색 칸·메모)의 수."""
     wb = openpyxl.load_workbook(xlsx)
     try:
-        return sum(1 for row in wb["Contents"].iter_rows(min_row=2) for c in row if c.comment or (c.fill and c.fill.fill_type == "solid" and c.fill.fgColor.rgb in ("FFFFFF00", "00FFFF00")))
+        ws = wb["Contents"]
+        return sum(1 for row in ws.iter_rows(min_row=header_row_index(ws) + 1) for c in row if c.comment or (c.fill and c.fill.fill_type == "solid" and c.fill.fgColor.rgb in ("FFFFFF00", "00FFFF00")))
     finally:
         wb.close()
 
@@ -719,7 +773,8 @@ def clear_marks(xlsx: Path) -> int:
     """직원이 확인을 끝냈을 때: 프로그램이 넣은 확인 표시(노란색 칸·메모)를 지운다. 값은 건드리지 않는다. 완료 사례의 반입용 엑셀에는 색·메모가 없다."""
     wb = openpyxl.load_workbook(xlsx)
     n = 0
-    for row in wb["Contents"].iter_rows(min_row=2):
+    ws = wb["Contents"]
+    for row in ws.iter_rows(min_row=header_row_index(ws) + 1):
         for c in row:
             yellow = c.fill and c.fill.fill_type == "solid" and c.fill.fgColor.rgb in ("FFFFFF00", "00FFFF00")
             if c.comment or yellow:

@@ -123,6 +123,13 @@
   dialog .dh { display:flex; align-items:center; padding:16px 20px 0; } dialog .dh h2 { font-size:16px; margin:0; flex:1; } dialog .dx { width:28px; height:28px; border:0; background:none; color:var(--muted); font-size:18px; padding:0; } dialog .dx:hover { background:#eef1f5; color:var(--text); }
   dialog .db { padding:12px 20px 4px; font-size:14px; line-height:1.6; } dialog .df { display:flex; justify-content:flex-end; gap:8px; padding:12px 20px 18px; }
   dialog.wide { width:620px; }
+
+  /* ---------- B·C (2026-10-04) ---------- */
+  table.cmp { width:100%; table-layout:fixed; font-size:12.5px; } table.cmp td { vertical-align:top; word-break:break-all; } table.cmp tr.auto td { color:var(--muted); }
+  table.cmp label { display:inline-flex; align-items:center; gap:4px; margin-right:8px; cursor:pointer; white-space:nowrap; } table.cmp input[type=text] { padding:3px 6px; font-size:12px; }
+  .steps { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:8px; margin:8px 0; } .steps .s { border:1px solid var(--line); border-radius:8px; padding:8px 10px; background:#fafbfc; font-size:13px; } .steps .s b { display:block; margin-bottom:2px; } .steps .s.on { border-color:#90cdf4; background:var(--accent-bg); } .steps .s.done { border-color:#9ae6b4; background:var(--ok-bg); }
+  .count { display:inline-flex; gap:12px; font-size:13px; } .count b { font-size:16px; }
+  table.fnd { width:100%; table-layout:fixed; font-size:12.5px; } table.fnd td { vertical-align:top; word-break:break-all; } table.fnd tr.err td:first-child { box-shadow: inset 3px 0 0 #e53e3e; } table.fnd tr.chk td:first-child { box-shadow: inset 3px 0 0 #63b3ed; }
 </style></head>
 <body>
 <header>
@@ -140,7 +147,7 @@
     <section class="card" style="margin-top:12px">
       <h2 style="margin:0 0 6px;font-size:16px">복본조사</h2>
       <p class="lead">주무관에게 받은 원부번호 목록을 붙여 넣으면 바로 상태를 읽어 옵니다. 「선택한 원부 처리」를 누르면 원부마다 다음 할 일을 프로그램이 이어서 합니다. 복본 후보가 나온 원부만 멈추고 보여 드리므로, 판정을 보고 그 줄에서 결정하십시오.</p>
-      <details class="help"><summary>자세히</summary><p>원부번호는 엑셀 한 열을 그대로 붙여 넣어도 되고(줄바꿈), 쉼표·공백·범위(1607-1616)도 됩니다. 붙여 넣으면 원부마다 등록원부관리를 읽어 작품명·건수·상태를 가져옵니다(KOLIS 를 바꾸지 않음). 처리는 원부마다 "복본조사 안 함 → 복본조사(후보가 있으면 프로그램이 등록 자료와 비교해 판정) → 후보 없으면 완료 처리 → 일괄변경(자료유형 1·2, 발행자구분)" 순으로 이어서 하고, 후보가 있는 원부는 완료하지 않고 멈춥니다. 그 원부는 「판정 보기」·「KOLIS 후보 목록」으로 확인한 뒤 「이 원부 완료 처리」로 끝냅니다. 요청으로 처리하며 브라우저를 열지 않습니다. 요청이 안 되면 Edge 화면 방식으로 넘어가고 기록에 남깁니다.</p></details>
+      <details class="help"><summary>자세히</summary><p>원부번호는 엑셀 한 열을 그대로 붙여 넣어도 되고(줄바꿈), 쉼표·공백·범위(1607-1616)도 됩니다. 붙여 넣으면 원부마다 등록원부관리를 읽어 작품명·건수·상태를 가져옵니다(KOLIS 를 바꾸지 않음). 처리는 원부마다 "복본조사 안 함 → 복본조사(후보가 있으면 프로그램이 등록 자료와 비교해 판정) → 후보 없으면 완료 처리 → 일괄변경(자료유형 1·2, 발행자구분)" 순으로 이어서 하고, 후보가 있는 원부는 완료하지 않고 멈춥니다. 그 원부는 「판정 보기」·「KOLIS 후보 목록」으로 확인한 뒤 「이 원부 완료 처리」로 끝냅니다. 요청으로 처리하며 브라우저를 열지 않습니다.</p></details>
       <table class="form">
         <tr><th><label for="lb-input">원부번호</label></th><td><textarea id="lb-input" rows="3" placeholder="1607&#10;1608&#10;1609  (엑셀 한 열을 붙여 넣으십시오)" oninput="lbInput()"></textarea><div class="row" style="margin:4px 0 0;align-items:center"><span id="lb-parsed" class="muted small"></span><a href="#" class="small" onclick="lbStatus();return false">다시 읽기</a><a href="#" class="small" onclick="lbReset();return false" title="입력·표·체크·펼침을 지우고 처음 상태로 돌립니다. KOLIS 와 기록은 그대로입니다">비우기</a></div></td></tr>
       </table>
@@ -153,22 +160,22 @@
   </div>
   <div id="tab-body">
     <div id="add-panel" hidden>
-      <div class="row" style="margin:0"><b>새 작품</b><button onclick="pickFolder()">납품 폴더 고르기</button><span class="muted small">출판사가 보낸 폴더를 고르면 A 단계부터 시작합니다. 다른 담당자가 등록한 작품은 B 단계에 원부번호만 넣으면 됩니다.</span></div>
+      <div class="row" style="margin:0"><b>새 작품</b><button onclick="pickFolder()">납품 폴더 고르기</button><span class="muted small">출판사가 보낸 폴더를 고르면 A 부터 시작합니다. 다른 담당자가 등록한 작품은 B 에 원부번호만 넣으면 됩니다.</span></div>
       <div id="recent-list" style="margin-top:10px"></div>
     </div>
 
     <!-- ===== A 반입 ===== -->
-    <section class="fold" id="ph-a"><div class="fh" onclick="toggleFold('ph-a')"><span class="caret">▶</span><span class="step phase">A</span><span class="title">반입</span><span class="sub">납품 폴더 → 반입용 엑셀 → KOLIS 등록 → 가원부번호</span><span id="ph-a-state" class="pill"></span></div><div class="fb"><div><div class="inner">
+    <section class="fold" id="ph-a"><div class="fh" onclick="toggleFold('ph-a')"><span class="caret">▶</span><span class="step phase">A</span><span class="title">반입</span><span class="sub">납품 폴더 → 반입용 엑셀 → 직원 확인 → KOLIS 등록 → 가원부번호</span><span id="ph-a-state" class="pill"></span></div><div class="fb"><div><div class="inner">
 
-      <section class="fold card" id="c-1"><div class="fh" onclick="toggleFold('c-1')"><span class="caret">▶</span><span class="step">1</span><span class="title">납품 폴더 → 반입용 엑셀</span><span id="c-1-state" class="pill"></span></div><div class="fb"><div><div class="inner">
-        <p class="lead">프로그램이 납품 자료를 읽고 웹에서 조사해 반입용 엑셀을 만듭니다. 10~15분 걸립니다.</p>
-        <details class="help"><summary>자세히</summary><p>원고 이미지를 회차마다 전부 보고(장마다 적힌 글자를 기록), 출판사 엑셀을 읽고, 웹에서 조사하고, 저자 전거·UCI·발행지를 조회해 값을 정한 뒤 반입용 엑셀을 만듭니다. 전거 연결·다른이름·주제명·UCI·출처정보까지 이 엑셀에 들어갑니다(열은 값에 맞춰 생깁니다). 스스로 검사하고 한 번 더 검수합니다. 끝나면 원고 파일 이름을 8자리 일련번호로 바꿉니다. 이미지가 많으면 오래 걸립니다(장당 10초 안팎).</p></details>
+      <section class="fold card" id="c-1"><div class="fh" onclick="toggleFold('c-1')"><span class="caret">▶</span><span class="step">1</span><span class="title">반입용 엑셀 만들기</span><span id="c-1-state" class="pill"></span></div><div class="fb"><div><div class="inner">
+        <p class="lead">프로그램이 원고를 회차마다 전부 보고, 출판사 엑셀과 웹을 조사하고, 저자 전거·UCI·발행지를 조회해 반입용 엑셀을 만듭니다. 전거 연결·다른이름·주제명·UCI·출처정보까지 이 엑셀에 들어갑니다.</p>
+        <details class="help"><summary>자세히</summary><p>이미지가 많으면 오래 걸립니다(장당 10초 안팎). 엑셀의 1행은 직원용 한글 이름, 2행이 KOLIS 머리글입니다. 확인을 마치면 1행을 지우고 저장한 뒤 「확인을 마쳤습니다」를 누르십시오. 그래야 2 에서 제출할 수 있습니다.</p></details>
         <details id="c-1-form" open><summary class="muted small" style="cursor:pointer">입력 항목</summary>
         <table class="form">
-          <tr><th><label for="folder">납품 폴더</label></th><td><div class="row" style="margin:0"><input type="text" id="folder" placeholder="출판사가 보낸 폴더를 고르십시오"><button class="secondary" onclick="pickFolder()">찾아보기</button></div><div id="s-state" class="muted small" style="margin-top:4px"></div></td></tr>
-          <tr><th><label for="batch">작업 번호</label></th><td><input type="text" id="batch" value="2026-납본-웹툰대행(차)()" style="width:100%"><div class="muted small" style="margin-top:2px">KOLIS 일괄반입의 비고 칸과 반입용 엑셀 파일 이름에 씁니다. 괄호 안의 차수와 번호를 채우십시오.</div></td></tr>
+          <tr><th><label for="folder">납품 폴더</label></th><td><div class="row" style="margin:0"><input type="text" id="folder" placeholder="출판사가 보낸 폴더(zip 은 자동으로 풉니다)"><button class="secondary" onclick="pickFolderInto('folder');$('folder').dispatchEvent(new Event('change'))">찾아보기</button></div><div id="s-state" class="small" style="margin-top:4px"></div></td></tr>
+          <tr><th><label for="batch">작업 번호</label></th><td><input type="text" id="batch" placeholder="2026-납본-웹툰대행(5차)(100)"><div class="muted small" style="margin-top:2px">KOLIS 비고와 반입용 엑셀 파일 이름에 들어갑니다. 차수와 번호까지 채우십시오.</div></td></tr>
           <tr><th><label for="out-name">파일 이름</label></th><td><div class="row" style="margin:0"><input type="text" id="out-name" placeholder="비우면 작업 번호와 작품 제목으로 정합니다"><button id="btn-save-loc" class="secondary" onclick="pickSave()">저장 위치</button><button id="btn-rename" class="secondary" onclick="renameOutput()" hidden>이름 바꾸기</button></div><div id="out-hint" class="muted small" style="margin-top:2px"></div></td></tr>
-          <tr><th><label for="instr">참고 사항</label></th><td><textarea id="instr" rows="2" onfocus="this.rows=5" onblur="this.rows=2" placeholder="이 작품에서 프로그램이 알아야 할 것이 있으면 적으십시오. 예: 보상여부는 Y, 보상금은 정가와 같게 / 권차는 숫자만"></textarea></td></tr>
+          <tr><th><label for="instr">참고 사항</label></th><td><textarea id="instr" rows="2" onfocus="this.rows=5" onblur="this.rows=2" placeholder="이 작품에서 프로그램이 알아야 할 것이 있으면 적으십시오. 예: 보상여부는 Y, 보상금은 정가와 같게"></textarea></td></tr>
           <tr><th>실행</th><td><div class="row" style="margin:0"><button id="btn-run" onclick="runPrepare()" disabled>반입용 엑셀 만들기</button><button id="btn-cancel" class="stop" onclick="cancelJob()" hidden>중단</button><span id="run-out" class="muted"></span></div></td></tr>
         </table>
         </details>
@@ -176,111 +183,89 @@
           <p style="margin:14px 0 4px"><b>결과</b> <span id="r-when" class="muted small"></span></p>
           <div id="r-head" style="margin:4px 0 8px"></div>
           <div id="r-remaining" class="box warn" hidden></div>
-          <p style="margin:10px 0 4px"><b>확인할 항목</b> <span class="muted">— 반입용 엑셀에 노란색으로 표시했고, 메모에 같은 내용을 적었습니다</span></p>
+          <div class="steps" id="r-steps"></div>
+          <p style="margin:10px 0 4px"><b>확인할 항목</b> <span class="muted">— 엑셀에 노란색으로 표시했고 메모에 같은 내용을 적었습니다</span></p>
           <table id="r-confirm"></table>
-          <div id="r-done" class="row" style="margin:10px 0;padding:10px 12px;border:1px solid var(--line);border-radius:6px"><button id="btn-confirm" onclick="confirmImport()">확인을 마쳤습니다 — 표시를 지우고 다음 단계로</button><span id="r-done-out" class="muted"></span></div>
           <p style="margin:10px 0 4px"><b>값 요약</b></p>
           <table id="r-summary"></table>
           <div id="r-authors" style="margin-top:8px"></div>
+          <div id="r-done" class="row" style="margin:12px 0;padding:10px 12px;border:1px solid var(--line);border-radius:6px"><button id="btn-confirm" onclick="confirmImport()">확인을 마쳤습니다 — 1행을 지웠고 메모를 다 봤습니다</button><span id="r-done-out" class="muted"></span></div>
           <details style="margin-top:8px"><summary class="muted" style="cursor:pointer">조사 내용</summary><div id="r-detail" style="font-size:13px"></div></details>
           <div class="row" style="margin-top:8px"><button id="btn-undo" class="secondary" onclick="undoFiles()">원고·썸네일 파일 이름 되돌리기</button></div>
         </div>
         <details id="prompt-box" style="margin:12px 0 0"><summary class="muted" style="cursor:pointer">공통 지시 사항 <span id="prompt-state"></span></summary>
-          <p style="margin:8px 0 2px" class="muted small">모든 작품에 똑같이 알려 줄 것. 비우면 도서관 매뉴얼과 정해진 방법만 따릅니다.</p>
-          <textarea id="prompt-text" rows="5" style="font:12px/1.5 Consolas,monospace"></textarea>
-          <div class="row"><button onclick="savePrompt()">저장</button><button class="secondary" onclick="resetPrompt()">지우기</button><span id="prompt-out" class="muted"></span></div>
-          <pre id="prompt-full" hidden></pre>
+          <textarea id="prompt-text" rows="3" placeholder="모든 작품에 적용할 지시(예: 보상여부는 항상 Y)"></textarea>
+          <div class="row"><button class="secondary" onclick="savePrompt()">저장</button><button class="secondary" onclick="resetPrompt()">지우기</button><span id="prompt-out" class="muted small"></span></div>
         </details>
       </div></div></div></section>
 
-      <section class="fold card" id="c-2"><div class="fh" onclick="toggleFold('c-2')"><span class="caret">▶</span><span class="step">2</span><span class="title">KOLIS 등록 — 반입 → 가원부번호</span><span id="c-2-state" class="pill"></span></div><div class="fb"><div><div class="inner">
-        <p class="lead">반입용 엑셀 확인을 마친 뒤 실행합니다. 실행할 때마다 접수번호가 새로 생기고, 중간에 실패한 접수번호는 주무관에게 취소를 요청합니다.</p>
-        <details class="help"><summary>자세히</summary><p>프로그램이 KOLIS 에 로그인해 반입 → 목록 받기 → 원문 등록 → 썸네일 → 등록대상처리 → 가원부번호 → 가원부 파일까지 한 번에 합니다. 실행한 접수번호는 모두 아래 목록에 남습니다. 끝까지 성공한 마지막 것만 「유지」, 나머지는 「취소 요청」입니다.</p></details>
+      <section class="fold card" id="c-2"><div class="fh" onclick="toggleFold('c-2')"><span class="caret">▶</span><span class="step">2</span><span class="title">KOLIS 등록 — 제출</span><span id="c-2-state" class="pill"></span></div><div class="fb"><div><div class="inner">
+        <p class="lead">확인을 마친 반입용 엑셀을 KOLIS 에 올리고(일괄반입) 원문·썸네일을 등록해 가원부번호까지 한 번에 받습니다. 브라우저 없이 요청으로 합니다.</p>
+        <details class="help"><summary>자세히</summary><p>실행할 때마다 접수번호가 새로 생기고, 중간에 실패한 접수번호는 주무관에게 취소를 요청합니다(아래 목록). 끝까지 성공한 마지막 것만 「유지」입니다.</p></details>
         <table class="form">
-          <tr><th>비고</th><td><span id="k-note-show"></span> <span class="muted small">— 1 의 작업 번호와 같습니다. 바꾸려면 1 에서 바꾸십시오.</span><input type="text" id="k-note" hidden></td></tr>
-          <tr><th>반입용 엑셀</th><td><span id="f-xlsx" class="muted"></span></td></tr>
-          <tr><th>실행</th><td><div class="row" style="margin:0"><label class="ack"><input type="checkbox" id="f-ack" onchange="buttons(CUR)"> 반입용 엑셀의 확인 항목을 모두 보았습니다</label><button id="btn-flow" class="danger" onclick="flowRun()">KOLIS 등록 실행</button><button id="btn-fcancel" class="stop" onclick="cancelJob()" hidden>중단</button></div><div id="f-out" class="muted small" style="margin-top:4px"></div></td></tr>
-          <tr><th>단계</th><td><div id="f-steps" style="font-size:13px;line-height:1.8"></div></td></tr>
+          <tr><th>작업 번호</th><td><span id="k-note-show"></span> <span class="muted small">— 1 의 작업 번호와 같습니다. 바꾸려면 1 에서 바꾸십시오.</span></td></tr>
+          <tr><th>반입용 엑셀</th><td><div id="f-xlsx" class="small"></div></td></tr>
+          <tr><th>실행</th><td><div class="row" style="margin:0"><label class="ack"><input type="checkbox" id="f-ack" onchange="buttons(CUR)"> 반입용 엑셀의 확인 항목을 모두 보았고 1행을 지웠습니다</label><button id="btn-flow" class="danger" onclick="flowRun()">KOLIS 에 제출</button><button id="btn-fcancel" class="stop" onclick="cancelJob()" hidden>중단</button></div><div id="f-out" style="margin-top:4px"></div></td></tr>
+          <tr><th>단계</th><td><div id="f-steps" class="small"></div></td></tr>
           <tr><th>접수번호 목록</th><td><div id="f-ledger" class="small"></div></td></tr>
         </table>
-        <details id="steps-box" style="margin:14px 0 0"><summary class="muted small" style="cursor:pointer">문제가 생겼을 때 한 단계만 다시 하기</summary>
-          <div class="box plain">보통은 위의 「KOLIS 등록 실행」 하나면 됩니다. 아래 2-2 ~ 2-4 는 같은 접수번호를 씁니다.</div>
-          <div class="row"><label>접수번호 <input type="text" id="x-receipt" placeholder="예: 811" style="max-width:120px"></label></div>
-          <section class="fold card" id="c-21"><div class="fh" onclick="toggleFold('c-21')"><span class="caret">▶</span><span class="step sub">2-1</span><span class="title">KOLIS 일괄반입 준비</span></div><div class="fb"><div><div class="inner">
-            <p class="lead">프로그램이 KOLIS 에 반입 접수를 만들고 비고와 첨부파일까지 넣습니다. 「반입」은 누르지 않습니다.</p>
-            <div class="row"><input type="text" id="k-xlsx" placeholder="반입용 엑셀 (1 의 결과가 자동으로 들어감)"><button class="secondary" onclick="pickInto('k-xlsx')">찾아보기</button></div>
-            <div class="row"><button id="btn-kprep" onclick="kolisPrepare()">일괄반입 준비</button><span id="k-out" class="muted"></span></div>
-            <div id="k-fields" class="muted small"></div>
-            <div class="row" style="margin-top:10px"><label class="ack"><input type="checkbox" id="k-ack" onchange="buttons(CUR)"> 팝업의 비고와 첨부파일을 확인했습니다</label><button id="btn-ksub" class="danger" onclick="kolisSubmit()">반입 실행</button><span id="k-sub" class="muted"></span></div>
-          </div></div></div></section>
-          <section class="fold card" id="c-22"><div class="fh" onclick="toggleFold('c-22')"><span class="caret">▶</span><span class="step sub">2-2</span><span class="title">접수 목록 받기 → 폴더 이름을 콘텐츠ID 로 → 원문 등록</span></div><div class="fb"><div><div class="inner">
-            <div class="row"><button class="secondary" onclick="exportDownload('request')">접수 목록 받기</button><span id="x-out" class="muted"></span></div>
-            <div class="row"><input type="text" id="x-file" placeholder="접수 목록 파일 (.xls)"><button class="secondary" onclick="pickInto('x-file', 'Excel (*.xls;*.xlsx)')">찾아보기</button></div>
-            <div class="row"><input type="text" id="x-root" placeholder="원고 상위 폴더 (1 에서 자동으로 들어감)"><button class="secondary" onclick="pickFolderInto('x-root')">찾아보기</button></div>
-            <div class="row"><button class="secondary" onclick="cntsPreview()">미리 보기</button><button onclick="cntsApply()">폴더 이름 바꾸기</button><button class="secondary" onclick="cntsUndo()">되돌리기</button><span id="c-out" class="muted"></span></div>
-            <div id="c-list" class="muted small"></div>
-            <p style="margin:14px 0 4px"><b>원문 등록</b></p>
-            <div class="row"><label class="ack"><input type="checkbox" id="u-ack" onchange="buttons(CUR)"> 폴더 이름이 콘텐츠ID 로 바뀐 것을 확인했습니다</label><button id="btn-upl" class="danger" onclick="uploadRun()">원문 등록 실행</button><button id="btn-ucancel" class="stop" onclick="cancelJob()" hidden>중단</button><button class="secondary" onclick="uploadCheck()">상태 확인</button><span id="u-out" class="muted"></span></div>
-            <div id="u-list" class="muted small"></div>
-          </div></div></div></section>
-          <section class="fold card" id="c-23"><div class="fh" onclick="toggleFold('c-23')"><span class="caret">▶</span><span class="step sub">2-3</span><span class="title">썸네일 등록</span></div><div class="fb"><div><div class="inner">
-            <p class="lead">원문 등록이 끝난 뒤 건마다 썸네일을 등록합니다. 예상과 다르면 그 자리에서 멈춥니다.</p>
-            <div class="row"><input type="text" id="t-xlsx" placeholder="반입용 엑셀 (1 의 결과가 자동으로 들어감)"><button class="secondary" onclick="pickInto('t-xlsx')">찾아보기</button></div>
-            <div class="row"><input type="text" id="t-dir" placeholder="썸네일 폴더 (1 에서 자동으로 들어감)"><button class="secondary" onclick="pickFolderInto('t-dir')">찾아보기</button></div>
-            <div class="row"><label>건수 <input type="text" id="t-count" value="0" style="max-width:80px"></label><span class="muted small">0이면 끝까지</span><button id="btn-treg" onclick="thumbsRegister()">등록 시작</button><button id="btn-tcancel" class="stop" onclick="cancelJob()" hidden>중단</button><span id="t-out" class="muted"></span></div>
-            <div id="t-list" class="muted small" style="max-height:160px;overflow:auto"></div>
-          </div></div></div></section>
-          <section class="fold card" id="c-24"><div class="fh" onclick="toggleFold('c-24')"><span class="caret">▶</span><span class="step sub">2-4</span><span class="title">등록대상처리 → 가원부번호</span></div><div class="fb"><div><div class="inner">
-            <p class="lead">원문과 썸네일 등록이 끝난 뒤. 등록대상처리 → 가원부번호 발급 → 가원부 파일(주무관에게 보내는 파일) 저장.</p>
-            <div class="row"><label class="ack"><input type="checkbox" id="g-ack" onchange="buttons(CUR)"> 원문과 썸네일 등록이 끝난 것을 확인했습니다</label><button id="btn-reg" class="danger" onclick="registerRun()">가원부번호 발급 실행</button><span id="g-out" class="muted"></span></div>
-            <div class="row"><label>가원부번호 <input type="text" id="g-no" placeholder="예: 2026-1615" style="max-width:160px"></label><button id="btn-regx" class="secondary" onclick="registerExport()">가원부 파일만 다시 받기</button></div>
-            <div id="g-list" class="muted small"></div>
-          </div></div></div></section>
-        </details>
       </div></div></div></section>
-
     </div></div></div></section>
 
-    <!-- ===== 사람이 하는 단계 ===== -->
-    <div class="handoff" id="handoff"><span class="step gray">↔</span><div class="text"><b>주무관님께 가원부번호 전달 → 원부번호 받기</b> <span id="handoff-text" class="small"></span></div><button id="btn-handoff" class="secondary" onclick="openPhaseB()">원부번호 넣기</button></div>
+    <div class="handoff" id="handoff"><span class="step">→</span><div class="text"><b>주무관에게 가원부번호 전달 → 원부번호 받기</b> <span id="handoff-text"></span></div><button id="btn-handoff" class="secondary" onclick="openPhaseB()">원부번호 넣기</button></div>
 
-    <!-- ===== B 구축 ===== -->
-    <section class="fold" id="ph-b"><div class="fh" onclick="toggleFold('ph-b')"><span class="caret">▶</span><span class="step phase">B</span><span class="title">구축</span><span class="sub">준비 상태 확인 → MODS 구축(회차별, 성인물은 이용제한) → 점검 → 납품</span><span id="ph-b-state" class="pill"></span></div><div class="fb"><div><div class="inner">
+    <!-- ===== B 원부번호 이후 ===== -->
+    <section class="fold" id="ph-b"><div class="fh" onclick="toggleFold('ph-b')"><span class="caret">▶</span><span class="step phase">B</span><span class="title">원부</span><span class="sub">원부 상태 → 반입값과 대조 → 다른 칸만 보정 → 성인물 이용제한</span><span id="ph-b-state" class="pill"></span></div><div class="fb"><div><div class="inner">
 
-      <section class="fold card" id="c-31"><div class="fh" onclick="toggleFold('c-31')"><span class="caret">▶</span><span class="step">3-1</span><span class="title">원부번호</span><span id="c-31-state" class="pill"></span></div><div class="fb"><div><div class="inner">
+      <section class="fold card" id="c-b1"><div class="fh" onclick="toggleFold('c-b1')"><span class="caret">▶</span><span class="step">B-1</span><span class="title">원부 상태</span><span id="c-b1-state" class="pill"></span></div><div class="fb"><div><div class="inner">
+        <p class="lead">원부번호를 넣으면 KOLIS 에서 건수·종·회차와 복본조사·일괄변경 여부를 읽어 옵니다(바꾸지 않음). 복본조사·일괄변경은 「복본조사」 탭에서 과장님이 합니다.</p>
         <table class="form">
-          <tr><th><label for="b-wonbu">원부번호</label></th><td><div class="row" style="margin:0"><input type="text" id="b-wonbu" placeholder="예: 1607" style="max-width:140px"></div></td></tr>
-          <tr id="s-prep-row" hidden><th></th><td><div id="s-prep" class="small"></div></td></tr>
+          <tr><th><label for="b-wonbu">원부번호</label></th><td><div class="row" style="margin:0"><input type="text" id="b-wonbu" placeholder="예: 1607" style="max-width:160px"><button id="btn-wbs" class="secondary" onclick="wbStatus()">상태 읽기</button><span id="b1-out" class="muted small"></span></div></td></tr>
+          <tr><th>상태</th><td><div id="b1-table" class="small"></div></td></tr>
         </table>
       </div></div></div></section>
 
-      <section class="fold card" id="c-32"><div class="fh" onclick="toggleFold('c-32')"><span class="caret">▶</span><span class="step">3-2</span><span class="title">MODS 구축 · 이용제한</span><span id="c-32-state" class="pill"></span></div><div class="fb"><div><div class="inner">
-        <p class="lead">전거·다른이름·주제명·UCI·출처정보는 1 의 반입용 엑셀에서 이미 들어갔습니다. 여기서는 KOLIS 값을 읽어 반입값과 맞춰 보고, 다른 칸이 있을 때만 보정합니다. 성인물은 이용제한을 넣습니다.</p>
-        <details class="help"><summary>자세히</summary><p>대조: 콘텐츠마다 MODS 를 읽어(바꾸지 않음) 반입용 엑셀의 값과 칸마다 맞춰 봅니다. 보정 판단: 다른 칸이 있으면 회차 전부의 화면 값을 읽고 반입값을 기준으로 넣을 값을 정합니다. 채우기: 고른 회차의 MODS 수정 화면을 열어 값을 넣습니다(저장 전). 저장: 화면을 확인한 뒤 누릅니다. 되돌릴 수 없습니다.</p></details>
-        <table class="form">
-          <tr><th><label for="b-acq">입수처 주기</label></th><td><div class="row" style="margin:0"><input type="text" id="b-acq" placeholder="예: 한국웹툰산업협회를 통해 수집한 자료임"><button class="secondary" onclick="saveBuildSettings()">저장</button><span id="b-acq-out" class="muted small"></span></div><div class="muted small" style="margin-top:2px">사업마다 다릅니다. 모든 회차의 입수처 주기를 이 문장으로 맞춥니다.</div></td></tr>
-          <tr><th><label for="b-manu">원문 폴더</label></th><td><div class="row" style="margin:0"><input type="text" id="b-manu" placeholder="원문 폴더(회차 폴더들이 든 상위 폴더). 비우면 다른이름 칸에 「원문 없음」으로 적습니다"><button class="secondary" onclick="pickFolderInto('b-manu')">찾아보기</button></div><div class="muted small" style="margin-top:2px">1 을 거친 작품은 자동으로 들어갑니다. 다른 담당자가 등록한 작품은 받아 둔 원문 폴더를 넣으십시오.</div></td></tr>
-          <tr><th><label for="b-instr">참고 사항</label></th><td><textarea id="b-instr" rows="2" placeholder="이 작품에서 프로그램이 알아야 할 것이 있으면 적으십시오. 예: 어불은 무시 / 남우는 ○○ 전거와 같은 사람"></textarea></td></tr>
-          <tr><th>반입값 대조</th><td><div class="row" style="margin:0"><button id="btn-cmp" class="secondary" onclick="modsCompare()">KOLIS 값 읽어 대조</button><span class="muted small">콘텐츠마다 MODS 를 읽어(바꾸지 않음) 반입용 엑셀의 값과 칸마다 맞춰 봅니다. 엑셀이 없는 원부는 회차끼리 같아야 할 칸을 맞춰 봅니다.</span></div><div id="cmp-out" style="margin-top:4px"></div></td></tr>
-          <tr><th>보정 판단</th><td><div class="row" style="margin:0"><button id="btn-judge" class="secondary" onclick="buildJudge()">반입값과 다른 칸 보정 판단 — KOLIS 화면 값 읽기 → 넣을 값 정하기</button><button id="btn-jcancel" class="stop" onclick="cancelJob()" hidden>중단</button></div><div id="j-out" style="margin-top:4px"></div><div id="j-common" style="margin-top:6px"></div></td></tr>
-          <tr><th>이용제한</th><td><div id="s-ul" class="small"></div><div class="row" id="ul-row" style="margin:6px 0 0"><button id="btn-pul" class="secondary" onclick="prepRun('uselimit', true)">이용제한 다시 넣기</button><span class="muted small">성인물로 판단되면 프로그램이 종마다 「청소년 유해매체물」을 넣습니다. 실패했을 때만 누르십시오.</span></div><div id="s-ul-out" style="margin-top:4px"></div></td></tr>
-          <tr><th>회차</th><td><div id="b-status" class="status-wrap"></div><div id="b-ep" style="margin-top:6px"></div></td></tr>
-          <tr><th>보정 채우기</th><td><div class="row" style="margin:0"><span id="b-sel" class="muted small">고른 회차 없음</span><button id="btn-build" onclick="buildRun()">이 회차의 보정값을 KOLIS 화면에 채우기 — 저장하지 않음</button><button id="btn-bcancel" class="stop" onclick="cancelJob()" hidden>중단</button></div><div id="b-out" style="margin-top:4px"></div><div id="b-result" style="font-size:13px"></div></td></tr>
-          <tr><th>저장</th><td><div class="row" style="margin:0"><label class="ack"><input type="checkbox" id="b-ack" onchange="buttons(CUR)"> KOLIS 화면의 값을 확인했습니다</label><button id="btn-bsave" class="danger" onclick="buildSave()">KOLIS 에 저장</button></div><div id="b-save-out" style="margin-top:4px"></div></td></tr>
-        </table>
+      <section class="fold card" id="c-b2"><div class="fh" onclick="toggleFold('c-b2')"><span class="caret">▶</span><span class="step">B-2</span><span class="title">반입값과 대조</span><span id="c-b2-state" class="pill"></span></div><div class="fb"><div><div class="inner">
+        <p class="lead">회차마다 KOLIS 의 MODS 를 읽어 1 의 반입값과 칸마다 맞춰 봅니다. 반입값이 정본입니다. KOLIS 가 저장 때 스스로 바꾸는 표기는 다른 것으로 치지 않습니다.</p>
+        <div class="row" style="margin:0"><button id="btn-wbc" class="secondary" onclick="wbCompare()">KOLIS 값 읽어 대조</button><span id="b2-out" class="muted small"></span></div>
+        <div id="b2-table" style="margin-top:6px"></div>
       </div></div></div></section>
 
-      <section class="fold card" id="c-33"><div class="fh" onclick="toggleFold('c-33')"><span class="caret">▶</span><span class="step todo">3-3</span><span class="title">점검 · 납품</span><span class="pill">아직 제공하지 않음</span></div><div class="fb"><div><div class="inner">
-        <p class="lead">다음 판에서 제공합니다. MODS 받기 → 점검 → 납품 순서입니다.</p>
+      <section class="fold card" id="c-b3"><div class="fh" onclick="toggleFold('c-b3')"><span class="caret">▶</span><span class="step">B-3</span><span class="title">보정</span><span id="c-b3-state" class="pill"></span></div><div class="fb"><div><div class="inner">
+        <p class="lead">대조에서 다른 칸이 있을 때만 씁니다. B-2 표에서 칸마다 넣을 값을 고르면 여기 모입니다. 먼저 KOLIS 화면에 넣어 저장 본문만 만들어 보고(보내지 않음), 확인한 뒤 저장합니다.</p>
+        <div id="b3-list" class="small"></div>
+        <div class="row" style="margin:8px 0 0"><button id="btn-wbf-prep" class="secondary" onclick="wbFixApply(false)">화면에 넣고 저장 본문 만들기 — 보내지 않음</button><button id="btn-wbf-cancel" class="stop" onclick="cancelJob()" hidden>중단</button></div>
+        <div class="row" style="margin:8px 0 0"><label class="ack"><input type="checkbox" id="b3-ack" onchange="buttons(CUR)"> 넣을 값을 확인했습니다</label><button id="btn-wbf-save" class="danger" onclick="wbFixApply(true)">KOLIS 에 저장</button><span class="muted small">회차마다 저장 전·후 MODS 를 대조해 고른 칸 밖이 바뀌면 멈춥니다. 되돌릴 수 없습니다.</span></div>
+        <div id="b3-out" style="margin-top:6px"></div>
       </div></div></div></section>
 
+      <section class="fold card" id="c-b4"><div class="fh" onclick="toggleFold('c-b4')"><span class="caret">▶</span><span class="step">B-4</span><span class="title">성인물 이용제한</span><span id="c-b4-state" class="pill"></span></div><div class="fb"><div><div class="inner">
+        <p class="lead">1 에서 성인물로 판단한 작품은 원부 상태를 읽은 뒤 종마다 이용제한구분 「청소년 유해매체물」을 프로그램이 넣습니다(KOLIS 화면). 성인물이 아니면 할 일이 없습니다.</p>
+        <div id="b4-out" class="small"></div>
+        <div class="row" style="margin:8px 0 0"><button id="btn-wbu" class="secondary" onclick="wbUseLimit()">이용제한 다시 넣기</button><span class="muted small">실패했을 때만 누르십시오.</span></div>
+      </div></div></div></section>
+    </div></div></div></section>
+
+    <!-- ===== C 점검·납품 ===== -->
+    <section class="fold" id="ph-c"><div class="fh" onclick="toggleFold('ph-c')"><span class="caret">▶</span><span class="step phase">C</span><span class="title">점검 · 납품</span><span class="sub">MODS 받기 → 점검 시트 → 직원 확정 → 납품 파일</span><span id="ph-c-state" class="pill"></span></div><div class="fb"><div><div class="inner">
+
+      <section class="fold card" id="c-c1"><div class="fh" onclick="toggleFold('c-c1')"><span class="caret">▶</span><span class="step">C-1</span><span class="title">점검 실행</span><span id="c-c1-state" class="pill"></span></div><div class="fb"><div><div class="inner">
+        <p class="lead">회차 전부의 MODS 를 받아 가이드 꼴 점검 시트를 만들고(1행 오류 종류, 2행 개수, 3행 한글, 4행 경로, 틀 고정, 필터), 형식은 프로그램이, 판단이 필요한 항목은 조사 도구가 지침·직원 답변·원문 관찰로 봅니다. 오류는 노란 칸, 확인은 파란 칸입니다.</p>
+        <div class="row" style="margin:0"><button id="btn-ck" onclick="ckRun(true)">점검 실행 — MODS 받기 → 시트 → 점검</button><button id="btn-ck-fast" class="secondary" onclick="ckRun(false)">형식 점검만(빠름)</button><button id="btn-ck-cancel" class="stop" onclick="cancelJob()" hidden>중단</button></div>
+        <div id="c1-out" style="margin-top:6px"></div>
+      </div></div></div></section>
+
+      <section class="fold card" id="c-c2"><div class="fh" onclick="toggleFold('c-c2')"><span class="caret">▶</span><span class="step">C-2</span><span class="title">직원 확정 · 납품 파일</span><span id="c-c2-state" class="pill"></span></div><div class="fb"><div><div class="inner">
+        <p class="lead">파란 칸은 틀린 게 없으면 「이상 없음」(채우기 없음), 틀렸으면 「오류」로 정합니다. 확정하면 가이드 이름(2026-원부 n차점검(오류없음 | 오류 종류))으로 납품 파일을 만듭니다. 오류가 있으면 B-3 에서 고치고 다음 차수 점검을 돌립니다.</p>
+        <div id="c2-table" style="margin-top:4px"></div>
+        <div class="row" style="margin:8px 0 0"><button id="btn-ck-confirm" onclick="ckConfirm()">확정하고 납품 파일 만들기</button><span id="c2-out" class="muted small"></span></div>
+      </div></div></div></section>
     </div></div></div></section>
   </div>
 </div>
 <div id="right"><div id="log-title"><span id="log-name">진행 기록</span><label class="small" title="KOLIS 와 주고받은 요청을 한 줄씩 보입니다"><input type="checkbox" id="log-req" onchange="$('log').classList.toggle('hide-req', !this.checked)"> 상세 기록</label></div><div id="log" class="hide-req"></div></div>
 </main>
 
-<!-- ---------- 대화상자 ---------- -->
 <dialog id="dlg-confirm"><div class="dh"><h2 id="dc-title"></h2><button class="dx" onclick="dlgClose('dlg-confirm')" aria-label="닫기">×</button></div><div class="db" id="dc-body"></div><div class="df"><button class="secondary" onclick="dlgClose('dlg-confirm')">취소</button><button id="dc-ok" class="danger"></button></div></dialog>
 <dialog id="dlg-alert"><div class="dh"><h2 id="da-title"></h2><button class="dx" onclick="dlgClose('dlg-alert')" aria-label="닫기">×</button></div><div class="db" id="da-body"></div><div class="df"><button onclick="dlgClose('dlg-alert')">확인</button></div></dialog>
 <dialog id="dlg-acct"><div class="dh"><h2>KOLIS 계정</h2><button class="dx" onclick="dlgClose('dlg-acct')" aria-label="닫기">×</button></div><div class="db">
@@ -296,14 +281,14 @@
 <script>
 // ============================================================ 공통
 const BATCH_DEFAULT = '2026-납본-웹툰대행(차)()';
-const INPUTS = ['folder','batch','instr','out-name','k-note','k-xlsx','x-receipt','x-file','x-root','t-xlsx','t-dir','t-count','g-no','b-wonbu','b-instr','b-manu'];
-const OUTS = ['j-out','out-hint','run-out','s-state','k-out','k-fields','k-sub','x-out','c-out','c-list','u-out','u-list','t-out','t-list','g-out','g-list','f-out','f-steps','f-xlsx','f-ledger','b-out','b-result','b-status','b-save-out','s-prep','s-ul','s-ul-out','j-common','b-ep','b-sel','cmp-out','r-authors'];
-const ACKS = ['f-ack','k-ack','u-ack','g-ack','b-ack'];
-const FOLDS = ['ph-a','ph-b','c-1','c-2','c-21','c-22','c-23','c-24','c-31','c-32','c-33'];
-const FOLD_DEFAULT = {'ph-a':true,'ph-b':false,'c-1':true,'c-2':true,'c-21':false,'c-22':false,'c-23':false,'c-24':false,'c-31':true,'c-32':true,'c-33':false};
-// 상태 체계: 다섯 낱말·아이콘·색 (설계 C절)
+const INPUTS = ['folder','batch','instr','out-name','b-wonbu'];
+const OUTS = ['s-state','run-out','out-hint','f-xlsx','f-out','f-steps','f-ledger','b1-out','b1-table','b2-out','b2-table','b3-list','b3-out','b4-out','c1-out','c2-table','c2-out','r-authors'];
+const ACKS = ['f-ack','b3-ack'];
+const FOLDS = ['ph-a','ph-b','ph-c','c-1','c-2','c-b1','c-b2','c-b3','c-b4','c-c1','c-c2'];
+const FOLD_DEFAULT = {'ph-a':true,'ph-b':false,'ph-c':false,'c-1':true,'c-2':true,'c-b1':true,'c-b2':true,'c-b3':false,'c-b4':false,'c-c1':true,'c-c2':true};
 const ST = { todo:'<span class="st todo">○</span>', run:'<span class="spin"></span>', ok:'<span class="st ok">✓</span>', wait:'<span class="st wait">!</span>', bad:'<span class="st bad">✕</span>', skip:'<span class="st skip">–</span>' };
-const CARD_OF = {build_collect:'c-32', build_judge:'c-32', build_fill:'c-32', prepare:'c-1', flow:'c-2', kolis:'c-21', kolis_submit:'c-21', export:'c-22', upload_open:'c-22', upload:'c-22', thumbs_register:'c-23', register:'c-24', register_export:'c-24', prep_dupexmin:'c-31', prep_complete:'c-31', prep_batch:'c-31', prep_uselimit:'c-32', mods_compare:'c-32', build_prepare:'c-32', build_send:'c-32', build:'c-32', build_save:'c-32'};
+const CARD_OF = {prepare:'c-1', flow:'c-2', wb_status:'c-b1', wb_compare:'c-b2', wb_fix_apply:'c-b3', wb_use_limit:'c-b4', ck_run:'c-c1'};
+const OUT_OF = {prepare:'run-out', flow:'f-out', wb_status:'b1-out', wb_compare:'b2-out', wb_fix_apply:'b3-out', wb_use_limit:'b4-out', ck_run:'c1-out', ledger_status:'lb-out', ledger_dup:'lb-out', ledger_complete:'lb-process-out', ledger_process:'lb-process-out', kolis_show:'lb-out'};
 const T = []; let CUR = null; let SEQ = 0; const GLOBAL_LOG = []; let FLOW_STEPS = []; let RECENT = []; let RESTORING = false;
 const $ = id => document.getElementById(id);
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -312,9 +297,7 @@ function tabOf(id){ return id === 'ledger' ? LEDGER : T.find(t => t.id === id); 
 function fmtMin(sec){ sec = Math.round(sec||0); if(!sec) return ''; const m = Math.floor(sec/60), s = sec%60; return m ? `${m}분 ${s}초` : `${s}초`; }
 function link(path, text){ return `<a href="#" onclick="pywebview.api.open_path(${JSON.stringify(String(path))});return false">${esc(text||path)}</a>`; }
 function linkify(s){ return esc(s||'').replace(/(https?:\/\/[^\s<)\]]+)/g, u => `<a href="#" data-url="${u}" onclick="pywebview.api.open_path(this.dataset.url);return false">${u}</a>`); }
-function fieldLabel(f){ const m = /\(([^()]+)\)\s*$/.exec(String(f||'')); return m ? m[1] : String(f||''); }   // "/mods/x (발행일)" → 발행일. 경로는 title 로
-
-// ---------- 대화상자
+function fieldLabel(f){ const m = /\(([^()]+)\)\s*$/.exec(String(f||'')); return m ? m[1] : String(f||''); }
 function dlgClose(id){ const d = $(id); if(d.open) d.close(); }
 function ask(title, body, okLabel, danger=true){
   return new Promise(res => { const d = $('dlg-confirm'); $('dc-title').textContent = title; $('dc-body').innerHTML = body; const ok = $('dc-ok'); ok.textContent = okLabel; ok.className = danger ? 'danger' : '';
@@ -322,7 +305,7 @@ function ask(title, body, okLabel, danger=true){
 }
 function tell(title, body){ $('da-title').textContent = title; $('da-body').innerHTML = body; $('dlg-alert').showModal(); }
 
-// ---------- 접힘(애니메이션)
+// ---------- 접힘
 function isOpen(id){ return $(id).classList.contains('open'); }
 function setOpen(id, v, instant){
   const el = $(id), fb = el.querySelector(':scope > .fb'); v = !!v; if(el.classList.contains('open') === v && (v ? fb.classList.contains('settled') : fb.style.maxHeight === '0px')) return;
@@ -333,9 +316,11 @@ function setOpen(id, v, instant){
   else { fb.classList.remove('settled'); fb.style.maxHeight = fb.scrollHeight + 'px'; void fb.offsetHeight; fb.style.maxHeight = '0px'; el.classList.remove('open'); }
 }
 function toggleFold(id){ setOpen(id, !isOpen(id)); if(CUR && !RESTORING){ CUR.fold = CUR.fold||{}; CUR.fold[id] = isOpen(id); saveTabs(); } }
-function foldDefault(t){ const d = Object.assign({}, FOLD_DEFAULT); const reg = (t.state||{}).register && t.state.register.record_no; if(reg || ((t.v['b-wonbu']||'').trim() && !t.v.folder)){ d['ph-a'] = false; d['ph-b'] = true; } if(!t.work) d['c-2'] = false; if(t.work && t.work.confirmed) d['c-1'] = false; return d; }
+function foldDefault(t){ const d = Object.assign({}, FOLD_DEFAULT); const reg = (t.state||{}).register && t.state.register.record_no; const w = (t.v['b-wonbu']||'').trim();
+  if(reg || (w && !t.v.folder)){ d['ph-a'] = false; d['ph-b'] = true; } if(!t.work) d['c-2'] = false; if(t.work && t.work.confirmed) d['c-1'] = false;
+  const wb = t.wb||{}; if(wb.state && wb.state.compared_at){ d['c-b3'] = (wb.state.diff_count||0) > 0; } if(wb.state && wb.state.adult) d['c-b4'] = true; if(wb.check && wb.check.nth) d['ph-c'] = true; return d; }
 function restoreFolds(t){ if(t === LEDGER) return; RESTORING = true; const f = Object.assign(foldDefault(t), t.fold||{}); FOLDS.forEach(id => setOpen(id, !!f[id], true)); setTimeout(() => { RESTORING = false; }, 0); }
-function openPhaseB(){ setOpen('ph-b', true); setOpen('c-31', true); $('ph-b').scrollIntoView({behavior:'smooth', block:'start'}); setTimeout(() => $('b-wonbu').focus(), 250); }
+function openPhaseB(){ setOpen('ph-b', true); setOpen('c-b1', true); $('ph-b').scrollIntoView({behavior:'smooth', block:'start'}); setTimeout(() => $('b-wonbu').focus(), 250); }
 
 // ---------- 상단 띠
 function toggleKind(e){ e.stopPropagation(); const m = $('kind-menu'), on = !m.classList.contains('open'); m.classList.toggle('open', on); $('kind').setAttribute('aria-expanded', on); }
@@ -344,11 +329,11 @@ function toggleLog(){ const hidden = document.body.classList.toggle('log-hidden'
 function logDot(){ $('log-dot').hidden = !(document.body.classList.contains('log-hidden') && T.some(busy)); }
 
 // ============================================================ 탭
-function newTab(init){ const t = Object.assign({ id:'t'+(++SEQ)+'-'+Date.now().toString(36), title:'', v:{batch:BATCH_DEFAULT, 't-count':'0'}, html:{}, sel:null, prep:{}, judgment:null, work:null, state:{}, log:[], running:{}, started:{}, cardState:{}, error:false, fold:{} }, init||{}); T.push(t); return t; }
-function label(t){ if(t && t.fixed) return t.title; const f=(t.v.folder||'').replace(/[\\/]+$/,''); if(t.title) return t.title; if(f) return f.split(/[\\/]/).pop(); const w=(t.v['b-wonbu']||'').trim(); if(w){ const it=(t.build_items||[])[0]; return (it && it.title ? it.title + ' · ' : '') + '원부 ' + w; } return '새 작품'; }
+function newTab(init){ const t = Object.assign({ id:'t'+(++SEQ)+'-'+Date.now().toString(36), title:'', v:{batch:BATCH_DEFAULT}, html:{}, work:null, state:{}, wb:{}, log:[], running:{}, started:{}, cardState:{}, error:false, fold:{}, choices:{} }, init||{}); T.push(t); return t; }
+function label(t){ if(t && t.fixed) return t.title; const f=(t.v.folder||'').replace(/[\\/]+$/,''); if(t.title) return t.title; if(f) return f.split(/[\\/]/).pop(); const w=(t.v['b-wonbu']||'').trim(); if(w){ const st=((t.wb||{}).state||{}); return (st.title ? st.title + ' · ' : '') + '원부 ' + w; } return '새 작품'; }
 function folderName(t){ const f=(t.v.folder||'').replace(/[\\/]+$/,''); return f ? f.split(/[\\/]/).pop() : ''; }
 function busy(t){ return Object.keys(t.running).length > 0; }
-function stageBadge(t){ const reg = (t.state||{}).register && t.state.register.record_no; if(t.v['b-wonbu']) return '원부'; if(reg) return '가원부'; if(t.work) return '엑셀'; return '준비'; }
+function stageBadge(t){ const reg = (t.state||{}).register && t.state.register.record_no; const ck = (t.wb||{}).check||{}; if(ck.confirmed) return '납품'; if(t.v['b-wonbu']) return '원부'; if(reg) return '가원부'; if(t.work) return '엑셀'; return '준비'; }
 function renderTabs(){
   const dupTitles = new Set(T.map(label).filter((x,i,a) => a.indexOf(x) !== i));
   const lbBusy = busy(LEDGER); const lbTab = `<span class="tab fixed${CUR===LEDGER?' on':''}${LEDGER.error?' err':''}" onclick="switchTab('ledger')" title="원부번호 목록의 복본조사 → 완료 → 일괄변경">${lbBusy ? ST.run : LEDGER.error ? ST.bad : ''}<span class="tl">복본조사</span></span>`;
@@ -360,23 +345,22 @@ function renderTabs(){
 }
 function capture(){ if(!CUR || CUR === LEDGER) return; INPUTS.forEach(id => { CUR.v[id] = $(id).value; }); }
 function setOut(t, id, html){ t.html[id] = html; if(t === CUR && $(id)) $(id).innerHTML = html; }
-function setVal(t, id, val){ t.v[id] = val; if(t === CUR) $(id).value = val; }
 function show(){
   const t = CUR;
   $('ledger-body').hidden = t !== LEDGER; $('tab-body').hidden = t === LEDGER;
   if(t === LEDGER){ lbShow(); $('log-name').textContent = '진행 기록 · 복본조사'; $('log').innerHTML = GLOBAL_LOG.concat(t.log).sort((a,b)=>a[0]-b[0]).map(x=>logLine(x[1])).join(''); $('log').scrollTop = $('log').scrollHeight; renderTabs(); return; }
   const body = $('tab-body'); body.classList.remove('fade'); void body.offsetWidth; body.classList.add('fade');
   INPUTS.forEach(id => { $(id).value = t.v[id] == null ? '' : t.v[id]; });
-  $('k-note-show').textContent = t.v['k-note'] || t.v.batch || '';
+  $('k-note-show').textContent = t.v.batch || '';
   OUTS.forEach(id => { $(id).innerHTML = t.html[id] || ''; }); ACKS.forEach(id => { $(id).checked = false; });
-  applyCardStates(t); flowShow(t); ledgerShow(t); $('s-prep-row').hidden = !(t.html['s-prep']||'');
+  applyCardStates(t); flowShow(t); ledgerShow(t);
   if(t.work) showResult(t); else { $('result').hidden = true; $('c-1-form').open = true; }
   $('add-panel').hidden = !!(t.v.folder || t.v['b-wonbu'] || t.work); if(!$('add-panel').hidden) renderRecent();
-  buttons(t); outHint(t); restoreFolds(t); phaseState(t); if(t.v['b-wonbu']) buildStatus(t);
+  wbShow(t); buttons(t); outHint(t); restoreFolds(t); phaseState(t);
   $('log').innerHTML = GLOBAL_LOG.concat(t.log).sort((a,b)=>a[0]-b[0]).map(x=>logLine(x[1])).join(''); $('log').scrollTop = $('log').scrollHeight;
   renderTabs();
 }
-function saveTabs(){ capture(); pywebview.api.tabs_save(T.map(t => ({id:t.id, folder:t.v.folder||'', title:t.title, batch:t.v.batch||'', instr:t.v.instr||'', wonbu:t.v['b-wonbu']||'', manu:t.v['b-manu']||'', fold:t.fold||{}})), CUR ? CUR.id : ''); }
+function saveTabs(){ capture(); pywebview.api.tabs_save(T.map(t => ({id:t.id, folder:t.v.folder||'', title:t.title, batch:t.v.batch||'', instr:t.v.instr||'', wonbu:t.v['b-wonbu']||'', fold:t.fold||{}})), CUR ? CUR.id : ''); }
 function switchTab(id){ if(CUR && CUR.id === id) return; capture(); CUR = tabOf(id) || CUR; show(); if(CUR !== LEDGER) saveTabs(); }
 function addTab(){ capture(); CUR = newTab(); show(); saveTabs(); }
 async function closeTab(id){
@@ -403,34 +387,41 @@ function finish(t, kind){ delete t.running[kind]; cardState(t, kind, null); butt
 function elapsed(t, kind){ const s0 = (t.started||{})[kind]; if(!s0) return ''; const m = Math.floor((Date.now()-s0)/60000); return ` (${m}분)`; }
 setInterval(() => { if(CUR && busy(CUR)) phaseState(CUR); }, 10000);
 function pill(id, cls, html){ const el = $(id); if(!el) return; const changed = el.innerHTML !== html; el.className = 'pill' + (cls ? ' ' + cls : ''); el.innerHTML = html; if(changed && html){ el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); } }
-function phaseState(t){ if(t === LEDGER) return;
-  if(t !== CUR) return;
-  const st = t.state || {}, w = t.work, r = t.running, cs = t.cardState || {};
-  const reg = (st.register||{}).record_no;
-  const c1 = r.prepare ? ['run', ST.run + ' 만드는 중' + elapsed(t,'prepare')] : cs['c-1']==='fail' ? ['bad', ST.bad + ' 실패'] : !t.v.folder ? ['', ST.todo + ' 시작 전'] : !w ? ['', ST.todo + ' 시작 전'] : !w.confirmed ? ['wait', ST.wait + ' 확인 필요'] : ['ok', ST.ok + ' 확인 완료'];
+function phaseState(t){ if(t === LEDGER || t !== CUR) return;
+  const st = t.state || {}, w = t.work, r = t.running, cs = t.cardState || {}; const reg = (st.register||{}).record_no;
+  const c1 = r.prepare ? ['run', ST.run + ' 만드는 중' + elapsed(t,'prepare')] : cs['c-1']==='fail' ? ['bad', ST.bad + ' 실패'] : !t.v.folder || !w ? ['', ST.todo + ' 시작 전'] : !w.confirmed ? ['wait', ST.wait + ' 확인 필요'] : ['ok', ST.ok + ' 확인 완료'];
   pill('c-1-state', c1[0], c1[1]);
   const cur = Object.entries(t.flow||{}).find(([k,v]) => v[0]==='run'); const curLabel = cur ? (FLOW_STEPS.find(x => x[0]===cur[0])||[])[1] || '' : '';
-  const c2 = r.flow ? ['run', ST.run + ' ' + esc(curLabel||'등록하는 중') + elapsed(t,'flow')] : cs['c-2']==='fail' ? ['bad', ST.bad + ' 실패'] : reg ? ['ok', ST.ok + ' 가원부번호 ' + esc(reg)] : ['', ST.todo + ' 시작 전'];
+  const c2 = r.flow ? ['run', ST.run + ' ' + esc(curLabel||'제출하는 중') + elapsed(t,'flow')] : cs['c-2']==='fail' ? ['bad', ST.bad + ' 실패'] : reg ? ['ok', ST.ok + ' 가원부번호 ' + esc(reg)] : ['', ST.todo + ' 제출 전'];
   pill('c-2-state', c2[0], c2[1]);
-  const a = r.prepare ? c1 : r.flow ? c2 : cs['c-1']==='fail' ? c1 : cs['c-2']==='fail' ? c2 : reg ? c2 : (w && !w.confirmed) ? c1 : (w && w.confirmed) ? ['', ST.todo + ' KOLIS 등록 전'] : ['', ST.todo + ' 시작 전'];
+  const a = r.prepare ? c1 : r.flow ? c2 : cs['c-1']==='fail' ? c1 : cs['c-2']==='fail' ? c2 : reg ? c2 : (w && !w.confirmed) ? c1 : (w && w.confirmed) ? ['', ST.todo + ' 제출 전'] : ['', ST.todo + ' 시작 전'];
   pill('ph-a-state', a[0], a[1]);
   const wonbu = (t.v['b-wonbu']||'').trim();
   $('handoff-text').textContent = reg && !wonbu ? `가원부번호 ${reg} 를 전달하셨으면, 받은 원부번호를 B 에 넣으십시오.` : reg && wonbu ? `가원부번호 ${reg} → 원부번호 ${wonbu}` : '가원부번호가 나오면 주무관에게 전달하고 원부번호를 받습니다.';
   $('btn-handoff').hidden = !!wonbu;
-  const items = t.build_items || []; const n = items.filter(i => i.stage==='saved').length, f = items.filter(i => i.stage==='filled').length, jd = items.filter(i => i.stage==='judged').length, m = items.length - n;
-  const prog = items.length ? `${items.length}회차 · 판단 끝 ${jd + f + n} · 채움 ${f} · 저장 ${n}` : '';
-  const pp = t.prep||{}; const c31txt = [pp.dupexmin_done ? '복본조사 끝' : pp.dupexmin_run ? '복본조사 완료 전' : '', pp.batch_change_done ? '일괄변경 끝' : ''].filter(Boolean).join(' · ');
-  const c31 = (r.prep_dupexmin || r.prep_complete || r.prep_batch) ? ['run', ST.run + ' ' + (r.prep_batch ? '일괄변경 하는 중' : r.prep_complete ? '복본조사 완료 처리 중' : '복본조사 하는 중')] : cs['c-31']==='wait' ? ['wait', ST.wait + ' 확인 필요'] : cs['c-31']==='fail' ? ['bad', ST.bad + ' 실패'] : !wonbu ? ['', ST.todo + ' 원부번호 대기'] : (pp.dupexmin_done && pp.batch_change_done) ? ['ok', ST.ok + ' 원부 ' + esc(wonbu)] : (pp.acc_count != null || pp.dupexmin_run || pp.dupexmin_done) ? ['wait', ST.wait + ' 준비 전'] : ['', ST.todo + ' 원부 ' + esc(wonbu)];
-  pill('c-31-state', c31[0], c31[1]);
-  const c32 = r.prep_uselimit ? ['run', ST.run + ' 이용제한 넣는 중'] : (r.build_collect || r.build_judge) ? ['run', ST.run + ' ' + (r.build_collect ? '화면 읽는 중' : '값 정하는 중') + elapsed(t, r.build_collect ? 'build_collect' : 'build_judge')] : (r.build || r.build_fill || r.build_save) ? ['run', ST.run + ' ' + (r.build_save ? '저장하는 중' : '채우는 중') + elapsed(t, r.build_save ? 'build_save' : (r.build ? 'build' : 'build_fill'))] : cs['c-32']==='fail' ? ['bad', ST.bad + ' 실패'] : !wonbu ? ['', ST.todo + ' 시작 전'] : !items.length ? ['', ST.todo + ' 판단 전'] : n === items.length ? ['ok', ST.ok + ' ' + prog] : f ? ['wait', ST.wait + ' ' + prog] : ['', ST.todo + ' ' + prog];
-  pill('c-32-state', c32[0], c32[1]);
-  const b = (r.prep_dupexmin || r.prep_complete || r.prep_batch || r.prep_uselimit || r.build || r.build_fill || r.build_save || r.build_collect || r.build_judge) ? ['run', ST.run + ' 하는 중'] : cs['c-31']==='wait' ? ['wait', ST.wait + ' 확인 필요'] : !wonbu ? ['', ST.todo + ' 원부번호 대기'] : (n||m) ? c32 : ['', '원부 ' + esc(wonbu)];
-  pill('ph-b-state', b[0], b[1]);
+  const wb = t.wb||{}, s = wb.state||{}, ck = wb.check||{};
+  const ready = s.dup_done && s.batch_done;
+  const b1 = r.wb_status ? ['run', ST.run + ' 읽는 중'] : cs['c-b1']==='fail' ? ['bad', ST.bad + ' 실패'] : !wonbu ? ['', ST.todo + ' 원부번호 대기'] : s.status_at ? (ready ? ['ok', ST.ok + ` ${s.contents||0}회차 · 준비됨`] : ['wait', ST.wait + (s.acc_count === 0 ? ' 원부 없음' : !s.dup_done ? ' 복본조사 전' : ' 일괄변경 전')]) : ['', ST.todo + ' 읽기 전'];
+  pill('c-b1-state', b1[0], b1[1]);
+  const b2 = r.wb_compare ? ['run', ST.run + ' 대조 중'] : cs['c-b2']==='fail' ? ['bad', ST.bad + ' 실패'] : s.compared_at ? ((s.diff_count||0) ? ['wait', ST.wait + ` 다른 칸 ${s.diff_count}`] : ['ok', ST.ok + ' 모두 같음']) : ['', ST.todo + ' 대조 전'];
+  pill('c-b2-state', b2[0], b2[1]);
+  const nfix = (wb.fixes||[]).length;
+  const b3 = r.wb_fix_apply ? ['run', ST.run + ' 보정 중'] : cs['c-b3']==='fail' ? ['bad', ST.bad + ' 실패'] : s.compared_at && !(s.diff_count||0) ? ['ok', ST.ok + ' 할 일 없음'] : nfix ? ['wait', ST.wait + ` 보정 ${nfix}칸`] : ['', ST.todo + (s.diff_count ? ' 값을 고르십시오' : ' 대조 뒤')];
+  pill('c-b3-state', b3[0], b3[1]);
+  const b4 = r.wb_use_limit ? ['run', ST.run + ' 넣는 중'] : cs['c-b4']==='fail' ? ['bad', ST.bad + ' 실패'] : !s.status_at ? ['', ST.todo + ' 상태 읽기 뒤'] : !s.adult ? ['ok', ST.ok + ' 해당 없음'] : s.use_limit_done ? ['ok', ST.ok + ' 넣음'] : ['wait', ST.wait + ' 성인물 — 넣기 전'];
+  pill('c-b4-state', b4[0], b4[1]);
+  const bAll = (r.wb_status||r.wb_compare||r.wb_fix_apply||r.wb_use_limit) ? ['run', ST.run + ' 하는 중'] : !wonbu ? ['', ST.todo + ' 원부번호 대기'] : [b2[0]==='wait'||b3[0]==='wait'||b4[0]==='wait'||b1[0]==='wait' ? 'wait' : (b2[0]==='ok' ? 'ok' : ''), '원부 ' + esc(wonbu) + (s.compared_at ? ((s.diff_count||0) ? ` · 다른 칸 ${s.diff_count}` : ' · 반입값과 같음') : '')];
+  pill('ph-b-state', bAll[0], bAll[1]);
+  const c1s = r.ck_run ? ['run', ST.run + ' 점검 중' + elapsed(t,'ck_run')] : cs['c-c1']==='fail' ? ['bad', ST.bad + ' 실패'] : ck.nth ? ((ck.errors||0) ? ['wait', ST.wait + ` ${ck.nth}차 · 오류 ${ck.errors} · 확인 ${ck.checks}`] : ['ok', ST.ok + ` ${ck.nth}차 · 오류 없음 · 확인 ${ck.checks}`]) : ['', ST.todo + ' 점검 전'];
+  pill('c-c1-state', c1s[0], c1s[1]);
+  const c2s = ck.confirmed ? ['ok', ST.ok + ' ' + esc(ck.delivered_name||'납품 파일')] : ck.nth ? ['wait', ST.wait + ' 확정 전'] : ['', ST.todo + ' 점검 뒤'];
+  pill('c-c2-state', c2s[0], c2s[1]);
+  pill('ph-c-state', ck.confirmed ? 'ok' : ck.nth ? 'wait' : '', ck.confirmed ? ST.ok + ' 납품 파일 있음' : ck.nth ? ST.wait + ` ${ck.nth}차 점검 · 확정 전` : ST.todo + ' 원부 뒤');
   logDot();
 }
 function logLine(txt){
   const i = txt.indexOf('  '); const ts = i>0 ? txt.slice(0,i) : '', m = i>0 ? txt.slice(i+2) : txt;
-  const cls = /^(✕|✗|\[ERROR\]|실패|오류|Error|Traceback)/.test(m) ? 'l-err' : /^(✓|완료|===)/.test(m) ? 'l-ok' : /^(■|▶)/.test(m) ? 'l-step' : /^(!|‼|확인창|승인)/.test(m) ? 'l-wait' : /^(요청 \d+|응답 \d+|\(본문|\/[a-z]|\[\d+\] (GET|POST)|팝업:)/.test(m) || /^\s*\[\d+s\]/.test(m) ? 'l-req' : '';
+  const cls = /^(✕|✗|\[ERROR\]|실패|오류|Error|Traceback|!!!)/.test(m) ? 'l-err' : /^(✓|완료|===)/.test(m) ? 'l-ok' : /^(■|▶)/.test(m) ? 'l-step' : /^(!|‼|확인창|승인)/.test(m) ? 'l-wait' : /^(요청 \d+|응답 \d+|\(본문|\/[a-z]|\[\d+\] (GET|POST)|팝업:)/.test(m) || /^\s*\[\d+s\]/.test(m) ? 'l-req' : '';
   return `<div class="${cls}"><span class="ts">${esc(ts)}</span> ${esc(m.replace(/^■/, '▶').replace(/^===\s*/, '✓ '))}</div>`;
 }
 function appendLog(m, tab){
@@ -446,31 +437,29 @@ async function renderState(t){
   if(t === CUR) phaseState(t);
 }
 
-// ============================================================ 단추 규칙 (비활성 사유를 항상 글로)
+// ============================================================ 단추 규칙(비활성 사유를 글로)
 function buttons(t){
   if(t !== CUR) return; if(t === LEDGER){ lbButtons(); return; }
-  const r = t.running;
+  const r = t.running, wb = t.wb||{}, s = wb.state||{};
   $('btn-rename').hidden = !t.work; $('btn-save-loc').hidden = !!t.work;
   $('btn-run').disabled = !t.v.folder || !!r.prepare; $('btn-run').hidden = !!r.prepare; $('btn-run').textContent = t.work ? '다시 만들기' : '반입용 엑셀 만들기'; $('btn-cancel').hidden = !r.prepare;
   const why = !t.work ? '1 을 먼저 하십시오.' : !t.work.confirmed ? '1 의 결과에서 「확인을 마쳤습니다」를 먼저 누르십시오.' : !$('f-ack').checked ? '왼쪽 상자에 체크하십시오.' : '';
   $('btn-flow').disabled = !!r.flow || !!why; $('btn-fcancel').hidden = !r.flow;
-  if(!r.flow && !/class="box/.test(t.html['f-out']||'')) $('f-out').innerHTML = why ? `<span class="muted">${why}</span>` : '<span class="ok">실행할 수 있습니다.</span>';
-  $('btn-kprep').disabled = !!r.kolis; $('btn-ksub').disabled = !!r.kolis_submit || !$('k-ack').checked;
-  $('btn-upl').disabled = !!r.upload || !$('u-ack').checked; $('btn-ucancel').hidden = !r.upload;
-  $('btn-treg').disabled = !!r.thumbs_register; $('btn-tcancel').hidden = !r.thumbs_register;
-  $('btn-reg').disabled = !!r.register || !$('g-ack').checked; $('btn-regx').disabled = !!r.register_export || !!r.register;
-  const prepBusy = !!r.prep_dupexmin || !!r.prep_complete || !!r.prep_batch || !!r.prep_uselimit, hasW = /^\d+$/.test(($('b-wonbu').value||'').trim());
-  const judging = !!r.build_collect || !!r.build_judge; $('btn-judge').disabled = judging || !hasW; $('btn-jcancel').hidden = !judging;
-  const selIt = Number.isInteger(t.sel) ? (t.build_items||[]).find(i => i.row === t.sel) : null; $('b-sel').innerHTML = selIt ? `고른 회차: <b>${esc(selIt.title||'')} ${esc(selIt.part||'')}</b> (${t.sel+1}번)` : '고른 회차 없음 — 위 표에서 고르십시오';
-  $('btn-pul').disabled = prepBusy || !hasW || !(t.judgment && t.judgment.adult); $('btn-pul').title = (t.judgment && t.judgment.adult) ? '' : '작품 판단에서 성인물로 나온 작품만 넣습니다';
-  const hasSel = Number.isInteger(t.sel); $('btn-build').disabled = !!r.build || !!r.build_fill || !!r.build_save || !hasW || !t.hasBuild || !hasSel; $('btn-build').title = !t.hasBuild ? '보정 판단을 먼저 하십시오(대조에서 다른 칸이 있을 때)' : !hasSel ? '회차 표에서 회차를 고르십시오' : ''; $('btn-bcancel').hidden = !(r.build || r.build_fill);
-  $('btn-bsave').disabled = !!r.build || !!r.build_save || !$('b-ack').checked || !(t.html['b-result']||'');
+  if(!r.flow && !/class="box/.test(t.html['f-out']||'')) $('f-out').innerHTML = why ? `<span class="muted">${why}</span>` : '<span class="ok">제출할 수 있습니다.</span>';
+  const hasW = /^\d+$/.test(($('b-wonbu').value||'').trim()); const bBusy = !!(r.wb_status||r.wb_compare||r.wb_fix_apply||r.wb_use_limit);
+  $('btn-wbs').disabled = !hasW || bBusy; $('btn-wbc').disabled = !hasW || bBusy || !s.status_at;
+  const nfix = (wb.fixes||[]).length;
+  $('btn-wbf-prep').disabled = !hasW || bBusy || !nfix; $('btn-wbf-cancel').hidden = !r.wb_fix_apply;
+  $('btn-wbf-save').disabled = !hasW || bBusy || !nfix || !$('b3-ack').checked || !(wb.prepared||[]).length; $('btn-wbf-save').title = !nfix ? 'B-2 표에서 넣을 값을 고르십시오' : !(wb.prepared||[]).length ? '먼저 「화면에 넣고 저장 본문 만들기」를 하십시오' : '';
+  $('btn-wbu').disabled = !hasW || bBusy || !s.adult;
+  $('btn-ck').disabled = !hasW || !!r.ck_run || !s.status_at; $('btn-ck-fast').disabled = $('btn-ck').disabled; $('btn-ck-cancel').hidden = !r.ck_run;
+  const ck = wb.check||{}; $('btn-ck-confirm').disabled = !ck.nth || !!r.ck_run || !!ck.confirmed;
 }
 async function outHint(t){
   const auto = await pywebview.api.output_name(t.title || '제목', t.v.batch || ''); const shown = t.title ? auto : auto.replace('제목.xlsx', '<제목>.xlsx');
   setOut(t, 'out-hint', t.work ? `저장 위치: ${esc(t.work.output_xlsx)}` : `비우면 작업 폴더에 「<b>${esc(shown)}</b>」 로 저장합니다.`);
 }
-async function renameOutput(){ capture(); const t = CUR; const r = await pywebview.api.rename_output(t.v.folder, (t.v['out-name']||'').trim()); if(r.error){ setOut(t, 'out-hint', `<span class="bad">${esc(r.error)}</span>`); return; } t.work.output_xlsx = r.out; t.v['out-name'] = r.out.split(/[\\/]/).pop(); fillNext(t); show(); renderState(t); }
+async function renameOutput(){ capture(); const t = CUR; const r = await pywebview.api.rename_output(t.v.folder, (t.v['out-name']||'').trim()); if(r.error){ setOut(t, 'out-hint', `<span class="bad">${esc(r.error)}</span>`); return; } t.work.output_xlsx = r.out; t.v['out-name'] = r.out.split(/[\\/]/).pop(); show(); renderState(t); }
 async function diagnose(){
   $('diag-body').innerHTML = '<span class="spin"></span> 확인하는 중…'; $('dlg-diag').showModal();
   const d = await pywebview.api.diagnose(); const e = d.env || {};
@@ -486,7 +475,6 @@ async function savePrompt(){ await pywebview.api.save_prompt($('prompt-text').va
 async function resetPrompt(){ await pywebview.api.save_prompt(''); await loadPrompt(); $('prompt-out').innerHTML = `${ST.ok} 지웠습니다`; }
 async function pickFolder(){ const f = await pywebview.api.pick_folder(); if(f) openInTab(f); }
 async function pickFolderInto(id){ const f = await pywebview.api.pick_folder(); if(f) $(id).value=f; }
-async function pickInto(id, pattern){ const f = await pywebview.api.pick_file(pattern||'Excel (*.xlsx)'); if(f) $(id).value=f; }
 async function pickSave(){ const f = await pywebview.api.pick_save($('out-name').value || '반입용.xlsx'); if(f) $('out-name').value=f; }
 
 // ============================================================ 계정
@@ -508,7 +496,7 @@ async function kolisLogin(){
 }
 async function kolisLogout(){ acctShow(await pywebview.api.kolis_logout()); $('a-id').value = ''; }
 
-// ============================================================ 1. 반입용 엑셀
+// ============================================================ A-1 반입용 엑셀
 async function openFolder(t, quiet){
   if(t === CUR) capture(); const f = (t.v.folder||'').trim(); if(!f) return;
   const r = await pywebview.api.open_folder(f);
@@ -516,17 +504,17 @@ async function openFolder(t, quiet){
   t.v.folder = r.folder; t.state = r.state || {}; t.work = r.work || null; if(!t.log.length && (r.log||[]).length) t.log = r.log;
   t.title = (r.work && r.work.title) || t.state.title || '';
   const pr = t.state.prepare || {}; if(!quiet || !t.v.instr) t.v.instr = pr.instructions || t.state.memo || t.v.instr || '';
-  if(!t.v.batch || t.v.batch === BATCH_DEFAULT) t.v.batch = pr.batch_note || (t.state.kolis_prepare||{}).note || BATCH_DEFAULT;
-  setOut(t, 'run-out', ''); restoreKolis(t); if(t.work){ fillNext(t); t.v['out-name'] = t.work.output_xlsx.split(/[\\/]/).pop(); }
+  if(!t.v.batch || t.v.batch === BATCH_DEFAULT) t.v.batch = pr.batch_note || BATCH_DEFAULT;
+  setOut(t, 'run-out', ''); if(t.work){ t.v['out-name'] = t.work.output_xlsx.split(/[\\/]/).pop(); }
   if(t === CUR) show(); renderState(t); renderTabs(); loadRecent(); saveTabs();
 }
 async function runPrepare(){
   capture(); const t = CUR; if(!t.v.folder) return; const bn = (t.v.batch||'').trim();
-  if((!bn || /\(차\)|\(\)/.test(bn)) && !await ask('작업 번호가 비어 있습니다', '작업 번호의 차수와 번호가 비어 있습니다. 그대로 만들어도 됩니다(KOLIS 등록 전에 채우면 됩니다). 계속하시겠습니까?', '그대로 만들기', false)) return;
-  if(t.work && !await ask('다시 만듭니다', '처음부터 다시 조사해 반입용 엑셀을 새로 만듭니다(10~15분). 지금 엑셀은 덮어씁니다. 계속하시겠습니까?', '다시 만들기')) return;
+  if((!bn || /\(차\)|\(\)/.test(bn)) && !await ask('작업 번호가 비어 있습니다', '작업 번호의 차수와 번호가 비어 있습니다. 그대로 만들어도 됩니다(제출 전에 채우면 됩니다). 계속하시겠습니까?', '그대로 만들기', false)) return;
+  if(t.work && !await ask('다시 만듭니다', '처음부터 다시 원고를 보고 조사해 반입용 엑셀을 새로 만듭니다. 지금 엑셀은 덮어씁니다. 계속하시겠습니까?', '다시 만들기')) return;
   const r = await pywebview.api.prepare(t.id, t.v.folder, t.v.instr||'', bn, (t.v['out-name']||'').trim());
   if(r.error){ setOut(t, 'run-out', `<span class="bad">${esc(r.error)}</span>`); return; }
-  start(t, 'prepare'); setOut(t, 'run-out', '<span class="spin"></span> 조사하고 만드는 중'); saveTabs();
+  start(t, 'prepare'); setOut(t, 'run-out', '<span class="spin"></span> 원고를 보고 조사해 만드는 중'); saveTabs();
 }
 async function staffAuthor1(index){
   const t = CUR; const el = document.getElementById('ac1-' + index); const no = el ? el.value.trim() : '';
@@ -538,21 +526,21 @@ async function staffAuthor1(index){
 }
 async function confirmImport(){
   const t = CUR;
-  if(!await ask('확인을 마칩니다', '반입용 엑셀의 노란색 표시와 메모를 지우고 KOLIS 등록을 할 수 있게 엽니다. 엑셀 파일이 열려 있으면 먼저 저장하고 닫으십시오.', '표시 지우기', false)) return;
+  if(!await ask('확인을 마칩니다', '엑셀의 1행(한글 이름 행)을 지웠고 메모·노란 칸을 다 봤다는 뜻입니다. 프로그램이 1행이 지워졌는지 확인한 뒤 노란색 표시와 메모를 지우고 제출을 엽니다. 엑셀 파일이 열려 있으면 먼저 저장하고 닫으십시오.', '확인 마침', false)) return;
   const r = await pywebview.api.confirm_import(t.v.folder);
   if(r.error){ $('r-done-out').innerHTML = `<span class="bad">${esc(r.error)}</span>`; return; }
   t.work = r; showResult(t); renderState(t); buttons(t); setOpen('c-1', false); setOpen('c-2', true); $('c-2').scrollIntoView({behavior:'smooth', block:'start'});
 }
 async function undoFiles(){ const t = CUR; if(!await ask('파일 이름을 되돌립니다', '원고·썸네일 파일 이름을 원래대로 되돌립니다. 계속하시겠습니까?', '되돌리기', false)) return; const r = await pywebview.api.undo_files(t.v.folder); setOut(t, 'run-out', r.error ? `<span class="bad">${esc(r.error)}</span>` : `${ST.ok} 원고 ${r.manuscript_files}장, 썸네일 ${r.thumbs}장을 되돌렸습니다`); renderState(t); }
 async function cancelJob(){ await pywebview.api.cancel(CUR.id); }
-function fillNext(t){ const w = t.work; t.v['k-xlsx'] = w.output_xlsx; t.v['t-xlsx'] = w.output_xlsx; t.v['x-root'] = w.manuscripts || ''; t.v['t-dir'] = w.thumbs || ''; if(!t.v['b-manu']) t.v['b-manu'] = w.manuscripts || ''; if(t.v.batch && !/\(차\)|\(\)/.test(t.v.batch)) t.v['k-note'] = t.v.batch; if(t === CUR) $('k-note-show').textContent = t.v['k-note'] || t.v.batch || ''; }
 function showResult(t){
   const w = t.work; $('result').hidden = false; if(!t.running.prepare) $('c-1-form').open = false;
   $('r-when').textContent = ((t.cardState||{})['c-1']==='fail' ? '이전 결과 · ' : '') + ((w.run||{}).at || '');
   const run = w.run || {}, fin = w.finalize || {};
   $('r-head').innerHTML = `${link(w.output_xlsx, '반입용 엑셀 열기')} <span class="muted">· ${w.rows}건${w.columns ? ' · ' + w.columns + '열' : ''} · 확인할 칸 ${w.confirm_cells}개${run.seconds ? ' · ' + fmtMin(run.seconds) : ''}${run.images ? ' · 원고 ' + run.images + '장' : ''}${fin.manuscript_files ? ' · 원고 파일 이름 ' + fin.manuscript_files + '장 정리' : ''}</span>${run.usage_text ? `<div class="muted small" style="margin-top:2px">토큰 ${esc(run.usage_text)}</div>` : ''}`;
   const cf = w.confirmed; $('btn-confirm').disabled = !!cf;
-  $('r-done-out').innerHTML = cf ? `${ST.ok} 확인을 마쳤습니다 ${esc(cf.at)} · 표시 ${cf.cleared}칸을 지웠습니다. 다음은 2 KOLIS 등록입니다.` : '반입용 엑셀을 열어 위 항목을 확인하고 고친 뒤 누르십시오. <b>누르기 전에는 KOLIS 등록을 할 수 없습니다.</b>';
+  $('r-steps').innerHTML = [['1 엑셀 열어 고치기', '노란 칸과 메모를 보고 고칩니다. 1행의 한글 이름을 참고하십시오.', !cf], ['2 1행 지우기', '확인을 마쳤으면 엑셀에서 1행(한글 이름 행)을 지우고 저장합니다. KOLIS 는 1행이 MODS 머리글이어야 받습니다.', !cf], ['3 확인 마침', '아래 단추를 누르면 프로그램이 1행이 지워졌는지 확인하고 표시를 지웁니다.', !cf], ['4 제출', '2 KOLIS 등록에서 제출합니다.', !!cf]].map(([h, d, on], i) => `<div class="s ${cf && i < 3 ? 'done' : (on ? 'on' : '')}"><b>${esc(h)}</b><span class="muted small">${esc(d)}</span></div>`).join('');
+  $('r-done-out').innerHTML = cf ? `${ST.ok} 확인을 마쳤습니다 ${esc(cf.at)} · 표시 ${cf.cleared}칸을 지웠습니다. 다음은 2 KOLIS 등록(제출)입니다.` : '';
   const rem = w.remaining || []; $('r-remaining').hidden = !rem.length; $('r-remaining').innerHTML = rem.map(x=>`<div>${ST.wait} 검사에 남은 항목 — ${esc(x)}</div>`).join('');
   const where = c => c.rows.length===w.rows ? `전체 ${w.rows}건` : c.rows.map((n,i)=>`${n}${(c.parts||[])[i] ? '('+esc(c.parts[i])+')' : ''}`).join(', ') + '번';
   const vals = c => (c.values||[]).slice(0,4).map(esc).join(' / ') + ((c.values||[]).length>4 ? ` … (${c.values.length}가지)` : '');
@@ -564,7 +552,7 @@ function showResult(t){
   $('r-summary').innerHTML = (w.summary||[]).map(r=>`<tr><th style="width:124px;color:var(--muted)">${esc(r[0])}</th><td>${esc(r[1])||'<span class="warn">없음</span>'}</td><td class="muted">${esc(r[2]||'')}</td></tr>`).join('');
   const au = w.authors||[]; const canEdit = !w.confirmed;
   $('r-authors').innerHTML = (au.length ? `<table class="list" style="width:100%"><tr><th>저자</th><th>전거 연결</th><th>다른이름 · 표시</th><th>근거</th></tr>` + au.map(a => `<tr><td style="white-space:nowrap">${esc(a.name)}${a.role ? ' <span class="muted">(' + esc(a.role) + ')</span>' : ''}</td><td>${a.ac_control_no ? '연결 <b>' + esc(a.ac_control_no) + '</b>' : '연결 안 함'}${a.staff ? ' <span class="ok small">직원 결정</span>' : ''}${canEdit ? `<div class="row small" style="margin:4px 0 0"><input type="text" id="ac1-${a.index}" placeholder="전거 번호(KAC…)" value="${esc(a.ac_control_no||'')}" style="max-width:150px;padding:3px 6px"><button class="secondary" style="padding:2px 8px;font-size:12px;min-width:0" onclick="staffAuthor1(${a.index})">직원 결정으로 바꾸기</button></div>` : ''}</td><td class="small">${(a.alt||[]).map(esc).join(' · ')}${a.display_form ? `<div class="muted">표시: ${esc(a.display_form)}</div>` : ''}</td><td class="muted small">${(a.sources||[]).map(x => esc((x.from||'') + (x.quote ? ' 「' + x.quote + '」' : ''))).join('<br>')}</td></tr>`).join('') + '</table>' : '')
-    + (w.adult ? `<div class="box warn" style="margin-top:6px"><b>성인물</b> — KOLIS 등록 뒤 원부번호가 나오면 이용제한(청소년 유해매체물)을 프로그램이 넣습니다. ${esc(w.adult_reason||'')}</div>` : '')
+    + (w.adult ? `<div class="box warn" style="margin-top:6px"><b>성인물</b> — 원부번호가 나오면 B-4 에서 이용제한(청소년 유해매체물)을 프로그램이 넣습니다. ${esc(w.adult_reason||'')}</div>` : '')
     + ((w.unknown_columns||[]).length ? `<div class="box plain small" style="margin-top:6px">반입 확인 전 열이 들어 있습니다(참고 사항에 적음): ${w.unknown_columns.map(esc).join(', ')}</div>` : '');
   const rv = w.review || {}; const str = x => typeof x === 'string' ? x : JSON.stringify(x||'');
   $('r-detail').innerHTML = `<p><b>조사한 플랫폼</b> (${w.searched}곳)</p><ul class="ev">` + (w.platforms||[]).map(p=>`<li>${esc(p.name)} — ${esc(p.status||'')} ${esc(p.start_date||'')} ${p.url ? linkify(p.url) : ''}</li>`).join('') + '</ul>'
@@ -573,217 +561,127 @@ function showResult(t){
     + `<p><b>참고 사항</b></p><ul class="ev">` + ((w.issues||[]).map(x=>`<li>${esc(x)}</li>`).join('') || '<li>없음</li>') + '</ul>'
     + `<p><b>검수</b> ${rv.done ? '마침' : '<span class="bad">하지 않음</span>'}</p><ul class="ev">` + (rv.findings||[]).map((f,i)=>`<li>지적: ${esc(str(f))}<br>처리: ${esc(str((rv.resolved||[])[i]))}</li>`).join('') + '</ul>';
 }
-function restoreKolis(t){
-  const st = t.state || {};
-  if(st.kolis_prepare){ t.v['k-note'] = st.kolis_prepare.note || ''; t.html['k-out'] = `<span class="muted">지난 기록 ${esc(st.kolis_prepare.done_at)}: 반입 전 준비까지 함${st.kolis_submit?` · 반입 ${esc(st.kolis_submit.done_at)}`:''}</span>`; }
-  if(st.export && st.export.file){ t.v['x-file'] = st.export.file; t.v['x-receipt'] = st.export.receipt || ''; t.html['x-out'] = `<span class="muted">지난 기록 ${esc(st.export.done_at)}: 접수번호 ${esc(st.export.receipt)}, ${st.export.count}건</span>`; }
-  if(st.register){ t.v['g-no'] = st.register.record_no || ''; t.html['g-out'] = `<span class="muted">지난 기록 ${esc(st.register.done_at)}: 가원부번호 ${esc(st.register.record_no)}, ${st.register.count}건 → ${link(st.register.file, '파일')}</span>`; }
-  if(st.upload){ t.html['u-out'] = `<span class="muted">지난 기록 ${esc(st.upload.done_at)}: 폴더 ${st.upload.folders}개, 파일 ${st.upload.files}개 — ${esc(st.upload.message)}</span>`; }
-  if(st.cnts){ t.html['c-out'] = `<span class="muted">지난 기록 ${esc(st.cnts.done_at)}: ${st.cnts.count}개 폴더 → 콘텐츠ID</span>`; }
-}
 
-// ============================================================ 2. KOLIS (한 번에 한 작품)
-async function kolisCall(kind, outId, fn, busyHtml){ capture(); const t = CUR; const r = await fn(t); if(r.error){ setOut(t, outId, `<span class="bad">${esc(r.error)}</span>`); return; } start(t, kind); setOut(t, outId, busyHtml); }
+// ============================================================ A-2 제출
 async function flowRun(){
-  const n = ($('k-note').value || $('batch').value).trim(); const t = CUR;
+  capture(); const t = CUR; const n = (t.v.batch||'').trim();
   if(!(t.work && t.work.confirmed)){ setOut(t, 'f-out', '<span class="bad">반입용 엑셀 확인을 마치지 않았습니다. 1 의 결과에서 「확인을 마쳤습니다」를 먼저 누르십시오.</span>'); return; }
-  if(!n || /\(차\)|\(\)/.test(n)){ setOut(t, 'f-out', '<span class="bad">작업 번호의 차수와 번호를 채우십시오.</span>'); return; }
-  if(!await ask('KOLIS 등록을 실행합니다', `「${esc(label(t))}」 ${t.work.rows}건을 반입하고 가원부번호까지 받습니다. 실행하면 접수번호가 새로 생기고, 중간에 실패한 접수번호는 주무관에게 취소를 요청해야 합니다.`, 'KOLIS 등록 실행')) return;
-  t.flow = {}; kolisCall('flow', 'f-out', tt => pywebview.api.flow_run(tt.id, tt.v.folder, n, 'YES'), `<div class="box run">${ST.run} KOLIS 등록을 하는 중</div>`);
+  if(!n || /\(차\)|\(\)/.test(n)){ setOut(t, 'f-out', '<span class="bad">작업 번호의 차수와 번호를 채우십시오(1 의 작업 번호).</span>'); return; }
+  if(!await ask('KOLIS 에 제출합니다', `「${esc(label(t))}」 ${t.work.rows}건을 반입하고 원문·썸네일을 올려 가원부번호까지 받습니다. 접수번호가 새로 생기고, 중간에 실패한 접수번호는 주무관에게 취소를 요청해야 합니다.`, '제출')) return;
+  t.flow = {}; const r = await pywebview.api.flow_run(t.id, t.v.folder, n, 'YES'); if(r.error){ setOut(t, 'f-out', `<span class="bad">${esc(r.error)}</span>`); return; }
+  start(t, 'flow'); setOut(t, 'f-out', `<div class="box run">${ST.run} KOLIS 에 제출하는 중</div>`);
 }
-async function kolisPrepare(){ const x = $('k-xlsx').value.trim(), n = ($('k-note').value || $('batch').value).trim(); if(!x || !n || /\(차\)|\(\)/.test(n)){ setOut(CUR, 'k-out', '<span class="bad">작업 번호(차수와 번호까지)와 엑셀 경로를 넣으십시오.</span>'); return; } kolisCall('kolis', 'k-out', t => pywebview.api.kolis_prepare(t.id, x, n), `${ST.run} 준비하는 중`); }
-async function kolisSubmit(){ if(!await ask('반입을 실행합니다', '일괄반입 팝업의 「반입」을 누릅니다. 접수번호가 새로 생깁니다.', '반입 실행')) return; kolisCall('kolis_submit', 'k-sub', t => pywebview.api.kolis_submit(t.id, 'YES'), `${ST.run} KOLIS 가 반입하는 중(몇 분 걸림)`); }
-function exportDownload(mode){ const rc = $('x-receipt').value.trim(); kolisCall('export', 'x-out', t => pywebview.api.export_download(t.id, rc, mode||'request'), `${ST.run} 접수 목록을 받는 중`); }
-async function cntsPreview(){ const t = CUR; setOut(t, 'c-list', `${ST.run} 접수 목록 파일을 읽어 폴더와 짝을 맞추는 중`); const r = await pywebview.api.cnts_preview($('x-file').value, $('x-root').value); setOut(t, 'c-list', r.error ? `<span class="bad">${esc(r.error)}</span>` : `접수번호 ${esc(r.receipt)} · ${esc(r.title)} · ${r.count}개 폴더<br>` + r.pairs.map(p=>`${esc(p[0])} → ${esc(p[1])} (${esc(p[2])})`).join('<br>')); }
-async function cntsApply(){ const t = CUR; if(!await ask('폴더 이름을 바꿉니다', '회차 폴더 이름을 콘텐츠ID 로 바꿉니다. 되돌릴 수 있습니다. 계속하시겠습니까?', '이름 바꾸기', false)) return; setOut(t, 'c-out', `${ST.run} 바꾸는 중`); const r = await pywebview.api.cnts_apply($('x-file').value, $('x-root').value); setOut(t, 'c-out', r.error ? `<span class="bad">${esc(r.error)}</span>` : `${ST.ok} ${r.count}개 폴더의 이름을 바꿨습니다 (접수번호 ${esc(r.receipt)})`); if(!r.error) saveState(t, {cnts:{count:r.count, receipt:r.receipt}}); }
-async function cntsUndo(){ const t = CUR; setOut(t, 'c-out', `${ST.run} 되돌리는 중`); const r = await pywebview.api.cnts_undo($('x-root').value); setOut(t, 'c-out', r.error ? `<span class="bad">${esc(r.error)}</span>` : `${ST.ok} ${r.count}개를 되돌렸습니다`); renderState(t); }
-async function uploadCheck(){ const t = CUR; setOut(t, 'u-list', `${ST.run} 확인하는 중`); const r = await pywebview.api.upload_check($('x-root').value); if(r.error){ setOut(t, 'u-list', `<span class="bad">${esc(r.error)}</span>`); return; } const l=r.local; setOut(t, 'u-list', `원고 폴더 ${l.folders}개 · 파일 ${l.files}개 · ${l.mb} MB` + (l.problems.length ? '<div class="box warn">'+l.problems.map(w=>`${ST.wait} ${esc(w)}`).join('<br>')+'</div>' : ` <span class="ok">문제 없음</span>`)); }
-async function uploadRun(){ if(!await ask('원문 등록을 실행합니다', '접수번호의 자료에 원고 파일을 올립니다. 되돌릴 수 없습니다.', '원문 등록 실행')) return; const root = $('x-root').value, rc = $('x-receipt').value.trim(); kolisCall('upload', 'u-out', t => pywebview.api.upload_run(t.id, root, 'YES', rc), `${ST.run} 원문을 올리는 중`); }
-function thumbsRegister(){ const x=$('t-xlsx').value.trim(), d=$('t-dir').value.trim(), n=parseInt($('t-count').value||'0'), rc=$('x-receipt').value.trim(); if(!x||!d){ setOut(CUR, 't-out', '<span class="bad">반입용 엑셀과 썸네일 폴더를 넣으십시오(썸네일이 없는 납품은 이 단계를 건너뜁니다).</span>'); return; } setOut(CUR, 't-list', ''); kolisCall('thumbs_register', 't-out', t => pywebview.api.thumbs_register(t.id, x, d, n, rc), `${ST.run} 썸네일을 등록하는 중`); }
-function onThumbProgress(r, tab){ const t = tabOf(tab); if(!t) return; setOut(t, 't-list', (t.html['t-list']||'') + `<div>${r.status==='done'?ST.ok:(r.status==='already'?ST.skip:ST.bad)} ${r.i+1}. 권차 ${esc(r.part||'')} ${esc(r.thumb||'')} ${r.sec?`(${r.sec}초)`:''} ${esc(r.error||'')}</div>`); if(t === CUR) $('t-list').scrollTop = $('t-list').scrollHeight; }
-async function registerRun(){ const rc = $('x-receipt').value.trim(); if(!rc){ setOut(CUR, 'g-out', '<span class="bad">접수번호를 넣으십시오(위 묶음 맨 위).</span>'); return; } if(!await ask('가원부번호를 발급합니다', `접수번호 ${esc(rc)} 전체를 등록대상처리하고 가원부번호를 받습니다. 되돌릴 수 없습니다.`, '가원부번호 발급 실행')) return; kolisCall('register', 'g-out', t => pywebview.api.register_run(t.id, rc, 'YES', 'request'), `${ST.run} 가원부번호를 받는 중`); }
-function registerExport(){ const no = $('g-no').value.trim(), rc = $('x-receipt').value.trim(); if(!no || !rc){ setOut(CUR, 'g-out', '<span class="bad">가원부번호와 접수번호를 넣으십시오.</span>'); return; } kolisCall('register_export', 'g-out', t => pywebview.api.register_export(t.id, no, rc, 'request'), `${ST.run} 가원부 파일을 받는 중`); }
 function flowShow(t){
   const live = t.flow||{};
   setOut(t, 'f-steps', FLOW_STEPS.map(([k, lab], n) => { const v = live[k] || (k==='thumbs' && t.work && !t.work.thumbs ? ['skip', '썸네일이 없어 건너뜀'] : null);
     const ic = v ? (v[0]==='done' ? ST.ok : v[0]==='fail' ? ST.bad : v[0]==='skip' ? ST.skip : ST.run) : ST.todo;
     return `<div>${ic} ${n+1}. ${esc(lab)} <span class="${v && v[0]==='fail' ? 'bad' : 'muted'} small">${v ? esc(v[1]||'') : ''}</span></div>`; }).join(''));
-  setOut(t, 'f-xlsx', t.work ? `${link(t.work.output_xlsx, t.work.output_xlsx.split(/[\\/]/).pop())} · ${t.work.rows}건 · 확인할 칸 ${t.work.confirm_cells}개` : '1 을 먼저 하십시오.');
+  setOut(t, 'f-xlsx', t.work ? `${link(t.work.output_xlsx, t.work.output_xlsx.split(/[\\/]/).pop())} · ${t.work.rows}건 · 확인할 칸 ${t.work.confirm_cells}개${t.work.confirmed ? ' · ' + ST.ok + ' 확인 완료' : ' · ' + ST.wait + ' 확인 전'}` : '1 을 먼저 하십시오.');
 }
 async function ledgerShow(t){
   const l = await pywebview.api.flow_ledger(); const mine = l.rows.filter(r => r['작품'] === (t.title || ''));
-  setOut(t, 'f-ledger', (mine.length ? '<table class="list"><tr><th>처리</th><th>접수번호</th><th>가원부번호</th><th>건수</th><th>결과</th><th>반입 시각</th></tr>' + mine.map(r => `<tr><td class="${r['처리']==='유지' ? 'ok' : 'warn'}">${esc(r['처리'])}</td><td>${esc(r['접수번호'])}</td><td>${esc(r['가원부번호'])}</td><td>${esc(r['건수'])}</td><td>${esc(r['결과'])}</td><td>${esc(r['반입 시각'])}</td></tr>`).join('') + '</table>' : '<span class="muted">이 작품으로 실행한 접수번호가 없습니다</span>')
+  setOut(t, 'f-ledger', (mine.length ? '<table class="list"><tr><th>처리</th><th>접수번호</th><th>가원부번호</th><th>건수</th><th>결과</th><th>반입 시각</th></tr>' + mine.map(r => `<tr><td class="${r['처리']==='유지' ? 'ok' : 'warn'}">${esc(r['처리'])}</td><td>${esc(r['접수번호'])}</td><td>${esc(r['가원부번호'])}</td><td>${esc(r['건수'])}</td><td>${esc(r['결과'])}</td><td>${esc(r['반입 시각'])}</td></tr>`).join('') + '</table>' : '<span class="muted">이 작품으로 제출한 접수번호가 없습니다</span>')
     + (l.rows.length ? ` <div class="muted small" style="margin-top:4px">전체 ${l.rows.length}건, 취소 요청 ${l.rows.filter(r => r['처리'] !== '유지').length}건 · ${link(l.file, '목록 파일 열기')}</div>` : ''));
 }
 function onFlowStep(key, status, text, tab){ const t = tabOf(tab); if(!t) return; t.flow = t.flow || {}; t.flow[key] = [status, text]; flowShow(t); phaseState(t); if(status !== 'run') ledgerShow(t); }
 
-// ============================================================ 3. 구축
-async function loadBuildSettings(){ const s = await pywebview.api.build_settings(); $('b-acq').value = s.acquisition_note || ''; }
-async function saveBuildSettings(){ const s = await pywebview.api.build_settings({acquisition_note: $('b-acq').value.trim()}); $('b-acq').value = s.acquisition_note || ''; $('b-acq-out').innerHTML = `${ST.ok} 저장했습니다`; }
-const PREP_OUT = {prep_dupexmin:'s-dup-out', prep_complete:'s-dup-out', prep_batch:'s-bat-out', prep_uselimit:'s-ul-out'};
-async function prepRun(step, run){
-  const w = $('b-wonbu').value.trim(); const outId = PREP_OUT[{dupexmin:'prep_dupexmin', complete:'prep_complete', batch:'prep_batch', uselimit:'prep_uselimit'}[step]]; if(!/^\d+$/.test(w)){ setOut(CUR, outId, '<span class="bad">원부번호를 숫자로 넣으십시오.</span>'); return; }
-  if(run){ const T3 = {dupexmin:['복본조사를 실행합니다', `원부 ${esc(w)} 의 복본조사를 돌려 후보를 찾고, 후보가 있으면 프로그램이 짝마다 판정해 복본만 체크해 둡니다. 완료 처리는 하지 않으며, 다시 돌릴 수 있습니다.`, '복본조사 실행'], batch:['일괄변경을 실행합니다', `원부 ${esc(w)} 의 모든 종에 자료유형 1·2 와 발행자구분을 사업 값으로 저장합니다. 되돌릴 수 없습니다.`, '일괄변경 실행'], complete:['복본조사를 완료 처리합니다', `원부 ${esc(w)} 의 복본조사 화면을 다시 열어 복본으로 판정한 짝을 체크하고 「완료」를 누릅니다. 되돌릴 수 없습니다.`, '복본조사 완료'], uselimit:['이용제한을 넣습니다', `원부 ${esc(w)} 의 모든 종에 이용제한구분 「청소년 유해매체물」을 저장합니다(이미 들어간 종은 건너뜁니다).`, '이용제한 넣기']}[step]; const ok = await ask(T3[0], T3[1], T3[2]); if(!ok) return; }
-  kolisCall({dupexmin:'prep_dupexmin', complete:'prep_complete', batch:'prep_batch', uselimit:'prep_uselimit'}[step], outId, t => pywebview.api.prep_run(t.id, step, w, run ? 'YES' : ''), `<div class="box run">${ST.run} ${run ? ({dupexmin:'복본조사를 돌리는 중', complete:'완료 처리하는 중', batch:'일괄변경 하는 중', uselimit:'이용제한 넣는 중'})[step] : 'KOLIS 화면을 열어 상태를 읽는 중'} (KOLIS 창을 건드리지 마십시오)</div>`);
+// ============================================================ B 원부
+async function wbLoad(t){ const w = (t.v['b-wonbu']||'').trim(); if(!/^\d+$/.test(w)){ t.wb = {}; return; } t.wb = Object.assign(t.wb||{}, await pywebview.api.wb_state(w)); }
+async function wbShow(t){ await wbLoad(t); if(t !== CUR) return; b1Show(t); b2Show(t); b3Show(t); b4Show(t); c1Show(t); c2Show(t); buttons(t); phaseState(t); renderTabs(); }
+function b1Show(t){
+  const s = (t.wb||{}).state||{}; if(!s.status_at){ setOut(t, 'b1-table', '<span class="muted small">원부번호를 넣고 「상태 읽기」를 누르십시오.</span>'); return; }
+  const rows = [['작품', esc(s.title||'')], ['등록원부관리', s.acc_count ? `${s.acc_count}건 · ${esc((s.kolis_status||[]).map(x => x.replace(/^DS_\d+\s*/, '')).join(', '))}` : `<span class="bad">없음 — 원부번호를 확인하십시오</span>`],
+    ['종 · 회차', `${s.species||0}종 · ${s.contents||0}회차`], ['복본조사', s.dup_done ? `${ST.ok} 끝` : `${ST.wait} 전 — 「복본조사」 탭에서 과장님이 합니다`], ['일괄변경', s.batch_done ? `${ST.ok} 끝(CH1 · CH11 · PE)` : s.batch_done === false ? `${ST.wait} 전 — 「복본조사」 탭` : '<span class="muted">모름</span>'],
+    ['반입값', s.has_import ? `${ST.ok} 있음 · ${s.import_rows}행 (이 프로그램이 만든 반입용 엑셀)` : `${ST.wait} 없음 — 다른 담당자가 반입한 원부라 회차끼리 대조만 합니다`], ['성인물', s.adult ? `<b class="warn">성인물</b> — B-4 에서 이용제한을 넣습니다. ${esc(s.adult_reason||'')}` : '아님']];
+  setOut(t, 'b1-table', `<table class="list" style="width:100%"><colgroup><col style="width:124px"><col></colgroup>${rows.map(r => `<tr><th>${r[0]}</th><td>${r[1]}</td></tr>`).join('')}</table><div class="muted small" style="margin-top:4px">읽은 때 ${esc(s.status_at)}</div>`);
 }
-function buildJudge(){
-  const w = $('b-wonbu').value.trim(); if(!/^\d+$/.test(w)){ setOut(CUR, 'j-out', '<span class="bad">원부번호를 숫자로 넣으십시오.</span>'); return; }
-  kolisCall('build_collect', 'j-out', t => pywebview.api.build_collect(t.id, w, $('b-instr').value.trim(), $('b-manu').value.trim(), true), `<div class="box run">${ST.run} 회차마다 KOLIS 의 MODS 수정 화면을 열어 현재 값을 읽는 중 (KOLIS 창을 건드리지 마십시오)</div>`);
+async function wbStatus(){ capture(); const t = CUR; const w = (t.v['b-wonbu']||'').trim(); if(!/^\d+$/.test(w)){ setOut(t, 'b1-out', '<span class="bad">원부번호를 숫자로 넣으십시오.</span>'); return; }
+  const r = await pywebview.api.wb_status(t.id, w); if(r.error){ setOut(t, 'b1-out', `<span class="bad">${esc(r.error)}</span>`); return; } start(t, 'wb_status'); setOut(t, 'b1-out', `${ST.run} 읽는 중`); saveTabs(); }
+async function wbCompare(){ const t = CUR; const w = (t.v['b-wonbu']||'').trim(); const r = await pywebview.api.wb_compare(t.id, w); if(r.error){ setOut(t, 'b2-out', `<span class="bad">${esc(r.error)}</span>`); return; } start(t, 'wb_compare'); setOut(t, 'b2-out', `${ST.run} 회차마다 MODS 를 읽어 대조하는 중(바꾸지 않음)`); }
+function b2Show(t){
+  const wb = t.wb||{}, c = wb.compare; if(!c){ setOut(t, 'b2-table', ''); return; }
+  const diffs = (c.diffs||[]).filter(d => d.kind === 'diff'); const auto = (c.diffs||[]).length - diffs.length;
+  const fixMap = {}; (wb.fixes||[]).forEach(f => { fixMap[f.contents_id + '|' + f.path] = f; });
+  const head = c.mode === 'import' ? `반입용 엑셀 ${c.import_rows}행과 KOLIS ${c.count}회차를 칸마다 맞춰 봤습니다(${esc(c.at||'')}).` : `이 원부는 이 프로그램의 반입값이 없어, ${c.count}회차끼리 같아야 할 칸을 맞춰 봤습니다.`;
+  if(!diffs.length){ setOut(t, 'b2-table', `<div class="box ok">${ST.ok} ${head} 다른 칸이 없습니다.${auto ? ` <span class="muted">(KOLIS 가 스스로 바꾸는 표기 ${auto}곳은 제외)</span>` : ''}</div>`); return; }
+  const vol = {}; (wb.contents||[]).forEach(x => { vol[x.contents_id] = x.vol; });
+  const rows = diffs.map((d, i) => { const key = d.contents_id + '|' + d.path; const f = fixMap[key]; const picked = f ? (f.source === 'import' ? 'import' : f.source === 'kolis' ? 'kolis' : 'staff') : 'kolis';
+    const custom = f && f.source === 'staff' ? f.value : '';
+    return `<tr><td>${esc(String(vol[d.contents_id]||d.vol||''))}<div class="muted small">${esc(d.contents_id)}</div></td><td><b>${esc(d.label||'')}</b><div class="muted small" style="word-break:break-all">${esc(d.path)}</div>${d.note ? `<div class="muted small">${esc(d.note)}</div>` : ''}</td><td>${esc(d.import||'(없음)')}</td><td>${esc(d.kolis||'(없음)')}</td><td>
+      <label><input type="radio" name="pick${i}" value="import" ${picked==='import'?'checked':''} ${c.mode!=='import'?'disabled':''} onchange="wbPick(${i})"> 반입값</label>
+      <label><input type="radio" name="pick${i}" value="kolis" ${picked==='kolis'?'checked':''} onchange="wbPick(${i})"> KOLIS 값 그대로</label>
+      <label><input type="radio" name="pick${i}" value="staff" ${picked==='staff'?'checked':''} onchange="wbPick(${i})"> 직접</label><input type="text" id="pickv${i}" value="${esc(custom)}" placeholder="직접 넣을 값" onchange="wbPick(${i}, true)"></td></tr>`; }).join('');
+  setOut(t, 'b2-table', `<div class="box warn">${ST.wait} ${head} 다른 칸 ${diffs.length}개${auto ? ` <span class="muted">(KOLIS 가 스스로 바꾸는 표기 ${auto}곳은 제외)</span>` : ''}. 칸마다 넣을 값을 고르십시오. 「KOLIS 값 그대로」는 보정하지 않는다는 뜻입니다.</div><table class="cmp"><colgroup><col style="width:90px"><col style="width:22%"><col><col><col style="width:30%"></colgroup><tr><th>회차</th><th>칸</th><th>반입값(정본)</th><th>KOLIS 값</th><th>넣을 값</th></tr>${rows}</table>`);
+  t._diffs = diffs;
 }
-async function wonbuEntered(t){
-  // 원부번호를 넣는 순간: KOLIS 에서 준비 상태(복본조사·일괄변경)를 읽어 오고(조회만), 성인물 판단이 있는데 이용제한이 안 됐으면 바로 넣는다(유저 확정 10-03).
-  const w = (t.v['b-wonbu']||'').trim(); if(!/^\d+$/.test(w)) return;
-  const r = await pywebview.api.ledger_status(w, t.id);
-  if(!r.error){ start(t, 'ledger_status'); setOut(t, 's-prep', `<span class="muted">${ST.run} 원부 상태를 읽는 중</span>`); $('s-prep-row').hidden = false; }
-  else buildStatus(t);
+async function wbPick(i, typed){
+  const t = CUR, d = (t._diffs||[])[i]; if(!d) return; const w = (t.v['b-wonbu']||'').trim();
+  let src = (document.querySelector(`input[name="pick${i}"]:checked`)||{}).value || 'kolis'; const custom = ($('pickv' + i)||{}).value || '';
+  if(typed && custom){ src = 'staff'; const rb = document.querySelector(`input[name="pick${i}"][value="staff"]`); if(rb) rb.checked = true; }
+  const value = src === 'import' ? d.import : src === 'kolis' ? d.kolis : custom;
+  const r = await pywebview.api.wb_fix_set(w, [{contents_id: d.contents_id, path: d.path, value, source: src}]); if(r.error){ tell('적지 못했습니다', esc(r.error)); return; }
+  t.wb.fixes = r.fixes; t.wb.prepared = []; b3Show(t); buttons(t); phaseState(t);
 }
-async function autoUseLimit(t){
-  const w = (t.v['b-wonbu']||'').trim(); const j = t.judgment, p = t.prep||{};
-  if(!j || !j.adult || p.use_limit_done || t.running.prep_uselimit || t.ulTried === w) return;
-  t.ulTried = w;
-  const r = await pywebview.api.prep_run(t.id, 'uselimit', w, 'YES'); if(r.error) return;
-  start(t, 'prep_uselimit'); setOut(t, 's-ul-out', `<div class="box run">${ST.run} 성인물로 판단된 작품이라 이용제한구분 「청소년 유해매체물」을 종마다 넣는 중 (KOLIS 창을 건드리지 마십시오)</div>`);
+function b3Show(t){
+  const fx = ((t.wb||{}).fixes||[]); const vol = {}; ((t.wb||{}).contents||[]).forEach(x => { vol[x.contents_id] = x.vol; });
+  if(!fx.length){ setOut(t, 'b3-list', '<span class="muted small">고른 보정값이 없습니다. B-2 표에서 「반입값」 또는 「직접」을 고르면 여기 모입니다.</span>'); return; }
+  const by = {}; fx.forEach(f => { (by[f.contents_id] = by[f.contents_id] || []).push(f); });
+  setOut(t, 'b3-list', `<div class="muted small" style="margin-bottom:4px">보정 ${fx.length}칸 · 회차 ${Object.keys(by).length}건</div><table class="list" style="width:100%"><tr><th>회차</th><th>칸</th><th>넣을 값</th><th>출처</th></tr>${fx.map(f => `<tr><td>${esc(String(vol[f.contents_id]||''))} <span class="muted small">${esc(f.contents_id)}</span></td><td>${esc(f.xpath||f.path)}</td><td>${esc(f.value||'(비움)')}</td><td class="muted">${({import:'반입값', staff:'직접'})[f.source]||esc(f.source)}</td></tr>`).join('')}</table>`);
 }
-async function buildStatus(t){
-  t = t || CUR; const w = (t.v['b-wonbu']||'').trim(); if(!w) return;
-  const r = await pywebview.api.build_status(w); t.build_items = r.items || []; t.prep = r.prep || {}; t.judgment = r.judgment || null; t.hasBuild = !!r.has_build; renderTabs();
-  prepShow(t); commonShow(t);
-  const stage = i => i.stage==='saved' ? ST.ok + ' 저장' : i.stage==='filled' ? ST.wait + ' 채움 · 저장 전' : i.stage==='judged' ? ST.todo + ' 판단 끝' : ST.todo + ' 판단 전';
-  if(Number.isInteger(t.sel) && !t.build_items.some(i => i.row === t.sel)) t.sel = null;
-  const epg = pager('ep', t.build_items.length, 20, t);
-  setOut(t, 'b-status', t.build_items.length ? `<div class="muted small" style="margin-bottom:4px">회차 ${t.build_items.length}건. 줄을 누르면 그 회차의 판단 근거가 아래에 나오고, 채우기·저장이 그 회차에 적용됩니다.</div><table class="status" style="width:100%"><colgroup><col style="width:56px"><col><col style="width:150px"><col style="width:100px"></colgroup><tr><th>번호</th><th>회차</th><th>상태</th><th>시각</th></tr>` + t.build_items.slice(epg.from, epg.to).map(i => `<tr class="pick${t.sel===i.row ? ' sel' : ''}" onclick="selectEp(${i.row})" title="${esc(i.contents_id||'')}"><td>${i.row+1}</td><td>${esc(i.title||'')} ${esc(i.part||'')}</td><td>${stage(i)}</td><td class="muted">${esc((i.saved_at || i.applied_at || i.judged_at || '').slice(5))}</td></tr>`).join('') + '</table>' + epg.html : '<span class="muted small">이 원부번호의 회차 목록이 아직 없습니다. 「KOLIS 값 읽어 대조」나 「보정 판단」을 누르면 회차 목록부터 읽습니다.</span>');
-  epShow(t);
-  if(t === CUR) buttons(t);
-  if(t === CUR) phaseState(t);
-  autoUseLimit(t);
+async function wbFixApply(send){
+  const t = CUR, w = (t.v['b-wonbu']||'').trim(); const ids = [...new Set(((t.wb||{}).fixes||[]).map(f => f.contents_id))]; if(!ids.length) return;
+  if(send){ if(!await ask('KOLIS 에 저장합니다 — 되돌릴 수 없습니다', `원부 ${esc(w)} 의 회차 ${ids.length}건에 고른 값을 넣고 저장합니다. 회차마다 저장 전·후 MODS 를 대조해 고른 칸 밖이 바뀌면 그 자리에서 멈춥니다.`, 'KOLIS 에 저장')) return; }
+  else if(!await ask('화면에 넣어 봅니다(보내지 않음)', `회차 ${ids.length}건의 KOLIS MODS 수정 화면을 차례로 열어 고른 값을 넣고 저장 본문만 만들어 둡니다. 저장은 하지 않습니다.`, '넣어 보기', false)) return;
+  const r = await pywebview.api.wb_fix_apply(t.id, w, ids, send ? 'YES' : ''); if(r.error){ setOut(t, 'b3-out', `<span class="bad">${esc(r.error)}</span>`); return; }
+  start(t, 'wb_fix_apply'); setOut(t, 'b3-out', `<div class="box run">${ST.run} ${send ? '회차마다 넣고 저장하는 중' : '회차마다 화면에 넣어 보는 중(저장 안 함)'} (KOLIS 창을 건드리지 마십시오)</div>`);
 }
-function selectEp(row){ const t = CUR; t.sel = row; $('b-status').querySelectorAll('tr.pick').forEach(tr => tr.classList.toggle('sel', tr.firstElementChild.textContent == String(row+1))); t.html['b-status'] = $('b-status').innerHTML; setOut(t, 'b-result', ''); setOut(t, 'b-out', ''); setOut(t, 'b-save-out', ''); $('b-ack').checked = false; epShow(t); buttons(t); }
-const CONF = c => ({high:'높음', medium:'보통', mid:'보통', low:'낮음'})[c] || esc(c||'');
-function evList(ev){ return (ev||[]).length ? '<ul class="ev">' + ev.map(e => `<li>${e.url ? link(e.url, e.url.replace(/^https?:\/\//,'').slice(0,60)) + ' — ' : ''}${esc(e.quote||'')}</li>`).join('') + '</ul>' : ''; }
-function pager(key, total, size, t){
-  t.page = t.page||{}; const n = Math.max(1, Math.ceil(total/size)); let cur = Math.min(Math.max(1, t.page[key]||1), n); t.page[key] = cur;
-  const from = (cur-1)*size, to = Math.min(total, cur*size);
-  const html = n > 1 ? `<div class="pager"><span>${from+1}–${to} / 전체 ${total}</span><button class="secondary" ${cur<=1?'disabled':''} onclick="goPage('${key}',${cur-1})">이전</button><b>${cur}</b><span>/ ${n}</span><button class="secondary" ${cur>=n?'disabled':''} onclick="goPage('${key}',${cur+1})">다음</button></div>` : '';
-  return {from, to, html};
+function b4Show(t){
+  const s = (t.wb||{}).state||{}; if(!s.status_at){ setOut(t, 'b4-out', ''); return; }
+  if(!s.adult){ setOut(t, 'b4-out', `<span class="muted">${ST.ok} 성인물이 아니라 할 일이 없습니다.</span>`); return; }
+  const ul = s.use_limit||[]; const okn = ul.filter(x => x.ok).length, skip = ul.filter(x => x.skipped).length, bad = ul.length - okn - skip;
+  setOut(t, 'b4-out', s.use_limit_done ? `${bad ? ST.wait : ST.ok} ${ul.length}종 — 넣음 ${okn}${skip ? ` · 이미 들어 있음 ${skip}` : ''}${bad ? ` · <span class="warn">실패 ${bad}</span>` : ''} (${esc(s.use_limit_at||'')})` : `<span class="warn">${ST.wait} 성인물로 판단한 작품입니다. 상태를 읽은 뒤 프로그램이 이어서 넣습니다.</span>`);
 }
-function goPage(key, n){ CUR.page = CUR.page||{}; CUR.page[key] = n; if(key==='dup') dupShow(CUR); else if(key.startsWith('lb')) lbTable(); else buildStatus(CUR); }
-function dupTableHtml(rows, t, key){
-  const V = x => x ? esc(String(x.vol||'').replace(/권$/, '')) + '권' : ''; const DAY = x => x ? String(x).replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3') : '';
-  const who = x => x ? `${esc(x.publisher||'')}${x.isbn ? ' · ISBN ' + esc(x.isbn) + ' · 출판사 단행본' : (x.species_gbn==='D1' ? ' · 플랫폼 수집본' : '')}${x.prod_day ? ' · 발행 ' + DAY(x.prod_day) : ''}` : '';
-  const VER = {dup:['bad','복본'], not:['ok','복본 아님'], unsure:['warn','판단 불가 — 직원 확인']};
-  const pg = pager(key, rows.length, 5, t);
-  return '<table class="list dup" style="margin-top:6px"><colgroup><col style="width:21%"><col><col style="width:24%"></colgroup><tr><th>우리 자료</th><th>비교한 등록 자료 · 판정 · 이유와 본 곳</th><th>확인할 점</th></tr>' + rows.slice(pg.from, pg.to).map(r => {
-    const main = r.pairs.filter(x => x.verdict !== 'not' || (x.cand && x.cand.vol == r.our.vol)); const rest = r.pairs.filter(x => !main.includes(x));
-    const lines = main.map(x => { const v = VER[x.verdict]||['', x.verdict]; return `<div style="margin-bottom:6px"><div><b>등록 자료 ${V(x.cand)}</b> <span class="muted small">${who(x.cand)}</span> <a href="#" class="small" onclick="kolisShow('species','${esc(x.cand_key)}');return false" title="Edge 에 이 등록 자료의 KOLIS 종 상세 화면을 엽니다">KOLIS 에서 보기</a></div><div><span class="${v[0]}">${v[1]}</span> <span class="muted small">확신 ${CONF(x.confidence)}</span></div><div class="muted">${esc(x.reason||'')}</div>${evList(x.evidence)}</div>`; }).join('');
-    const restTxt = rest.length ? `<div class="muted small">나머지 ${rest.length}종(${rest.map(x => V(x.cand)).join('·')})은 다른 권이라 복본 아님</div>` : '';
-    const checks = main.filter(x => x.to_check).map(x => esc(x.to_check)).join('<br>');
-    return `<tr><td><b>${esc(r.our.title||'')} ${V(r.our)}</b><div class="muted small">${who(r.our).replace(/ · /g, '<br>')}</div></td><td>${lines}${restTxt}</td><td class="warn">${checks}</td></tr>`; }).join('') + '</table>' + pg.html;
+async function wbUseLimit(auto){
+  const t = CUR, w = (t.v['b-wonbu']||'').trim(); if(!auto && !await ask('이용제한을 넣습니다', `원부 ${esc(w)} 의 모든 종에 이용제한구분 「청소년 유해매체물」을 저장합니다(이미 들어간 종은 건너뜀).`, '이용제한 넣기')) return;
+  const r = await pywebview.api.wb_use_limit(t.id, w, 'YES'); if(r.error){ setOut(t, 'b4-out', `<span class="bad">${esc(r.error)}</span>`); return; }
+  start(t, 'wb_use_limit'); setOut(t, 'b4-out', `<div class="box run">${ST.run} 종마다 이용제한을 넣는 중 (KOLIS 창을 건드리지 마십시오)</div>`);
 }
-function dupShow(t){
-  // 3-1 복본조사 상태: 한 줄. 후보가 있었을 때만 판정 표를 아래에 붙인다.
-  const p = t.prep||{}, d = p.dup||{}, c = d.counts||{}, rows = d.rows||[];
-  const stat = (p.status||[]).map(x => x.replace(/^DS_\d+\s*/, '')).join(', ');
-  let line = '', extra = '';
-  if(p.dupexmin_done) line = `${ST.ok} 완료${p.acc_count != null ? ` — ${p.acc_count}건 ${esc(stat)}` : ''}${d.pairs ? ` · 후보 ${d.candidates}종(복본 ${c.dup||0} · 아님 ${c.not||0} · 판단 불가 ${c.unsure||0})` : ' · 후보 없음'}`;
-  else if(p.dupexmin_run) line = `${(c.dup||c.unsure) ? ST.wait : ST.todo} 완료 전${d.pairs ? ` — 후보 ${d.candidates}종(복본 ${c.dup||0} · 아님 ${c.not||0} · 판단 불가 ${c.unsure||0})${(c.dup||c.unsure) ? ' · 담당자 문의' : ''}` : ' — 후보 없음'}`;
-  else line = `<span class="muted">${ST.todo} 안 함</span>`;
-  if(d.pairs) line += ` <a href="#" class="small" onclick="openLedgerFor('${esc((t.v['b-wonbu']||'').trim())}');return false">판정 보기</a>`;
-  setOut(t, 's-dup', line + extra);
+async function wonbuEntered(t){ const w = (t.v['b-wonbu']||'').trim(); if(!/^\d+$/.test(w)) return; await wbShow(t); if(!((t.wb||{}).state||{}).status_at) wbStatus(); }
+
+// ============================================================ C 점검·납품
+function c1Show(t){
+  const ck = (t.wb||{}).check||{}; if(!ck.nth){ setOut(t, 'c1-out', ''); return; }
+  setOut(t, 'c1-out', `<div class="box ${(ck.errors||0) ? 'warn' : 'ok'}">${(ck.errors||0) ? ST.wait : ST.ok} ${ck.nth}차 점검 (${esc(ck.at||'')}) — 오류 ${ck.errors||0} · 확인 ${ck.checks||0} · ${link(ck.file, '점검 시트 열기')}${ck.confirmed ? ` · ${ST.ok} 확정됨` : ''}</div>`);
 }
-function prepShow(t){
-  const p = t.prep||{};
-  // 작업자 탭: 복본조사·일괄변경은 과장님 일(복본조사). 여기서는 준비가 안 됐을 때만 한 줄 알린다.
-  const ready = p.dupexmin_done && p.batch_change_done; const known = p.acc_count != null || p.dupexmin_run || p.dupexmin_done;
-  const msg = !known ? '' : ready ? '' : !p.dupexmin_done ? `${ST.wait} 이 원부는 아직 복본조사가 끝나지 않았습니다.` : `${ST.wait} 이 원부는 아직 일괄변경이 되지 않았습니다.`;
-  setOut(t, 's-prep', msg); if(t === CUR) $('s-prep-row').hidden = !msg;
-  return;
-  const v = p.batch_values||{};
-  setOut(t, 's-bat', p.batch_change_done ? `${ST.ok} 완료 — ${p.species}종 · 자료유형1 ${esc(v.OFFER_DBCODE_1S)} · 자료유형2 ${esc(v.OFFER_DBCODE_2S)} · 발행자구분 ${esc(v.PUBLISHER_CODE)}${p.batch_verified_at ? ` · 다시 읽어 확인 ${esc(String(p.batch_verified_at).slice(5,16))}` : ''}` : p.dupexmin_done ? `<span class="warn">${ST.wait} 안 됨</span>` : `<span class="muted">${ST.todo} 전</span>`);
-  const ul = p.use_limit||[]; const okn = ul.filter(x => x.ok).length, skip = ul.filter(x => x.skipped).length, bad = ul.length - okn - skip;
-  setOut(t, 's-ul', p.use_limit_done ? `${bad ? ST.wait : ST.ok} ${ul.length}종 — 청소년 유해매체물 넣음 ${okn}${skip ? ` · 이미 들어 있음 ${skip}` : ''}${bad ? ` · <span class="warn">실패 ${bad}</span>` : ''}` : (t.judgment && t.judgment.adult) ? `<span class="warn">${ST.wait} 성인물로 판단했지만 아직 넣지 않았습니다.</span>` : t.judgment ? `<span class="muted">${ST.ok} 성인물이 아니라 해당 없음</span>` : `<span class="muted">${ST.todo} 1 의 반입값(성인물 여부)이 들어오면 정해집니다.</span>`);
+async function ckRun(withAgent){
+  const t = CUR, w = (t.v['b-wonbu']||'').trim();
+  const r = await pywebview.api.ck_run(t.id, w, !!withAgent); if(r.error){ setOut(t, 'c1-out', `<span class="bad">${esc(r.error)}</span>`); return; }
+  start(t, 'ck_run'); setOut(t, 'c1-out', `<div class="box run">${ST.run} 회차마다 MODS 를 받아 점검 시트를 만드는 중${withAgent ? ' (판단 항목은 조사 도구가 봅니다 — 몇 분)' : ''}</div>`);
 }
-async function staffAuthor(name){
-  const t = CUR, w = (t.v['b-wonbu']||'').trim(); const el = document.getElementById('ac-' + name); const no = el ? el.value.trim() : '';
-  if(no && !/^KAC[0-9A-Z]+$/i.test(no)){ tell('전거 번호', '전거 번호는 KAC 로 시작하는 번호입니다(예: KAC202574425).'); return; }
-  const ok = await ask('직원 결정으로 바꿉니다', no ? `저자 「${esc(name)}」을 전거 번호 <b>${esc(no)}</b> 에 연결하는 것으로 정합니다. 프로그램 판단 대신 이 결정이 쓰입니다. 1화를 저장할 때 KOLIS 화면에서 연결한 번호와 같은지 확인하십시오.` : `저자 「${esc(name)}」을 연결하지 않는 것으로 정합니다.`, '이렇게 정함', false); if(!ok) return;
-  const r = await pywebview.api.build_set_author(w, name, no, '', ''); if(r.error){ tell('바꾸지 못했습니다', esc(r.error)); return; }
-  buildStatus(t);
+function c2Show(t){
+  const ck = (t.wb||{}).check||{}; const fs = ck.findings||[]; const dec = ck.decisions||{};
+  if(!ck.nth){ setOut(t, 'c2-table', '<span class="muted small">점검을 실행하면 여기에 지적이 나옵니다.</span>'); setOut(t, 'c2-out', ''); return; }
+  if(!fs.length){ setOut(t, 'c2-table', `<div class="box ok">${ST.ok} 지적이 없습니다. 확정하면 「오류없음」 파일을 만듭니다.</div>`); return; }
+  const vol = {}; ((t.wb||{}).contents||[]).forEach((x, i) => { vol[i] = x.vol; });
+  const rows = fs.map((f, i) => { const key = f.row + '|' + f.col; const d = dec[key] || ''; const isErr = f.level === 'error';
+    return `<tr class="${isErr ? 'err' : 'chk'}"><td>${esc(String(vol[f.row]||f.row+1))}</td><td>${esc(f.col)}</td><td>${isErr ? '<b class="bad">오류</b>' : '<b style="color:#2b6cb0">확인</b>'}<div class="muted small">${f.by === 'agent' ? '판단' : '형식'}</div></td><td>${esc(f.msg)}${f.basis ? `<div class="muted small">근거: ${esc(f.basis)}</div>` : ''}${(f.evidence||[]).length ? '<ul class="ev">' + f.evidence.map(e => `<li>${esc(e.file||'')} ${esc(e.quote||'')}</li>`).join('') + '</ul>' : ''}</td><td>${isErr ? `<label><input type="radio" name="dec${i}" value="" ${!d?'checked':''} onchange="ckDec(${i},'')"> 오류</label><label><input type="radio" name="dec${i}" value="ok" ${d==='ok'?'checked':''} onchange="ckDec(${i},'ok')"> 틀린 게 없음</label>` : `<label><input type="radio" name="dec${i}" value="" ${!d?'checked':''} onchange="ckDec(${i},'')"> 보류</label><label><input type="radio" name="dec${i}" value="ok" ${d==='ok'?'checked':''} onchange="ckDec(${i},'ok')"> 이상 없음</label><label><input type="radio" name="dec${i}" value="error" ${d==='error'?'checked':''} onchange="ckDec(${i},'error')"> 오류로</label>`}</td></tr>`; }).join('');
+  setOut(t, 'c2-table', `<table class="fnd"><colgroup><col style="width:70px"><col style="width:22%"><col style="width:64px"><col><col style="width:26%"></colgroup><tr><th>회차</th><th>칸</th><th>구분</th><th>내용</th><th>직원 결정</th></tr>${rows}</table>`);
+  if(ck.confirmed) setOut(t, 'c2-out', `${ST.ok} 확정됨 — ${link(ck.file, esc(ck.delivered_name||'납품 파일'))}`);
 }
-async function modsCompare(){
-  const t = CUR, w = (t.v['b-wonbu']||'').trim(); if(!/^\d+$/.test(w)){ setOut(t, 'cmp-out', '<span class="bad">원부번호를 숫자로 넣으십시오.</span>'); return; }
-  const r = await pywebview.api.mods_compare(t.id, w); if(r.error){ setOut(t, 'cmp-out', `<span class="bad">${esc(r.error)}</span>`); return; }
-  start(t, 'mods_compare'); setOut(t, 'cmp-out', `<div class="box run">${ST.run} 콘텐츠마다 KOLIS 의 MODS 를 읽는 중 (바꾸지 않음)</div>`);
-}
-function compareShow(t, p){
-  const n = p.count||0, d = p.diffs||[];
-  const head = p.mode === 'import' ? `반입용 엑셀 ${esc(p.import_rows||'')}행과 KOLIS ${n}건을 칸마다 맞춰 봤습니다.` : `이 원부는 이 프로그램이 만든 반입용 엑셀이 없어, ${n}건의 회차끼리 같아야 할 칸(표제·저자·발행처·발행지·이용대상·주기·주제명 등)을 맞춰 봤습니다.`;
-  if(!d.length){ setOut(t, 'cmp-out', `<div class="box ok">${ST.ok} ${head} 다른 칸이 없습니다.</div>`); return; }
-  const rows = d.map(x => `<tr><td>${esc(String(x.vol||''))}</td><td style="white-space:nowrap">${esc(x['칸'])}</td><td>${esc(String(x['반입값']||''))}</td><td>${esc(String(x.KOLIS||''))}</td><td class="muted small">${esc(x.note||'')}</td></tr>`).join('');
-  setOut(t, 'cmp-out', `<div class="box ${p.mode==='import' ? 'warn' : 'plain'}">${p.mode==='import' ? ST.wait : ST.todo} ${head} 다른 칸 ${d.length}개.</div><table class="list" style="width:100%;table-layout:fixed"><colgroup><col style="width:56px"><col style="width:90px"><col><col><col style="width:22%"></colgroup><tr><th>회차</th><th>칸</th><th>${p.mode==='import' ? '반입값' : '다른 회차들'}</th><th>KOLIS</th><th></th></tr>${rows}</table>`);
-}
-function commonShow(t){
-  const j = t.judgment; if(!j){ setOut(t, 'j-common', ''); return; }
-  if(j.from_import){ setOut(t, 'j-common', `<div class="box plain small">1 의 반입값이 정본입니다 — ${esc(j.title||'')} · 회차 ${j.count||''}건${j.adult ? ' · <b class="warn">성인물</b>(이용제한을 넣습니다)' : ''}. 보정 판단은 대조에서 다른 칸이 나왔을 때만 하십시오.</div>`); return; }
-  const rows = [];
-  (j.fixes||[]).forEach(f => rows.push([`보정 ${esc(f.contents_id||'')} ${esc(f.path||'')}`, `${esc(f.kolis||'')} → <b>${esc(f.proposed||'')}</b>`, `${esc(f.basis||'')}. ${esc(f.reason||'')}${evList(f.evidence)}`]));
-  (j.authors||[]).forEach(a => rows.push([`저자 ${esc(a.name)}${a.role ? ' (' + esc(a.role) + ')' : ''}`, (a.decision==='link' ? `전거 연결 ${esc(a.choice_signpost||a.ac_control_no||'')} <span class="muted">${esc(a.ac_control_no||'')}</span>` : '전거 연결 안 함') + (a.source==='staff' ? ' <span class="ok small">직원 결정</span>' : '') + `<div class="row small" style="margin:4px 0 0"><input type="text" id="ac-${esc(a.name)}" placeholder="전거 번호(KAC…)" value="${esc(a.ac_control_no||'')}" style="max-width:150px;padding:3px 6px"><button class="secondary" style="padding:2px 8px;font-size:12px;min-width:0" onclick="staffAuthor('${esc(a.name)}')">직원 결정으로 바꾸기</button></div>`, (a.source==='staff' ? `${esc(a.staff_reason||'직원이 확인해 정함')}` : `확신 ${CONF(a.confidence)}. ${esc(a.reason||'')}${evList(a.evidence)}`)]));
-  rows.push(['주제명', (j.subjects||[]).map(x => esc(x.term)).join(' · '), '사업 고정값 두 묶음입니다.']);
-  const pb = j.publisher||{}; rows.push(['발행처', esc(pb.current||'') + (pb.change ? ` → <span class="warn">제안 ${esc(pb.change)}</span>` : ' (그대로 둠)'), esc(pb.reason||'') + evList(pb.evidence)]);
-  const pl = j.place||{}; rows.push(['발행지', esc(pl.verified||pl.current||''), (pl.code ? `코드 ${esc(pl.code)}. ` : '') + evList(pl.evidence)]);
-  rows.push(['성인물', j.adult ? '<b class="warn">성인물</b> — 이용제한 「청소년 유해매체물」을 넣습니다' : '아님', esc(j.adult_reason||'')]);
-  const rv = j.review||{};
-  setOut(t, 'j-common', `<div class="box plain"><b>작품 전체 판단</b> <span class="muted small">${esc(j.title||'')} · 회차 ${j.count||''}건 · 검수 ${rv.done ? '마침' : '하지 않음'}${(rv.findings||[]).length ? ` · 지적 ${rv.findings.length}건 반영` : ''}</span>`
-    + '<table class="list" style="margin-top:6px"><tr><th>항목</th><th>정한 값</th><th>이유와 근거</th></tr>' + rows.map(r => `<tr><td style="white-space:nowrap">${r[0]}</td><td>${r[1]}</td><td class="muted">${r[2]}</td></tr>`).join('') + '</table>'
-    + ((j.issues||[]).length ? `<div style="margin-top:6px"><b>참고 사항</b><ul class="ev">${j.issues.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>` : '')
-    + ((j.notes_for_staff||[]).length ? `<div class="box warn" style="margin-top:6px"><b>확인이 필요한 항목</b><ul class="ev">${j.notes_for_staff.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>` : '') + '</div>');
-}
-function epShow(t){
-  if(!Number.isInteger(t.sel)){ setOut(t, 'b-ep', t.build_items && t.build_items.length ? '<span class="muted small">회차를 고르십시오.</span>' : ''); return; }
-  const it = t.build_items.find(i => i.row === t.sel) || {}; const e = ((t.judgment||{}).episodes||{})[it.contents_id];
-  if(!e){ setOut(t, 'b-ep', `<div class="box plain"><b>${esc(it.title||'')} ${esc(it.part||'')}</b> <span class="muted small">${esc(it.contents_id||'')}</span><div class="muted">이 회차의 보정 판단이 아직 없습니다. 대조에서 다른 칸이 있을 때 「보정 판단」을 하십시오.</div></div>`); return; }
-  const u = e.uci||{}; const rows = [];
-  rows.push(['UCI', u.value ? esc(u.value) : '없음', u.value ? evList(u.evidence) : (u.searched||[]).map(x => `${esc(x.where||'')}: ${esc(x.how||'')}`).join('<br>')]);
-  rows.push(['다른이름', (e.alternative_names||[]).length ? e.alternative_names.map(x => esc(typeof x === 'string' ? x : (x.name||x.value||JSON.stringify(x)))).join(' · ') : '없음(원문에 있을 때만 넣습니다)', (e.not_verifiable||[]).map(x => esc(x)).join(' · ')]);
-  setOut(t, 'b-ep', `<div class="box plain"><b>${esc(it.title||'')} ${esc(it.part||'')}</b> <span class="muted small">${esc(it.contents_id||'')} · ${it.stage==='saved' ? '저장함' : it.stage==='filled' ? '채움(저장 전)' : '판단 끝'}</span>`
-    + '<table class="list" style="margin-top:6px"><tr><th>항목</th><th>정한 값</th><th>근거</th></tr>' + rows.map(r => `<tr><td style="white-space:nowrap">${r[0]}</td><td>${r[1]}</td><td class="muted">${r[2]}</td></tr>`).join('') + '</table>'
-    + ((e.issues||[]).length ? `<ul class="ev">${e.issues.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>` : '') + ((e.notes||[]).length ? `<div class="box warn"><ul class="ev">${e.notes.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>` : '') + '</div>');
-}
-function buildRun(){
-  const w = $('b-wonbu').value.trim(), row = CUR.sel;
-  if(!/^\d+$/.test(w)){ setOut(CUR, 'b-out', '<span class="bad">원부번호를 숫자로 넣으십시오.</span>'); return; } if(!Number.isInteger(row)){ setOut(CUR, 'b-out', '<span class="bad">회차 표에서 회차를 고르십시오.</span>'); return; }
-  setOut(CUR, 'b-result', ''); setOut(CUR, 'b-save-out', ''); $('b-ack').checked = false;
-  if(!CUR.hasBuild){ setOut(CUR, 'b-out', '<span class="bad">보정 판단을 먼저 하십시오.</span>'); return; }
-  kolisCall('build_fill', 'b-out', t => pywebview.api.build_fill(t.id, w, row), `<div class="box run">${ST.run} 이 회차의 KOLIS 화면을 열어 채우는 중</div>`);
-}
-async function buildSave(){
-  const w = $('b-wonbu').value.trim(), row = CUR.sel; if(!Number.isInteger(row)) return;
-  if(!await ask('KOLIS 에 저장합니다', `원부 ${esc(w)} 의 ${row+1}번 회차 MODS 를 저장합니다. 저장하면 되돌릴 수 없습니다.`, 'KOLIS 에 저장')) return;
-  kolisCall('build_save', 'b-save-out', t => pywebview.api.build_save(t.id, w, row, 'YES'), `<div class="box run">${ST.run} 저장하는 중</div>`);
-}
-function showBuild(t, p){
-  const conf = c => ({high:'높음', medium:'보통', mid:'보통', low:'낮음'})[c] || esc(c||'');
-  const rows = [];
-  (p.authors||[]).forEach(a => rows.push([`저자 ${esc(a.name)} (${esc(a.role)})`, a.decision==='link' ? `전거 연결 <span title="${esc(a.ac)}">${esc(a.signpost||a.ac)}</span>` : '전거 연결 안 함', `후보 ${a.candidates}건 · 확신 ${conf(a.confidence)}. ${esc(a.reason)}`, (a.not_verifiable||[]).map(x => esc(x).replace('직원이 ', '')).join(' ') ]));
-  rows.push(['주제명', (p.subjects||[]).map(s => `<span title="${esc(s.split(' ').pop())}">${esc(s.split(' ')[0].replace(/\[.*\]/, ''))}</span>`).join(' · '), '사업 고정값입니다.', '']);
-  const uciSearch = (p.uci_searched||[])[0] || ''; const uciUrl = (uciSearch.match(/https?:\/\/\S+/)||[''])[0];
-  rows.push(['UCI', p.uci ? esc(p.uci) : '없음', p.uci ? '' : '서지정보유통지원시스템에서 작품명·ISBN 으로 검색했으나 0건입니다.' + (uciUrl ? ' ' + link(uciUrl, '검색 결과 보기') : ''), '']);
-  rows.push(['발행처', esc(p.publisher) + (p.publisher_change ? ` → <span class="warn">제안 ${esc(p.publisher_change)}</span>` : ' (그대로 둠)'), esc(p.publisher_reason||''), '']);
-  const pl = String(p.place||''); rows.push(['발행지', esc(pl.split('→')[0].replace(/\/\s*\w+$/, '').trim()), pl.includes('→') ? '소재지 ' + esc(pl.split('→')[1].replace(/\/\w+/, '').replace('확인', '').trim()) + ' 확인' : '', '']);
-  const rv = p.review||{};
-  const html = `<div class="muted small" style="margin-bottom:4px">${esc(p.title)} ${esc(p.part)} · 콘텐츠ID ${esc(p.contents_id)} · ${link(p.build_path, '결과 파일')}${((p.apply||{}).shots||[]).length ? ' · ' + link(p.apply.shots[0], '화면 캡처') : ''}</div>`
-    + '<table class="list"><tr><th>항목</th><th>넣은 값</th><th>근거</th><th>확인 요청</th></tr>' + rows.map(r => `<tr><td style="white-space:nowrap">${r[0]}</td><td>${r[1]}</td><td class="muted">${r[2]}</td><td class="warn">${r[3]||''}</td></tr>`).join('') + '</table>'
-    + ((p.issues||[]).length ? `<div class="box plain"><b>참고 사항</b><ul class="ev">${p.issues.map(x=>`<li>${esc(x).replace(/^[a-zA-Z_\/]+:\s*/, '')}</li>`).join('')}</ul></div>` : '')
-    + `<div class="box warn"><b>확인이 필요한 항목</b><ul class="ev">${(p.notes||[]).map(x=>`<li>${esc(x).replace(/직원이 /g, '')}</li>`).join('')}</ul></div>`
-    + (p.remaining && p.remaining.length ? `<div class="box bad">${ST.wait} 검사에 남은 항목<ul class="ev">${p.remaining.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>` : '')
-    + `<div class="muted small">검수 ${rv.done ? '마침' : '하지 않음'}${(rv.findings||[]).length ? ` · 지적 ${rv.findings.length}건 반영` : ''}</div>`;
-  setOut(t, 'b-result', html);
+function ckDec(i, v){ const t = CUR; const f = (((t.wb||{}).check||{}).findings||[])[i]; if(!f) return; t.wb.check.decisions = t.wb.check.decisions || {}; if(v) t.wb.check.decisions[f.row + '|' + f.col] = v; else delete t.wb.check.decisions[f.row + '|' + f.col]; }
+async function ckConfirm(){
+  const t = CUR, w = (t.v['b-wonbu']||'').trim(); const ck = (t.wb||{}).check||{};
+  const dec = ck.decisions||{}; const fs = ck.findings||[]; const pending = fs.filter(f => f.level === 'check' && !dec[f.row + '|' + f.col]).length;
+  if(pending && !await ask('보류한 확인 칸이 있습니다', `확인 칸 ${pending}개가 보류입니다. 보류는 파란 칸으로 남습니다. 그대로 확정하시겠습니까?`, '그대로 확정', false)) return;
+  if(!await ask('확정하고 납품 파일을 만듭니다', `${ck.nth}차 점검을 확정합니다. 가이드 이름(2026-원부 n차점검(…))으로 파일을 만듭니다. 오류가 남아 있으면 B-3 에서 고치고 다음 차수 점검을 돌리십시오.`, '확정', false)) return;
+  const r = await pywebview.api.ck_confirm(t.id, w, ck.nth, dec); if(r.error){ setOut(t, 'c2-out', `<span class="bad">${esc(r.error)}</span>`); return; }
+  setOut(t, 'c2-out', `${ST.ok} ${link(r.file, esc(r.name))} — 오류 ${r.errors}건. 웹하드에 올리십시오.${r.errors ? ' 오류는 B-3 에서 고친 뒤 다음 차수 점검을 돌리십시오.' : ''}`); await wbShow(t);
 }
 
 // ============================================================ 복본조사 (고정 탭)
 let LB_TIMER = null, LB_LAST = '';
 function lbInput(){ clearTimeout(LB_TIMER); LB_TIMER = setTimeout(async () => { const r = await pywebview.api.ledger_parse($('lb-input').value); LEDGER.lb.wonbus = r.wonbus; $('lb-parsed').textContent = r.count ? `원부 ${r.count}개` : '원부번호가 없습니다.'; const key = r.wonbus.join(','); if(key && key !== LB_LAST && !busy(LEDGER)){ LB_LAST = key; lbStatus(); } else lbButtons(); }, 700); }
 async function lbShow(){ const t = LEDGER; const r = await pywebview.api.ledger_table($('lb-input').value); if(!$('lb-input').value.trim() && r.wonbus.length){ $('lb-input').value = r.wonbus.join('\n'); LB_LAST = r.wonbus.join(','); } t.lb.wonbus = r.wonbus; t.lb.rows = r.rows; $('lb-parsed').textContent = r.wonbus.length ? `원부 ${r.wonbus.length}개` : ''; ['lb-out','lb-process-out'].forEach(id => { $(id).innerHTML = t.html[id] || ''; }); lbTable(); lbButtons(); }
-// 줄 하나의 상태와 "다음 할 일"
 function lbStage(r){
   if(r.error) return {icon:ST.bad, head:'실패', sub:esc(r.error), kind:'need', next:'다시 처리'};
   const c = (r.dup||{}).counts||{}, pairs = (r.dup||{}).pairs||0, nc = (r.dup||{}).candidates||0; const when = r.dupexmin_at ? String(r.dupexmin_at).slice(5,16) : '';
@@ -796,9 +694,29 @@ function lbStage(r){
   if(r.acc_count != null) return {icon:ST.todo, head:'복본조사 안 함', sub:'', kind:'ready', next:'복본조사 → 후보 없으면 완료 처리 → 일괄변경'};
   return {icon:ST.todo, head:'읽는 중', sub:'', kind:'none', next:''};
 }
+const CONF = c => ({high:'높음', medium:'보통', mid:'보통', low:'낮음'})[c] || esc(c||'');
+function evList(ev){ return (ev||[]).length ? '<ul class="ev">' + ev.map(e => `<li>${e.url ? link(e.url, e.url.replace(/^https?:\/\//,'').slice(0,60)) + ' — ' : ''}${esc(e.quote||'')}</li>`).join('') + '</ul>' : ''; }
+function pager(key, total, size, t){
+  t.page = t.page||{}; const n = Math.max(1, Math.ceil(total/size)); let cur = Math.min(Math.max(1, t.page[key]||1), n); t.page[key] = cur;
+  const from = (cur-1)*size, to = Math.min(total, cur*size);
+  const html = n > 1 ? `<div class="pager"><span>${from+1}–${to} / 전체 ${total}</span><button class="secondary" ${cur<=1?'disabled':''} onclick="goPage('${key}',${cur-1})">이전</button><b>${cur}</b><span>/ ${n}</span><button class="secondary" ${cur>=n?'disabled':''} onclick="goPage('${key}',${cur+1})">다음</button></div>` : '';
+  return {from, to, html};
+}
+function goPage(key, n){ CUR.page = CUR.page||{}; CUR.page[key] = n; lbTable(); }
+function dupTableHtml(rows, t, key){
+  const V = x => x ? esc(String(x.vol||'').replace(/권$/, '')) + '권' : ''; const DAY = x => x ? String(x).replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3') : '';
+  const who = x => x ? `${esc(x.publisher||'')}${x.isbn ? ' · ISBN ' + esc(x.isbn) + ' · 출판사 단행본' : (x.species_gbn==='D1' ? ' · 플랫폼 수집본' : '')}${x.prod_day ? ' · 발행 ' + DAY(x.prod_day) : ''}` : '';
+  const VER = {dup:['bad','복본'], not:['ok','복본 아님'], unsure:['warn','판단 불가 — 직원 확인']};
+  const pg = pager(key, rows.length, 5, t);
+  return '<table class="list dup" style="margin-top:6px"><colgroup><col style="width:21%"><col><col style="width:24%"></colgroup><tr><th>우리 자료</th><th>비교한 등록 자료 · 판정 · 이유와 본 곳</th><th>확인할 점</th></tr>' + rows.slice(pg.from, pg.to).map(r => {
+    const main = r.pairs.filter(x => x.verdict !== 'not' || (x.cand && x.cand.vol == r.our.vol)); const rest = r.pairs.filter(x => !main.includes(x));
+    const lines = main.map(x => { const v = VER[x.verdict]||['', x.verdict]; return `<div style="margin-bottom:6px"><div><b>등록 자료 ${V(x.cand)}</b> <span class="muted small">${who(x.cand)}</span> <a href="#" class="small" onclick="kolisShow('species','${esc(x.cand_key)}');return false" title="Edge 에 이 등록 자료의 KOLIS 종 상세 화면을 엽니다">KOLIS 에서 보기</a></div><div><span class="${v[0]}">${v[1]}</span> <span class="muted small">확신 ${CONF(x.confidence)}</span></div><div class="muted">${esc(x.reason||'')}</div>${evList(x.evidence)}</div>`; }).join('');
+    const restTxt = rest.length ? `<div class="muted small">나머지 ${rest.length}종(${rest.map(x => V(x.cand)).join('·')})은 다른 권이라 복본 아님</div>` : '';
+    const checks = main.filter(x => x.to_check).map(x => esc(x.to_check)).join('<br>');
+    return `<tr><td><b>${esc(r.our.title||'')} ${V(r.our)}</b><div class="muted small">${who(r.our).replace(/ · /g, '<br>')}</div></td><td>${lines}${restTxt}</td><td class="warn">${checks}</td></tr>`; }).join('') + '</table>' + pg.html;
+}
 function lbTable(){
   const t = LEDGER, rows = t.lb.rows||[]; if(!rows.length){ $('lb-summary').innerHTML = ''; $('lb-table').innerHTML = '<span class="muted small">원부번호를 붙여 넣으면 원부마다 한 줄씩 나옵니다.</span>'; lbButtons(); return; }
-  // 처음 보는 줄: 처리 대상은 체크, 결정 필요·끝난 줄은 해제
   rows.forEach(r => { if(!t.lb.seen.has(r.wonbu)){ t.lb.seen.add(r.wonbu); const st = lbStage(r); if(st.kind === 'ready') t.lb.sel.add(r.wonbu); } });
   const stages = rows.map(r => [r, lbStage(r)]); const n = k => stages.filter(x => x[1].kind === k).length;
   $('lb-summary').innerHTML = `<b>${rows.length}개</b> · 완료 ${n('done')} · 처리 대상 ${n('ready')} · <span class="${n('need') ? 'warn' : ''}">결정 필요 ${n('need')}</span>`;
@@ -814,7 +732,7 @@ function lbTable(){
 }
 async function lbReset(){ const t = LEDGER; if(busy(t)){ tell('비울 수 없습니다', '처리하는 중입니다. 끝나거나 중단한 뒤 비우십시오.'); return; } $('lb-input').value = ''; LB_LAST = ''; t.lb.wonbus = []; t.lb.rows = []; t.lb.sel.clear(); t.lb.open.clear(); t.lb.seen.clear(); t.page = {}; ['lb-out','lb-process-out'].forEach(id => setOut(t, id, '')); $('lb-parsed').textContent = ''; await pywebview.api.ledger_forget(); lbTable(); }
 async function kolisShow(what, arg){ const t = LEDGER; const r = await pywebview.api.kolis_show(what, arg); if(r.error){ tell('KOLIS 화면을 열지 못했습니다', esc(r.error)); return; } start(t, 'kolis_show'); setOut(t, 'lb-out', `<div class="box run">${ST.run} Edge 의 KOLIS 화면을 여는 중 (KOLIS 창을 건드리지 마십시오)</div>`); }
-function openWonbuTab(w){ capture(); let t = T.find(x => (x.v['b-wonbu']||'').trim() === String(w)); if(!t){ t = newTab(); t.v['b-wonbu'] = String(w); } CUR = t; show(); saveTabs(); setOpen('ph-b', true); setOpen('c-31', true); }
+function openWonbuTab(w){ capture(); let t = T.find(x => (x.v['b-wonbu']||'').trim() === String(w)); if(!t){ t = newTab(); t.v['b-wonbu'] = String(w); } CUR = t; show(); saveTabs(); setOpen('ph-b', true); setOpen('c-b1', true); wonbuEntered(t); }
 function openLedgerFor(w){ capture(); CUR = LEDGER; $('lb-input').value = String(w); LB_LAST = ''; LEDGER.lb.open.add(String(w)); show(); lbInput(); }
 function lbPick(w, on){ if(on) LEDGER.lb.sel.add(w); else LEDGER.lb.sel.delete(w); lbButtons(); }
 function lbToggle(w){ const o = LEDGER.lb.open; if(o.has(w)) o.delete(w); else o.add(w); lbTable(); }
@@ -848,59 +766,38 @@ async function lbDone(kind, p){
 async function onDone(kind, p, tab){
   const t = tabOf(tab); if(!t) return;
   finish(t, kind); if(t.v.folder) pywebview.api.log_save(t.v.folder, t.log.slice(-3000));
-  const out = {build_collect:'j-out', build_judge:'j-out', build_fill:'b-out', prepare:'run-out', kolis:'k-out', kolis_submit:'k-sub', export:'x-out', flow:'f-out', upload_open:'u-out', upload:'u-out', thumbs_register:'t-out', register:'g-out', register_export:'g-out', build:'b-out', build_save:'b-save-out', prep_dupexmin:'s-dup-out', prep_complete:'s-dup-out', prep_batch:'s-bat-out', prep_uselimit:'s-ul-out', ledger_status:'lb-out', ledger_dup:'lb-out', ledger_complete:'lb-process-out', ledger_process:'lb-process-out', kolis_show:'lb-out', mods_compare:'cmp-out', build_prepare:'bodies-out', build_send:'send-out'}[kind];
-  if(kind==='flow'){ t.state = await pywebview.api.load_state(t.v.folder); renderState(t); flowShow(t); ledgerShow(t); buttons(t); const e = t.state.export||{}, g = t.state.register||{}; if(e.receipt){ setVal(t, 'x-receipt', e.receipt); setVal(t, 'x-file', e.file||''); } if(g.record_no) setVal(t, 'g-no', g.record_no); }
+  const out = OUT_OF[kind];
+  if(kind==='flow'){ t.state = await pywebview.api.load_state(t.v.folder); renderState(t); flowShow(t); ledgerShow(t); buttons(t); }
   if(p.cancelled){ setOut(t, out, `<div class="box warn">${ST.wait} 중단했습니다.</div>`); phaseState(t); return; }
   if(p.error){ t.error = true; t.lastError = p.error; cardState(t, kind, 'fail'); const [head, ...rest] = String(p.error).split(/[:：]\s*/);
     setOut(t, out, `<div class="box bad"><b>${ST.bad} 실패: ${esc(head.replace(/\(코드 \d+\)/,'').trim())}</b>${rest.length ? `<div class="muted">원인: ${esc(rest.join(': '))}</div>` : ''}<div class="muted">진행 기록을 확인한 뒤 다시 실행하십시오.</div></div>`); renderTabs(); phaseState(t); if(kind==='prepare' && t.work) showResult(t); return; }
-  if(kind==='kolis_show'){ setOut(LEDGER, 'lb-out', p.error ? `<div class="box bad">${ST.bad} ${esc(p.error)}</div>` : `<div class="box ok">${ST.ok} ${esc(p.message||'')}</div>`); return; }
-  if(kind==='ledger_status' && t !== LEDGER){ buildStatus(t); return; }
+  if(kind==='kolis_show'){ setOut(LEDGER, 'lb-out', `<div class="box ok">${ST.ok} ${esc(p.message||'')}</div>`); return; }
   if(kind==='ledger_status' || kind==='ledger_dup' || kind==='ledger_complete' || kind==='ledger_process'){ lbDone(kind, p); return; }
-  if(kind==='flow'){ setOut(t, 'f-out', `<div class="box ok">${ST.ok} KOLIS 등록을 마쳤습니다 — 접수번호 ${esc(p.receipt)} · 가원부번호 ${esc(p.record_no)} · ${p.count}건 · ${fmtMin(p.seconds)} · 검사 ${p.checks}개 통과 · ${link(p.file, '가원부 파일 열기')}<div style="margin-top:6px"><b>이제 할 일:</b> 이 파일을 웹하드에 올리고 가원부번호를 주무관에게 알립니다. 원부번호를 받으면 B 단계에 넣으십시오.</div></div>`); }
-  else if(kind==='prepare'){ t.work = p; t.title = p.title || t.title; setOut(t, 'run-out', `${ST.ok} 반입용 엑셀을 만들었습니다. 아래 확인 항목과 엑셀을 보십시오.`); fillNext(t); t.v['out-name'] = p.output_xlsx.split(/[\\/]/).pop(); if(t === CUR){ show(); setTimeout(() => $('result').scrollIntoView({behavior:'smooth', block:'start'}), 150); } renderState(t); renderTabs(); loadRecent(); saveTabs(); }
-  else if(kind==='export'){ setVal(t, 'x-file', p.file); setVal(t, 'x-receipt', p.receipt); setOut(t, 'x-out', `${ST.ok} 접수번호 ${esc(p.receipt)}, ${p.count}건 (${esc(p.first)} … ${esc(p.last)}) → ${link(p.file, '파일')}`); saveState(t, {export:{file:p.file, receipt:p.receipt, count:p.count}}); }
-  else if(kind==='register'){ setVal(t, 'g-no', p.record_no); setOut(t, 'g-out', `${ST.ok} 가원부번호 ${esc(p.record_no)} · ${p.count}건 → ${link(p.file, '가원부 파일')}`); setOut(t, 'g-list', '이제 할 일: 이 파일을 웹하드에 올리고 가원부번호를 주무관에게 알립니다.'); saveState(t, {register:{record_no:p.record_no, file:p.file, count:p.count, receipt:p.receipt}}); }
-  else if(kind==='register_export'){ setOut(t, 'g-out', `${ST.ok} 받았습니다 — ${p.count}건 → ${link(p.file, '가원부 파일')}`); saveState(t, {register:{record_no:`${p.year}-${p.no}`, file:p.file, count:p.count, receipt:p.receipt}}); }
-  else if(kind==='upload'){ setOut(t, 'u-out', `${ST.ok} 원문 등록을 마쳤습니다 — 폴더 ${p.folders}개, 파일 ${p.files}개 · ${esc(p.message)}`); saveState(t, {upload:{folders:p.folders, files:p.files, message:p.message}}); }
-  else if(kind==='thumbs_register'){ setOut(t, 't-out', `${p.stopped ? ST.bad + ' 중간에 멈춤' : ST.ok + ' 마침'} — 등록 ${p.done}건, 건너뜀 ${p.skipped}건`); saveState(t, {thumbs_register:{done:((t.state.thumbs_register||{}).done||0) + p.done}}); }
-  else if(kind==='kolis_submit'){ setOut(t, 'k-sub', p.ok ? `${ST.ok} ${esc(p.message)} — KOLIS 목록에서 접수번호를 확인하십시오.` : `${ST.wait} ${esc(p.message||'결과 메시지 없음')}`); saveState(t, {kolis_submit:{message:p.message||'', ok:p.ok}}); }
-  else if(kind==='kolis'){ setOut(t, 'k-out', p.attached ? `${ST.ok} 준비했습니다 — 팝업에 비고와 첨부파일이 들어갔습니다. 확인한 뒤 반입을 누르십시오.` : `${ST.wait} 첨부가 들어갔는지 확인하지 못했습니다. 팝업을 직접 보십시오.`); setOut(t, 'k-fields', Object.entries(p.popup_fields||{}).map(([k,v])=>`${esc(k)}: ${esc(v)}`).join('<br>')); saveState(t, {kolis_prepare:{note:t.v['k-note'], xlsx:t.v['k-xlsx'], attached:!!p.attached}}); }
-  else if(kind==='prep_dupexmin' || kind==='prep_complete' || kind==='prep_batch' || kind==='prep_uselimit'){
-    buildStatus(t);
-    if(p.preview){ cardState(t, kind, null); setOut(t, out, `<div class="box ${p.already_done ? 'ok' : p.no_ledger ? 'bad' : 'plain'}">${p.already_done ? ST.ok : p.no_ledger ? ST.bad : ST.todo} ${esc(p.message)}</div>`); phaseState(t); return; }
-    if(p.needs_approval){ cardState(t, kind, 'wait'); const step = {prep_dupexmin:'dupexmin', prep_complete:'complete', prep_batch:'batch', prep_uselimit:'uselimit'}[kind]; setOut(t, out, `<div class="box warn"><b>${ST.wait} 실행 전 확인</b> — ${esc(String(p.needs_approval))}<div class="row" style="margin:6px 0 0"><button class="danger" onclick="prepRun('${step}', true)">${({dupexmin:'복본조사 실행', complete:'복본조사 완료', batch:'일괄변경 실행', uselimit:'이용제한 넣기'})[step]}</button></div></div>`); phaseState(t); return; }
-    cardState(t, kind, null);
-    if(kind==='prep_dupexmin'){ setOut(t, out, `<div class="box ${p.already_done ? 'ok' : 'warn'}">${p.already_done ? ST.ok : ST.wait} ${esc(p.message)}</div>`); if(t === CUR) $('dup-ack').checked = false; }
-    else if(kind==='prep_complete'){ setOut(t, out, `<div class="box ok">${ST.ok} 복본조사를 완료 처리했습니다 — 복본 체크 ${(p.dup_rows||[]).length}건 · 등록원부관리 ${p.acc_count}건 ${esc((p.status||[]).join(', '))} · 디지털콘텐츠관리 ${p.dc_species}종 ${p.dc_contents}건</div>`); }
-    else if(kind==='prep_uselimit'){ if(/이어서 넣습니다/.test(t.html['j-out']||'')) setOut(t, 'j-out', t.html['j-out'].replace(/<div class="warn">[^<]*이어서 넣습니다\.<\/div>/, `<div>${ST.ok} 이용제한까지 넣었습니다(3-1 참고).</div>`)); const ul = p.results||p.use_limit||[]; const okn = ul.filter(x=>x.ok).length, skip = ul.filter(x=>x.skipped).length, bad = ul.length-okn-skip; setOut(t, out, `<div class="box ${bad ? 'bad' : 'ok'}">${bad ? ST.bad : ST.ok} 이용제한을 넣었습니다 — ${ul.length}종 · 넣음 ${okn}${skip ? ` · 이미 들어 있음 ${skip}` : ''}${bad ? ` · 실패 ${bad}` : ''}</div>`); }
-    else if(p.already_done){ setOut(t, out, `<div class="box ok">${ST.ok} ${esc(p.message)}</div>`); }
-    else { const v = p.values||{}; setOut(t, out, p.ok ? `<div class="box ok">${ST.ok} 일괄변경을 저장했습니다 — ${p.species}종 · 자료유형1 ${esc(v.OFFER_DBCODE_1S)} · 자료유형2 ${esc(v.OFFER_DBCODE_2S)} · 발행자구분 ${esc(v.PUBLISHER_CODE)}</div>` : `<div class="box bad">${ST.bad} 저장 뒤 값이 기대와 다릅니다 — 자료유형1 ${esc(v.OFFER_DBCODE_1S)} · 자료유형2 ${esc(v.OFFER_DBCODE_2S)} · 발행자구분 ${esc(v.PUBLISHER_CODE)}</div>`); }
-  }
-  else if(kind==='build_collect'){ if(p.judging){ setOut(t, 'j-out', `<div class="box run">${ST.run} KOLIS MODS 화면 값을 다 읽었습니다. 넣을 값을 정하는 중(작품 단위, 몇 분)</div>`); start(t, 'build_judge'); } else if(p.collected){ setOut(t, 'j-out', `${ST.ok} KOLIS MODS 화면 값을 읽었습니다.`); } buildStatus(t); }
-  else if(kind==='mods_compare'){ compareShow(t, p); }
-  else if(kind==='build_send'){ const rs = p.rows||[]; const bad = rs.filter(x=>!x.ok || (x.diff && x.diff.other && x.diff.other.length)); setOut(t, 'send-out', `<div class="box ${bad.length ? 'bad' : 'ok'}">${bad.length ? ST.bad : ST.ok} 저장 ${rs.filter(x=>x.ok).length}건${bad.length ? ` · 멈춤: ${esc(bad[0].error || ('회차 ' + (bad[0].row+1) + ' — 의도하지 않은 변화 ' + ((bad[0].diff||{}).other||[]).length + '곳'))}` : ''}<table class="list" style="margin-top:6px"><tr><th>회차</th><th>저장</th><th>바뀐 요소</th><th>의도한 칸</th><th>KOLIS 자동</th><th>그 밖</th><th>주제명 2묶음</th></tr>${rs.map(x=>`<tr><td>${x.row+1}</td><td>${x.ok ? ST.ok : ST.bad}</td><td>${(x.diff||{}).changed ?? ''}</td><td>${((x.diff||{}).intended||[]).length}</td><td>${((x.diff||{}).auto||[]).length}</td><td class="${((x.diff||{}).other||[]).length ? 'bad' : ''}">${((x.diff||{}).other||[]).length}${((x.diff||{}).other||[]).length ? ': ' + esc(((x.diff||{}).other||[]).slice(0,3).map(o=>o.path).join(', ')) : ''}</td><td>${x.xml_ok ? ST.ok : ST.wait}</td></tr>`).join('')}</table></div>`); if(t === CUR) $('send-ack').checked = false; buildStatus(t); }
-  else if(kind==='build_prepare'){ const rs = p.rows||[]; setOut(t, 'bodies-out', `<div class="box ok">${ST.ok} 저장 본문 ${rs.length}건을 준비했습니다(보내지 않음).<table class="list" style="margin-top:6px"><tr><th>회차</th><th>칸 수</th><th>요소 경로 수</th><th>저자 전거</th><th>주제명 전거</th><th>쉼표 표식</th><th>파일</th></tr>${rs.map(x=>`<tr><td>${x.row+1}</td><td>${x.fields}</td><td>${x.xpaths}</td><td>${esc((x.name_ids||[]).join(' · '))}</td><td>${esc((x.subject_ids||[]).join(' · '))}</td><td>${x.has_comma_mark ? '있음' : '없음'}</td><td>${link(x.file, '보기')}</td></tr>`).join('')}</table></div>`); buildStatus(t); }
-  else if(kind==='build_judge'){ setOut(t, 'j-out', `<div class="box ok">${ST.ok} 작품 판단을 마쳤습니다 — 회차 ${p.episodes}건 · ${(p.authors||[]).map(a=>`${esc(a[0])} ${a[1]==='link'?'전거 연결':'연결 안 함'}`).join(' · ')}${p.adult ? ' · <b class="warn">성인물로 판단</b>' : ''} · ${link(p.build_path, '결과 파일')}${(p.remaining||[]).length ? `<div class="warn">검사에 남은 항목 ${p.remaining.length}건</div>` : ''}${(p.notes||[]).length ? '<ul class="ev">' + p.notes.map(x=>`<li>${esc(x)}</li>`).join('') + '</ul>' : ''}${p.uselimit ? `<div class="warn">${ST.run} 성인물이므로 3-1 의 이용제한을 이어서 넣습니다.</div>` : ''}</div>`); if(p.uselimit){ start(t, 'prep_uselimit'); setOut(t, 's-ul-out', `<div class="box run">${ST.run} 이용제한구분 「청소년 유해매체물」을 종마다 넣는 중 (KOLIS 창을 건드리지 마십시오)</div>`); } buildStatus(t); }
-  else if(kind==='build_fill'){ setOut(t, 'b-out', `<div class="box warn">${ST.wait} KOLIS 화면에 채웠습니다(저장 전). KOLIS 의 MODS 수정 화면과 아래 결과를 확인한 뒤 저장하십시오.</div>`); showBuild(t, p); buildStatus(t); if(t === CUR) buttons(t); }
-  else if(kind==='build'){ setOut(t, 'b-out', `<div class="box warn">${ST.wait} KOLIS 화면에 채웠습니다(저장 전). KOLIS 의 MODS 수정 화면과 아래 결과를 확인한 뒤 저장하십시오.</div>`); showBuild(t, p); buildStatus(t); if(t === CUR) buttons(t); }
-  else if(kind==='build_save'){ setOut(t, 'b-save-out', `<div class="box ok">${ST.ok} 저장했습니다 ${esc(p.saved_at)} · 콘텐츠ID ${esc(p.contents_id)} · ${p.xml_ok ? '주제명 두 묶음 확인' : `<span class="warn">${ST.wait} 저장된 MODS 에 주제명 번호가 보이지 않습니다. KOLIS 에서 확인하십시오.</span>`} · ${link(p.dir, '결과 폴더 열기')}</div>`); buildStatus(t); setOut(t, 'b-result', ''); const nx = (t.build_items||[]).find(i => i.row > (t.sel||0) && i.stage !== 'saved'); t.sel = nx ? nx.row : null; if(t === CUR){ $('b-ack').checked = false; buttons(t); } }
+  if(kind==='flow'){ setOut(t, 'f-out', `<div class="box ok">${ST.ok} 제출을 마쳤습니다 — 접수번호 ${esc(p.receipt)} · 가원부번호 ${esc(p.record_no)} · ${p.count}건 · ${fmtMin(p.seconds)} · 검사 ${p.checks}개 통과 · ${link(p.file, '가원부 파일 열기')}<div style="margin-top:6px"><b>이제 할 일:</b> 이 파일을 웹하드에 올리고 가원부번호를 주무관에게 알립니다. 원부번호를 받으면 B 에 넣으십시오.</div></div>`); }
+  else if(kind==='prepare'){ t.work = p; t.title = p.title || t.title; setOut(t, 'run-out', `${ST.ok} 반입용 엑셀을 만들었습니다. 아래 확인 항목과 엑셀을 보십시오.`); t.v['out-name'] = p.output_xlsx.split(/[\\/]/).pop(); if(t === CUR){ show(); setTimeout(() => $('result').scrollIntoView({behavior:'smooth', block:'start'}), 150); } renderState(t); renderTabs(); loadRecent(); saveTabs(); }
+  else if(kind==='wb_status'){ setOut(t, 'b1-out', `${ST.ok} 읽었습니다`); await wbShow(t); const s = (t.wb||{}).state||{}; if(s.adult && !s.use_limit_done && !t.running.wb_use_limit && t.ulTried !== s.wonbu){ t.ulTried = s.wonbu; if(t === CUR) wbUseLimit(true); } }
+  else if(kind==='wb_compare'){ setOut(t, 'b2-out', `${ST.ok} 대조했습니다`); await wbShow(t); if(t === CUR && (p.diff_count||0)){ setOpen('c-b3', true); } }
+  else if(kind==='wb_fix_apply'){ const rs = p.rows||[]; const bad = rs.filter(x => x.ok === false || x.saved === false || (x.other||[]).length); t.wb.prepared = p.approved ? [] : rs.filter(x => x.ok).map(x => x.contents_id);
+    setOut(t, 'b3-out', `<div class="box ${bad.length ? 'bad' : 'ok'}">${bad.length ? ST.bad : ST.ok} ${p.approved ? `저장 ${rs.filter(x => x.saved).length}건` : `화면에 넣어 봤습니다(보내지 않음) ${rs.filter(x => x.ok).length}건`}${bad.length ? ` · 멈춤: ${esc(bad[0].error || (bad[0].contents_id + ' — 의도하지 않은 변화 ' + (bad[0].other||[]).length + '곳'))}` : ''}<table class="list" style="margin-top:6px"><tr><th>회차</th><th>넣은 칸</th><th>${p.approved ? '저장' : '넣기'}</th><th>바뀐 경로</th><th>고른 칸 밖</th></tr>${rs.map(x => `<tr><td>${esc(x.contents_id)}</td><td>${(x.changed||[]).map(c => esc(c.field + '[' + c.index + '] = ' + c.value)).join('<br>')}</td><td>${(p.approved ? x.saved : x.ok) ? ST.ok : ST.bad}</td><td>${x.diff_total ?? ''}</td><td class="${(x.other||[]).length ? 'bad' : ''}">${(x.other||[]).length ? (x.other||[]).map(o => esc(o.path)).join(', ') : ''}</td></tr>`).join('')}</table>${p.approved && !bad.length ? `<div style="margin-top:6px">저장했습니다. B-2 「KOLIS 값 읽어 대조」로 다시 확인하십시오.</div>` : ''}</div>`); if(t === CUR) $('b3-ack').checked = false; buttons(t); phaseState(t); }
+  else if(kind==='wb_use_limit'){ if(p.needs_approval){ setOut(t, 'b4-out', `<div class="box warn">${ST.wait} ${esc(p.needs_approval)}<div class="row" style="margin:6px 0 0"><button class="danger" onclick="wbUseLimit()">이용제한 넣기</button></div></div>`); return; } await wbShow(t); }
+  else if(kind==='ck_run'){ await wbShow(t); if((p.remaining||[]).length) setOut(t, 'c1-out', (t.html['c1-out']||'') + `<div class="box warn">${ST.wait} 판단 점검에 남은 항목 ${p.remaining.length}건: ${esc(p.remaining.slice(0,3).join(' / '))}</div>`); if(t === CUR) setOpen('c-c2', true); }
 }
 
 // ============================================================ 시작
 window.addEventListener('pywebviewready', async () => {
-  loadRecent(); loadPrompt(); loadBuildSettings();
+  loadRecent(); loadPrompt();
   FLOW_STEPS = await pywebview.api.flow_steps();
   acctShow(await pywebview.api.kolis_account());
   const saved = await pywebview.api.tabs_load();
-  (saved.tabs||[]).forEach(s => newTab({id:s.id, title:s.title||'', fold:s.fold||{}, v:{folder:s.folder||'', batch:s.batch||BATCH_DEFAULT, instr:s.instr||'', 't-count':'0', 'b-wonbu':s.wonbu||'', 'b-manu':s.manu||''}}));
+  (saved.tabs||[]).forEach(s => newTab({id:s.id, title:s.title||'', fold:s.fold||{}, v:{folder:s.folder||'', batch:s.batch||BATCH_DEFAULT, instr:s.instr||'', 'b-wonbu':s.wonbu||''}}));
   if(!T.length) newTab(); CUR = tabOf(saved.active) || T[0]; show();
-  for(const t of T){ if(t.v.folder) await openFolder(t, true); }
+  for(const t of T){ if(t.v.folder) await openFolder(t, true); if((t.v['b-wonbu']||'').trim()) await wbShow(t); }
   const e = await pywebview.api.check_env(); $('diag-dot').hidden = !!(e.claude && e.claude_login && e.edge && e.playwright);
   if(!e.claude) appendLog('조사 도구가 설치되지 않아 1 단계를 실행할 수 없습니다. 관리자에게 문의하십시오.');
   $('folder').addEventListener('change', () => { capture(); const f=CUR.v.folder.trim(); const dup=T.find(x=>x!==CUR && (x.v.folder||'').toLowerCase()===f.toLowerCase()); if(f && dup){ CUR.v.folder=''; openInTab(f); } else openFolder(CUR); });
-  ['batch','instr'].forEach(id => $(id).addEventListener('change', () => { saveTabs(); outHint(CUR); if(id==='batch') $('k-note-show').textContent = CUR.v['k-note'] || CUR.v.batch || ''; }));
-  ['b-wonbu','b-manu'].forEach(id => $(id).addEventListener('change', () => { saveTabs(); phaseState(CUR); renderTabs(); if(id==='b-wonbu') wonbuEntered(CUR); }));
-  $('b-wonbu').addEventListener('input', () => buttons(CUR));
+  ['batch','instr','out-name'].forEach(id => $(id).addEventListener('change', () => { saveTabs(); if(id==='batch'){ $('k-note-show').textContent = CUR.v.batch||''; outHint(CUR); } }));
+  $('b-wonbu').addEventListener('change', () => { saveTabs(); phaseState(CUR); renderTabs(); wonbuEntered(CUR); });
+  document.addEventListener('keydown', e => { if(e.key === 'Escape'){ $('kind-menu').classList.remove('open'); } });
 });
 </script>
 </body></html>

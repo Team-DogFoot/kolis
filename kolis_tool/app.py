@@ -14,7 +14,7 @@ import os
 
 HERE = Path(__file__).parent
 MAX_AGENTS = max(1, int(os.environ.get("KOLIS_MAX_AGENTS", "3")))      # 에이전트 동시 실행 한도
-KOLIS_KINDS = ("flow", "kolis", "kolis_submit", "export", "upload_open", "upload", "thumbs_register", "register", "register_export", "build", "build_save", "prep_dupexmin", "prep_complete", "prep_batch", "prep_uselimit", "ledger_status", "ledger_dup", "ledger_complete", "ledger_process", "kolis_show", "mods_compare", "build_prepare", "build_send", "build_collect", "build_fill")
+KOLIS_KINDS = ("flow", "kolis", "kolis_submit", "export", "upload_open", "upload", "thumbs_register", "register", "register_export", "ledger_status", "ledger_dup", "ledger_complete", "ledger_process", "kolis_show", "wb_fix_apply", "wb_use_limit")
 
 
 class Api:
@@ -446,6 +446,8 @@ class Api:
         if not x.is_file():
             return {"error": f"반입용 엑셀이 없습니다: {x}"}
         try:
+            if mods_sheet.korean_row_present(x):
+                return {"error": "반입용 엑셀의 1행(한글 이름 행)이 아직 남아 있습니다. 확인을 마쳤으면 엑셀에서 1행을 지우고 저장한 뒤 다시 누르십시오(KOLIS 는 1행이 MODS 머리글이어야 받습니다)"}
             n = mods_sheet.clear_marks(x)
         except PermissionError:
             return {"error": "반입용 엑셀이 열려 있어 고칠 수 없습니다. 엑셀에서 저장하고 닫은 뒤 다시 누르세요"}
@@ -793,135 +795,105 @@ class Api:
                 self._jobs.pop(tab, None)
         return self._run("thumbs_register", job, capture=True, tab=tab)
 
-    # ---------- 3. 구축(원부번호 이후) — 유저 Edge 창 + 헤드리스 에이전트 (2026-10-03) ----------
-    def build_run(self, tab: str, wonbu: str, row: int = 0, instructions: str = "", manuscript: str = "") -> dict:
-        """원부번호의 n번째 회차: 가이드 메뉴로 MODS 수정 화면을 열고 → 값·전거 후보 읽기 → 에이전트 판단 → 화면에 넣기. **저장하지 않는다.**"""
-        from . import mods_build
-        wonbu = (wonbu or "").strip()
-        if not wonbu.isdigit():
-            return {"error": "원부번호(숫자)가 필요합니다"}
+    # ---------- B. 원부번호 이후 (2026-10-04 새 설계: 반입값이 정본 — 상태 → 대조 → 보정 → 이용제한) ----------
+    def wb_status(self, tab: str, wonbu: str) -> dict:
+        """B-1 원부 상태 읽기(요청만): 등록원부관리·디지털콘텐츠관리·종/콘텐츠 목록, 반입값 유무, 성인물 여부."""
+        from . import wonbu as wbm
+        w = (wonbu or "").strip()
+        if not w.isdigit():
+            return {"error": "원부번호를 숫자로 넣으십시오"}
+        return self._run("wb_status", lambda: wbm.status(w, self._tab_log(tab), self._work_dir), tab=tab, screen=False, nokolis=True)
+
+    def wb_compare(self, tab: str, wonbu: str) -> dict:
+        """B-2 대조(요청만): 콘텐츠마다 MODS 를 받아 반입값과 경로 단위로 맞춰 본다. 바꾸지 않는다."""
+        from . import wonbu as wbm
+        w = (wonbu or "").strip()
+        if not w.isdigit():
+            return {"error": "원부번호를 숫자로 넣으십시오"}
+        return self._run("wb_compare", lambda: wbm.compare(w, self._tab_log(tab), self._work_dir), tab=tab, screen=False, nokolis=True)
+
+    def wb_state(self, wonbu: str) -> dict:
+        """화면 복원용: 상태·대조 결과·보정 목록·점검 상태를 한 번에."""
+        from . import wonbu as wbm, check_sheet
+        w = (wonbu or "").strip()
+        if not w.isdigit():
+            return {"state": {}, "compare": None, "fixes": [], "check": {}}
+        st = wbm.state(w)
+        cmp = wbm._rd(wbm.wdir(w) / "compare.json") or None
+        cj = wbm._rd(wbm.wdir(w) / "contents.json")
+        return {"state": st, "compare": cmp, "fixes": wbm.fixes_list(w), "contents": cj.get("contents") or [], "check": check_sheet.status(w)}
+
+    def wb_fix_set(self, wonbu: str, choices: list) -> dict:
+        """B-3 직원이 고른 보정값을 적어 둔다(아직 KOLIS 에 보내지 않음)."""
+        from . import wonbu as wbm
+        w = (wonbu or "").strip()
+        try:
+            return wbm.fixes_set(w, choices or [])
+        except Exception as e:  # noqa: BLE001
+            return {"error": "".join(traceback.format_exception_only(type(e), e)).strip()}
+
+    def wb_fix_apply(self, tab: str, wonbu: str, contents_ids: list, yes: str = "") -> dict:
+        """B-3 보정 적용(Edge 화면): 콘텐츠마다 화면에 넣고 저장 본문을 가로채 보낸다. yes 가 YES 가 아니면 넣고 가로채기까지만(보내지 않음)."""
+        from . import wonbu as wbm
+        w = (wonbu or "").strip(); ids = [str(x) for x in (contents_ids or [])]
+        if not w.isdigit() or not ids:
+            return {"error": "원부번호와 보정할 회차를 고르십시오"}
+        approved = (yes or "").strip() == "YES"
         handle = self._jobs[tab] = {"cancel": False}
         def job():
             try:
-                return mods_build.run(wonbu, int(row or 0), self._tab_log(tab), manuscript or None, instructions or "", handle=handle)
+                return wbm.fix_apply(w, ids, self._tab_log(tab), approved, handle)
             finally:
                 self._jobs.pop(tab, None)
-        return self._run("build", job, tab=tab, screen=True)
+        return self._run("wb_fix_apply", job, tab=tab, screen=True)
 
-    def build_save(self, tab: str, wonbu: str, row: int, yes: str) -> dict:
-        """직원이 화면을 확인한 뒤: MODS 수정 화면의 '저장'을 누르고 MODS XML 전·후를 받는다(되돌릴 수 없음)."""
-        from . import mods_build
-        if (yes or "").strip() != "YES":
-            return {"error": "직원이 화면을 확인한 뒤 YES 를 넣으세요"}
-        return self._run("build_save", lambda: mods_build.save_run((wonbu or "").strip(), int(row or 0), self._tab_log(tab)), tab=tab, screen=True)
-
-    def prep_run(self, tab: str, step: str, wonbu: str, yes: str = "") -> dict:
-        """5.1 복본조사(KEY 저장 → 실행 → 0건이면 완료) / 5.2 일괄변경. YES 없이 누르면 바꾸는 요청 직전까지 가서 멈추고 다음 할 일을 알려 준다."""
-        from . import build_prep
-        wonbu = (wonbu or "").strip()
-        if not wonbu.isdigit():
-            return {"error": "원부번호(숫자)가 필요합니다"}
+    def wb_use_limit(self, tab: str, wonbu: str, yes: str = "") -> dict:
+        """B-4 성인물 이용제한(Edge 화면, 종마다 「청소년 유해매체물」). 1단계가 성인물로 판단한 작품에서 프로그램이 이어서 부른다."""
+        from . import wonbu as wbm, build_prep
+        w = (wonbu or "").strip()
+        if not w.isdigit():
+            return {"error": "원부번호를 숫자로 넣으십시오"}
         approved = (yes or "").strip() == "YES"
-        fn = {"dupexmin": build_prep.dupexmin, "complete": build_prep.dup_complete, "batch": build_prep.batch_change, "uselimit": build_prep.use_limit_adult}[step]
-        kind = {"dupexmin": "prep_dupexmin", "complete": "prep_complete", "batch": "prep_batch", "uselimit": "prep_uselimit"}[step]
         def job():
             try:
-                return fn(wonbu, self._tab_log(tab), approved)
+                return wbm.use_limit(w, self._tab_log(tab), approved)
             except build_prep.NeedsApproval as e:
                 return {"needs_approval": str(e)}
-        return self._run(kind, job, tab=tab, screen=True)
+        return self._run("wb_use_limit", job, tab=tab, screen=True)
+
+    # ---------- C. 점검·납품 (2026-10-04: MODS 받기 → 점검 시트 → 직원 확정 → 납품 파일) ----------
+    def ck_run(self, tab: str, wonbu: str, with_agent: bool = True) -> dict:
+        from . import check_sheet
+        w = (wonbu or "").strip()
+        if not w.isdigit():
+            return {"error": "원부번호를 숫자로 넣으십시오"}
+        handle = self._jobs[tab] = {"cancel": False}
+        def job():
+            if with_agent:
+                with self._agents:
+                    try:
+                        return check_sheet.run_check(w, self._tab_log(tab), True, handle, self._work_dir)
+                    finally:
+                        self._jobs.pop(tab, None)
+            try:
+                return check_sheet.run_check(w, self._tab_log(tab), False, handle, self._work_dir)
+            finally:
+                self._jobs.pop(tab, None)
+        return self._run("ck_run", job, tab=tab, screen=False, nokolis=True)
+
+    def ck_confirm(self, tab: str, wonbu: str, nth: int, decisions: dict) -> dict:
+        """C-4 직원 확정: 파란 칸 처리(ok = 틀린 게 없음 → 채우기 없음 / error = 오류로 확정) → 납품 파일(가이드 5.9 이름)."""
+        from . import check_sheet
+        w = (wonbu or "").strip()
+        try:
+            return check_sheet.confirm(w, int(nth), decisions or {}, self._tab_log(tab))
+        except Exception as e:  # noqa: BLE001
+            return {"error": "".join(traceback.format_exception_only(type(e), e)).strip()}
 
     def build_settings(self, patch: dict | None = None) -> dict:
         """사업별 임시 고정값(입수처 주기 문장 등). patch 가 있으면 저장."""
         from . import mods_build
         return mods_build.save_settings(patch) if patch else mods_build.settings()
-
-    # ---------- 3-2 작품 단위 판단 (2026-10-03): 화면 값 읽기(Edge, 한 번에 하나) → AI 판단(Edge 안 씀, 작품끼리 동시) → 회차별 채우기 ----------
-    def build_collect(self, tab: str, wonbu: str, instructions: str = "", manuscript: str = "", then_judge: bool = True) -> dict:
-        """원부의 전체 회차 화면 값·전거 후보를 읽어 작업 파일 하나로 만들고, 이어서 AI 판단을 돌린다(then_judge). 읽기는 KOLIS 창을 쓰므로 한 번에 하나."""
-        from . import mods_batch
-        wonbu = (wonbu or "").strip()
-        if not wonbu.isdigit():
-            return {"error": "원부번호를 숫자로 넣으십시오"}
-        def job():
-            mods_batch.collect_work(wonbu, self._tab_log(tab), manuscript or None, instructions or "")
-            if then_judge:
-                self._done("build_collect", {"collected": True, "wonbu": wonbu}, tab)
-                r = self.build_judge(tab, wonbu)
-                if r.get("error"):
-                    raise SystemExit(r["error"])
-                return {"collected": True, "judging": True, "wonbu": wonbu}
-            return {"collected": True, "wonbu": wonbu}
-        return self._run("build_collect", job, tab=tab, screen=True)
-
-    def build_judge(self, tab: str, wonbu: str) -> dict:
-        """작품 단위 AI 판단만(화면 값은 이미 읽어 둔 것). KOLIS 창을 쓰지 않으므로 작품끼리 동시에 돈다(에이전트 한도 MAX_AGENTS)."""
-        from . import mods_batch
-        wonbu = (wonbu or "").strip()
-        handle = self._jobs[tab] = {"cancel": False}
-        def job():
-            with self._agents:
-                try:
-                    result, fails, out = mods_batch.run_work_agent(wonbu, self._tab_log(tab), handle=handle)
-                finally:
-                    self._jobs.pop(tab, None)
-            payload = {"wonbu": wonbu, "build_path": str(out), "remaining": fails, "authors": [(a.get("name"), a.get("decision"), a.get("confidence")) for a in result.get("authors") or []],
-                       "episodes": len(result.get("episodes") or []), "adult": result.get("adult"), "adult_reason": result.get("adult_reason"), "notes": result.get("notes_for_staff") or [], "issues": result.get("issues") or []}
-            # 성인물로 판단되면 이용제한(청소년 유해매체물)을 사람 요청 없이 이어서 한다(유저 확정 2026-10-03). 종마다 확인하며, 이미 GM 이면 건너뛴다.
-            if result.get("adult") and not (handle or {}).get("cancel"):
-                self._tab_log(tab)(f"성인물로 판단 → 이용제한구분(청소년 유해매체물)을 종마다 넣습니다. 근거: {result.get('adult_reason') or ''}")
-                self._done("build_judge", payload, tab)
-                import time as _t
-                r = {"error": "시작 못 함"}
-                for _ in range(1800):          # 다른 작품이 KOLIS 창을 쓰고 있으면 비기를 기다린다(최대 30분). 판단은 끝났으므로 이용제한만 늦어진다.
-                    if (handle or {}).get("cancel"):
-                        break
-                    r = self.prep_run(tab, "uselimit", wonbu, "YES")
-                    if not r.get("error") or "KOLIS 창은" not in r["error"]:
-                        break
-                    _t.sleep(1)
-                if r.get("error"):
-                    raise SystemExit(r["error"])
-                payload = {**payload, "uselimit": True}
-            return payload
-        return self._run("build_judge", job, tab=tab, screen=False, nokolis=True)
-
-    def build_fill(self, tab: str, wonbu: str, row: int) -> dict:
-        """회차 하나: 작품 판단에서 꺼내 KOLIS 화면을 열고 채운다(저장 안 함)."""
-        from . import mods_batch
-        return self._run("build_fill", lambda: mods_batch.fill((wonbu or "").strip(), int(row or 0), self._tab_log(tab)), tab=tab, screen=True)
-
-    def build_status(self, wonbu: str) -> dict:
-        from . import mods_batch
-        w = (wonbu or "").strip()
-        d = mods_batch.wdir(w)
-        from . import ledger_batch
-        prep = ledger_batch.prep_info(w)
-        bj = ledger_batch._rd(d / "build.json")
-        judgment = {k: bj.get(k) for k in ("title", "count", "authors", "subjects", "publisher", "place", "adult", "adult_reason", "issues", "notes_for_staff", "review", "manuscript_seen", "fixes")} if bj else None
-        if judgment is not None:
-            judgment["episodes"] = {e.get("contents_id"): e for e in bj.get("episodes") or []}
-        else:
-            imp = self._import_for_wonbu(w)       # 2026-10-04: 성인물 여부는 1단계 반입값이 정본(이용제한 자동 실행의 방아쇠)
-            if imp is not None:
-                judgment = {"from_import": True, "adult": bool(imp.get("adult")), "adult_reason": imp.get("adult_reason") or "", "title": imp.get("title"), "count": len(imp.get("rows") or [])}
-        return {"items": mods_batch.status(w), "has_job": (d / "job.json").exists(), "has_build": (d / "build.json").exists(), "prep": prep, "judgment": judgment}
-
-    def _import_for_wonbu(self, wonbu: str) -> dict | None:
-        """탭 상태(작업 폴더 ↔ 원부번호 짝)로 1단계 import.json 을 찾는다."""
-        from . import prepare
-        tabs = self._work_dir / "tabs.json"
-        if not tabs.exists():
-            return None
-        try:
-            d = json.loads(tabs.read_text(encoding="utf-8"))
-        except Exception:  # noqa: BLE001
-            return None
-        for t in d.get("tabs") or []:
-            if str(t.get("wonbu") or (t.get("v") or {}).get("b-wonbu") or "").strip() == str(wonbu) and (t.get("folder") or (t.get("v") or {}).get("folder")):
-                w = prepare.load(Path(t.get("folder") or t["v"]["folder"]), self._work_dir)
-                return (w or {}).get("import")
-        return None
 
     # ---------- 원부 일괄 처리(과장님용, 2026-10-03 설계서 1절) ----------
     LEDGER_TAB = "ledger"
@@ -1012,57 +984,6 @@ class Api:
             finally:
                 self._jobs.pop(self.LEDGER_TAB, None)
         return self._run("ledger_process", job, tab=self.LEDGER_TAB, screen=False, nokolis=True)
-
-    def build_set_author(self, wonbu: str, name: str, ac_control_no: str, signpost: str = "", reason: str = "") -> dict:
-        """직원 결정: 저자 전거 연결을 바꾼다(작품 판단 build.json, source staff)."""
-        from . import mods_batch
-        try:
-            return {"ok": True, "author": mods_batch.set_author_decision((wonbu or "").strip(), name, (ac_control_no or "").strip(), signpost, reason)}
-        except SystemExit as e:
-            return {"error": str(e)}
-
-    def build_prepare_bodies(self, tab: str, wonbu: str, rows: list) -> dict:
-        """「한 번에 입력」 앞 절반: 회차마다 화면을 열어 채우고 저장 본문을 가로채 둔다(보내지 않음)."""
-        from . import mods_batch
-        w = (wonbu or "").strip(); rr = [int(x) for x in (rows or [])]
-        if not w.isdigit() or not rr:
-            return {"error": "원부번호와 회차를 고르십시오"}
-        handle = self._jobs[tab] = {"cancel": False}
-        def job():
-            try:
-                return mods_batch.prepare_bodies(w, rr, self._tab_log(tab), handle=handle)
-            finally:
-                self._jobs.pop(tab, None)
-        return self._run("build_prepare", job, tab=tab, screen=True)
-
-    def build_send_bodies(self, tab: str, wonbu: str, rows: list, yes: str = "") -> dict:
-        """⑥ 「n건에 한 번에 넣기」: 준비된 저장 본문을 보내고 전·후 XML 대조. 되돌릴 수 없음 — 사람이 확인 뒤 누른다. 첫 1건에서 의도하지 않은 변화가 있으면 멈춘다."""
-        from . import mods_batch
-        w = (wonbu or "").strip(); rr = [int(x) for x in (rows or [])]
-        if not w.isdigit() or not rr:
-            return {"error": "원부번호와 회차를 고르십시오"}
-        if (yes or "").strip() != "YES":
-            return {"error": "확인 뒤 실행하십시오"}
-        handle = self._jobs[tab] = {"cancel": False}
-        def job():
-            try:
-                return mods_batch.send_bodies(w, rr, self._tab_log(tab), handle=handle)
-            finally:
-                self._jobs.pop(tab, None)
-        return self._run("build_send", job, tab=tab, screen=True)
-
-    def mods_compare(self, tab: str, wonbu: str) -> dict:
-        """3-2 반입값 대조(요청, 읽기만): 콘텐츠마다 MODS 를 읽어 반입용 엑셀과 칸 대조(없으면 회차끼리 공통 칸 대조)."""
-        from . import mods_compare
-        w = (wonbu or "").strip()
-        if not w.isdigit():
-            return {"error": "원부번호를 숫자로 넣으십시오"}
-        def job():
-            r = mods_compare.compare(w, self._tab_log(tab))
-            d = mods_compare.mb.WORK / f"wonbu_{w}"; d.mkdir(parents=True, exist_ok=True)
-            (d / "compare.json").write_text(json.dumps(r, ensure_ascii=False, indent=1), encoding="utf-8")
-            return r
-        return self._run("mods_compare", job, tab=tab, screen=False, nokolis=True)
 
     def kolis_show(self, what: str, arg: str) -> dict:
         """사람이 KOLIS 에서 직접 보려고: what=dupexmin(원부번호) → 일괄복본조사 화면에 후보 목록, species(종 번호) → 종 상세 화면."""

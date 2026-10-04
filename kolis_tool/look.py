@@ -22,7 +22,7 @@ TILE_H = int(os.environ.get("KOLIS_TILE_HEIGHT") or 2300)    # Read 가 긴 변 
 
 def _out_dir(src: Path, out: str | None) -> Path:
     base = Path(out) if out else Path(os.environ.get("KOLIS_LOOK_DIR") or (Path.cwd() / "_look"))
-    d = base / src.stem
+    d = base / f"{src.parent.name}_{src.stem}"      # 회차 폴더 이름을 붙인다(회차마다 00000001.jpg 가 있어 동시에 돌면 덮어쓴다 — 2026-10-04 사고)
     d.mkdir(parents=True, exist_ok=True)
     return d
 

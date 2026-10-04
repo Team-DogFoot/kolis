@@ -122,8 +122,8 @@ def collect_knowledge(log=None) -> list[str]:
 def job_tools() -> list[str]:
     """작업 공간에서 일하는 에이전트에게 허용하는 도구. 명령은 페이지 읽기와 자기 검사 두 가지뿐."""
     py = python_exe()
-    cmds = [f"{py} -m kolis_tool render", f"{py} -m kolis_tool check-research", f"{py} -m kolis_tool write-import", f"{py} -m kolis_tool check-build", f"{py} -m kolis_tool check-build-work", f"{py} -m kolis_tool check-dup", f"{py} -m kolis_tool authority",
-            f"{py} -m kolis_tool look", f"{py} -m kolis_tool inspect-folder"]
+    cmds = [f"{py} -m kolis_tool render", f"{py} -m kolis_tool check-research", f"{py} -m kolis_tool write-import", f"{py} -m kolis_tool check-dup", f"{py} -m kolis_tool authority",
+            f"{py} -m kolis_tool look", f"{py} -m kolis_tool inspect-folder", f"{py} -m kolis_tool check-findings"]
     rules = [f"{shell}({c}:*)" for c in cmds for shell in ("Bash", "PowerShell")]
     return ["Read", "Write", "Edit", "Glob", "Grep", "WebSearch", "WebFetch", "Agent", "Task", "Skill", *rules]
 
@@ -275,7 +275,7 @@ def run(prompt: str, tools: list[str], log=None, handle: dict | None = None, add
             continue
         if ev.get("session_id") and handle is not None:
             handle["session_id"] = ev["session_id"]
-        who = "검수" if ev.get("parent_tool_use_id") else label      # 하위 에이전트(검수)가 한 일은 구분해서 보여 준다
+        who = "하위" if ev.get("parent_tool_use_id") else label      # 하위 에이전트(관찰·검수)가 한 일은 구분해서 보여 준다
         if ev.get("type") == "assistant":
             for b in (ev.get("message") or {}).get("content", []):
                 if b.get("type") == "tool_use":

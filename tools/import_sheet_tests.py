@@ -15,8 +15,9 @@ EX = Path("docs/source/3_샘플양식/완료사례_코리스반입용_로맨스�
 
 
 def headers_of(xlsx: Path) -> list[str]:
-    ws = openpyxl.load_workbook(xlsx, read_only=True)["Contents"]
-    return [(c or "").strip() if isinstance(c, str) else "" for c in next(ws.iter_rows(values_only=True))]
+    ws = openpyxl.load_workbook(xlsx)["Contents"]
+    hr = ms.header_row_index(ws)
+    return [(c.value or "").strip() if isinstance(c.value, str) else "" for c in ws[hr]]
 
 
 def test_roundtrip_88(out: Path) -> list[str]:
@@ -118,12 +119,13 @@ def test_expand(out: Path) -> list[str]:
     if ms.value_cells([row, row2]) != ms.value_cells(back):
         fails.append("확장 역변환 값 다름")
     ws = openpyxl.load_workbook(out / "expand.xlsx")["Contents"]
-    yellow = [ws.cell(1, c.column).value for c in ws[2] if c.fill and c.fill.fgColor.rgb in ("FFFFFF00", "00FFFF00")]
+    hr = ms.header_row_index(ws)
+    yellow = [ws.cell(hr, c.column).value for c in ws[hr + 1] if c.fill and c.fill.fgColor.rgb in ("FFFFFF00", "00FFFF00")]
     if sorted(yellow) != sorted(["/mods/titleInfo/title", "/mods/name/alternativeName/namePart", "/mods/identifier", "contents_price"]):
         fails.append(f"노란 칸 위치가 다름: {yellow}")
     cols = ms.layout([row, row2])
     ci = ms.column_index(cols, "name[1].alternativeName[1].namePart")
-    if not ci or ws.cell(2, ci).value != "나본명":
+    if not ci or ws.cell(hr + 1, ci).value != "나본명":
         fails.append("confirm 경로가 엉뚱한 열을 가리킴")
     return fails
 
