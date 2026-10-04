@@ -33,7 +33,7 @@ def main(argv=None):
     a = sub.add_parser("check-research", help="(에이전트용) 조사 결과 파일의 형식·근거 검사"); a.add_argument("result"); a.add_argument("--job")
     a = sub.add_parser("write-import", help="(에이전트용) 반입용 값 검사 + 반입용 엑셀 쓰기"); a.add_argument("import_json"); a.add_argument("--reads", default="", help="실행기가 기록한 Read/look 호출 경로 파일(프로그램이 넣는다)")
     a = sub.add_parser("look", help="(에이전트용) 원고 이미지를 조각·축소본으로", add_help=False); a.add_argument("rest", nargs=argparse.REMAINDER)
-    a = sub.add_parser("inspect-folder", help="(에이전트용) 회차 폴더 검사 JSON"); a.add_argument("folder"); a.add_argument("--no-dup", action="store_true", help="유사 컷 비교(느림)를 건너뜀"); a.add_argument("--ocr", action="store_true", help="장마다 로컬 OCR 글자 힌트(맥 Vision. 없으면 빈 값)")
+    a = sub.add_parser("inspect-folder", help="(에이전트용) 회차 폴더 검사 JSON"); a.add_argument("folder"); a.add_argument("--no-dup", action="store_true", help="유사 컷 비교(느림)를 건너뜀")
     a = sub.add_parser("check-dup", help="(에이전트용) 복본 판정 파일 검사"); a.add_argument("result"); a.add_argument("--job")
     a = sub.add_parser("authority", help="(에이전트용) 저자 전거 후보 조회(요청만, 읽기)"); a.add_argument("name")
     a = sub.add_parser("check-findings", help="(에이전트용) 점검 판단 파일(findings.json)의 형식 검사"); a.add_argument("result"); a.add_argument("--job")
@@ -67,7 +67,7 @@ def main(argv=None):
     elif ns.cmd == "inspect-folder":
         import json as _json
         from .inspect_files import agent_json
-        print(_json.dumps(agent_json(Path(ns.folder), ns.no_dup, ns.ocr), ensure_ascii=False, indent=1))
+        print(_json.dumps(agent_json(Path(ns.folder), ns.no_dup), ensure_ascii=False, indent=1))
     elif ns.cmd == "unzip":
         from .unzip_kr import extract
         print(f"{extract(Path(ns.zip), Path(ns.out))}개 파일 → {ns.out}")

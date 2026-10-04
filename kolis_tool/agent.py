@@ -146,6 +146,8 @@ def run_job(skill: str, name: str, job: dict, result_name: str, check, log=None,
     prompt = f"/{skill} {rel}/job.json\n\n맡은 일: `{rel}/job.json`. 결과는 `{rel}/{result_name}` 에 저장하세요. 스킬의 순서대로 검사와 검수까지 끝내세요."
     handle.setdefault("reads", set())
     reads_file = jd / "_reads.json"
+    handle["events_file"] = str(jd / "_events.jsonl")      # 행동 기록(즉시 덧붙임). 분석은 tools/run_report.py
+    record_event(handle, {"type": "program", "what": "job_start", "skill": skill, "name": name, "job_dir": str(jd), "job": job})
     ex_env = {"KOLIS_LOOK_DIR": str(jd / "_look")}       # look 조각은 작업 폴더 안 _look/ 에(끝나면 지운다)
     try:
         run(prompt, job_tools(), log, handle, add_dirs, model, timeout, label="에이전트", extra_env=ex_env)
@@ -158,6 +160,7 @@ def run_job(skill: str, name: str, job: dict, result_name: str, check, log=None,
             job_tools(), log, handle, add_dirs, model, timeout, label="에이전트", resume=handle["session_id"], extra_env=ex_env)
     reads_file.write_text(json.dumps(sorted(handle["reads"]), ensure_ascii=False), encoding="utf-8")
     fails = check(result)
+    record_event(handle, {"type": "program", "what": "program_check", "round": 0, "fails": fails})
     for i in range(1, max_resume + 1):
         if not fails or not handle.get("session_id"):
             break
@@ -167,6 +170,8 @@ def run_job(skill: str, name: str, job: dict, result_name: str, check, log=None,
         run(msg, job_tools(), log, handle, add_dirs, model, timeout, label="에이전트", resume=handle["session_id"], extra_env=ex_env)
         reads_file.write_text(json.dumps(sorted(handle["reads"]), ensure_ascii=False), encoding="utf-8")
         fails = check(result)
+        record_event(handle, {"type": "program", "what": "program_check", "round": i, "fails": fails})
+    record_event(handle, {"type": "program", "what": "job_end", "remaining": fails, "usage": handle.get("usage") or {}, "turns": handle.get("turns")})
     collect_knowledge(log)
     if not result.exists():
         raise SystemExit(f"에이전트가 결과 파일을 만들지 못했습니다: {result}")
@@ -185,6 +190,41 @@ def render_tool() -> tuple[str, list[str]]:
     """(에이전트에게 알려 줄 명령 앞부분, 허용 규칙 목록). 경로에 공백이 없어야 따옴표 없이 규칙과 맞는다."""
     cmd = f"{python_exe()} -m kolis_tool render"
     return cmd, [f"Bash({cmd}:*)", f"PowerShell({cmd}:*)"]
+
+
+def _strip_blobs(o):
+    """이벤트에서 이미지 본문(base64)만 길이로 바꾼다. 글자는 그대로 둔다(행동 기록용)."""
+    if isinstance(o, dict):
+        if o.get("type") == "base64" and isinstance(o.get("data"), str):
+            return {**{k: v for k, v in o.items() if k != "data"}, "data_len": len(o["data"])}
+        return {k: _strip_blobs(v) for k, v in o.items()}
+    if isinstance(o, list):
+        return [_strip_blobs(x) for x in o]
+    if isinstance(o, str) and len(o) > 200000:
+        return o[:200000] + f"…(전체 {len(o)}자)"
+    return o
+
+
+def record_event(handle: dict | None, ev: dict, t0: float | None = None) -> None:
+    """행동 기록: handle['events_file'] 이 있으면 이벤트를 한 줄씩 **즉시** 덧붙인다(중간에 끊겨도 남는다).
+    claude -p 의 stream-json 이벤트 전부(하위 에이전트 포함: 도구 호출 입력·도구 결과 글·말·응답별 토큰)와 프로그램이 한 일(실행 시작·끝·검사 결과)을 담는다.
+    2026-10-04 유저: 한 바퀴 끝까지 돌려 에이전트의 행동을 고도화 재료로 쓴다 — 판단·차단은 하지 않고 기록만 한다."""
+    path = (handle or {}).get("events_file")
+    if not path:
+        return
+    rec = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "wall": round(time.time(), 2)}
+    if t0 is not None:
+        rec["t"] = round(time.time() - t0, 1)
+    rec.update(_strip_blobs(ev))
+    try:
+        with _EVENT_LOCK:
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+
+
+_EVENT_LOCK = threading.Lock()
 
 
 def _add_usage(handle: dict, ev: dict) -> None:
@@ -268,11 +308,14 @@ def run(prompt: str, tools: list[str], log=None, handle: dict | None = None, add
     err_buf: list[str] = []
     threading.Thread(target=lambda: err_buf.append(proc.stderr.read()), daemon=True).start()
     text, t0, denied = "", time.time(), 0
+    record_event(handle, {"type": "program", "what": "run_start", "label": label, "model": cmd[cmd.index("--model") + 1], "resume": resume or "",
+                          "timeout": timeout, "prompt": prompt}, t0)
     for line in proc.stdout:
         try:
             ev = json.loads(line)
         except json.JSONDecodeError:
             continue
+        record_event(handle, ev, t0)
         if ev.get("session_id") and handle is not None:
             handle["session_id"] = ev["session_id"]
         who = "하위" if ev.get("parent_tool_use_id") else label      # 하위 에이전트(관찰·검수)가 한 일은 구분해서 보여 준다
@@ -292,6 +335,8 @@ def run(prompt: str, tools: list[str], log=None, handle: dict | None = None, add
                 _add_usage(handle, ev)
     rc = proc.wait()
     killer.cancel()
+    record_event(handle, {"type": "program", "what": "run_end", "label": label, "returncode": rc, "seconds": int(time.time() - t0),
+                          "timed_out": bool(rc != 0 and time.time() - t0 >= timeout), "denied": denied, "stderr_tail": "".join(err_buf)[-2000:] if rc != 0 else ""}, t0)
     if handle is not None and handle.get("cancel"):
         raise Cancelled("사용자가 중단함")
     if denied:

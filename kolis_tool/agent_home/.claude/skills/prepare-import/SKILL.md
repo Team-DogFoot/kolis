@@ -118,7 +118,7 @@ description: 출판사가 보낸 납품 폴더 하나(기초메타데이터 엑�
 
 **classification**(11): `project` 값 810/KDC/6. "특정 주제를 가진 웹툰이 있다면 특이사항으로 관리자에게 보고함(예: 납본 홍보 웹툰 → 024.2 등 별도 분류)" → 그런 작품이면 `confirm(classification)` 에 질문.
 
-**identifier (식별기호, n개)**(13): ISBN `{"_": "숫자만 13자리", "@type": "isbn"}` — "출판사에서 전달받은 ISBN/UCI를 참고하되, 국립중앙도서관 ISBN·ISSN·UCI·납본 페이지(nl.go.kr/seoji)에서 검색하여 파일형식과 발행처를 확인한 후 ISBN을 기입함(ISBN: '-' 제외, 괄호 안 숫자는 기입하지 않음)". **권·회차마다 개별 ISBN**(직원 규칙). 어디에서도 못 찾고 세트 ISBN 만 있을 때만 마지막 수단으로 세트 ISBN(confirm). 여럿이면 출간일이 가장 이른 것. 엑셀 값과 확인한 값이 다르면 확인한 값 + confirm. UCI `{"_": "…", "@type": "uci"}` — 4절에서 찾았을 때만(지침 13 의 "엑셀에 기입하지 않음"은 2026-10-03 반입 시험으로 들어감이 확인돼 따르지 않는다. 등록 단계에서 오류가 나는지는 도서관 확인 전).
+**identifier (식별기호, n개)**(13): ISBN `{"_": "숫자만 13자리", "@type": "isbn"}`(아래 6절 예시의 `<…>` 는 자리 표시다. 예시의 글자를 값으로 쓰지 않는다) — "출판사에서 전달받은 ISBN/UCI를 참고하되, 국립중앙도서관 ISBN·ISSN·UCI·납본 페이지(nl.go.kr/seoji)에서 검색하여 파일형식과 발행처를 확인한 후 ISBN을 기입함(ISBN: '-' 제외, 괄호 안 숫자는 기입하지 않음)". **권·회차마다 개별 ISBN**(직원 규칙). 어디에서도 못 찾고 세트 ISBN 만 있을 때만 마지막 수단으로 세트 ISBN(confirm). 여럿이면 출간일이 가장 이른 것. 엑셀 값과 확인한 값이 다르면 확인한 값 + confirm. UCI `{"_": "…", "@type": "uci"}` — 4절에서 찾았을 때만(지침 13 의 "엑셀에 기입하지 않음"은 2026-10-03 반입 시험으로 들어감이 확인돼 따르지 않는다. 등록 단계에서 오류가 나는지는 도서관 확인 전).
 
 **location**(14.1·14.2): `url` 둘 — "연재처 URL은 연재처 메인 URL, 작품 상세 URL 2가지 모두를 기재함"(메인 = 그 작품이 들어 있는 목록 페이지, 예 `https://www.mrblue.com/comic`, 사이트 첫 화면이 아님 / 상세 = 회차들이 보이는 페이지) / "데이터 구축 시점 기준 연재처 소멸로 정확한 URL 확인이 불가능한 경우에는 기재하지 않음". `physicalLocation` 국립중앙도서관(project).
 
@@ -161,8 +161,8 @@ description: 출판사가 보낸 납품 폴더 하나(기초메타데이터 엑�
                       "accessCondition": {"licenseType": "2"}, "extension": {"regionOfPublishing": "한국"}, "typeOfResource": "텍스트", "genre": "만화"},
             "extra": {"currency_code": "\\"}},
  "rows": [{"no": 1, "folder": "001_1화", "thumb_source": "", "thumb_file": "", "color": "천연색",
-           "mods": {"titleInfo": [{"title": "…", "partNumber": "1화", "partName": ""}], "originInfo": [{"…첫 묶음 전체(발행일 포함)…"}], "identifier": [{"_": "9791109764511", "@type": "isbn"}]},
-           "extra": {"contents_price": 500, "compensation": 500, "reward_yn": "Y"},
+           "mods": {"titleInfo": [{"title": "…", "partNumber": "1화", "partName": ""}], "originInfo": [{"…첫 묶음 전체(발행일 포함)…"}], "identifier": [{"_": "<그 회차의 ISBN 13자리>", "@type": "isbn"}]},
+           "extra": {"contents_price": "<그 회차의 정가>", "compensation": "<정가와 같게>", "reward_yn": "<유료 Y / 무료 N>"},
            "confirm": [{"path": "", "reason": "", "publisher_says": "", "evidence": "", "ask": ""}],
            "sources": [{"path": "", "from": "", "quote": ""}]}],
  "issues": ["칸에 묶이지 않는, 사람이 알아야 할 점(쪽 빠짐 의심, 빈 페이지, 납본 대상 여부, 시험 전 요소를 쓴 것, 직원 질문 등)"],
